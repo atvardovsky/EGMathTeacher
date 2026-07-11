@@ -1,0 +1,27 @@
+{
+  "name": "eg-math-teacher",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,blue \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run start:dev --workspace @egmathteacher/api",
+    "dev:web": "npm run dev --workspace @egmathteacher/web",
+    "build": "npm run build --workspaces",
+    "diagrams:render": "bash scripts/render-diagrams.sh",
+    "diagrams:check": "bash scripts/check-diagrams.sh",
+    "smoke:dev": "bash scripts/smoke-dev.sh",
+    "alatyr:check": "bash scripts/check-alatyr.sh",
+    "e2e": "playwright test",
+    "test": "npm run test --workspace @egmathteacher/api",
+    "lint": "npm run lint --workspace @egmathteacher/api"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.16.0",
+    "@playwright/test": "^1.61.1",
+    "concurrently": "^9.2.1"
+  }
+}

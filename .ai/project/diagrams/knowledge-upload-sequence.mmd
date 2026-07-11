@@ -1,0 +1,43 @@
+sequenceDiagram
+  actor Admin
+  participant Web as React Web Client
+  participant API as KnowledgeController
+  participant Guard as AdminGuard
+  participant Knowledge as KnowledgeService
+  participant DB as SQLite
+  participant AIModel as AiModelService
+  participant Files as OpenAI Files API
+  participant Vectors as OpenAI Vector Stores
+
+  Admin->>Web: Select PDF/MD/TXT/DOCX/TeX file
+  Web->>API: POST /admin/knowledge/files multipart
+  API->>Guard: Validate admin session
+  Guard-->>API: Admin user
+  API->>Knowledge: uploadKnowledgeFile(file)
+  Knowledge->>Knowledge: Validate non-empty file, extension, 25 MB controller limit
+  Knowledge->>DB: Read active vector store ids
+  alt No vector store exists
+    Knowledge->>AIModel: Create vector store
+    AIModel->>Vectors: OpenAI vector store request
+    Vectors-->>AIModel: vector_store_id
+    AIModel-->>Knowledge: vector store response
+  end
+  Knowledge->>AIModel: Upload file
+  AIModel->>Files: OpenAI file upload
+  Files-->>AIModel: openai_file_id
+  AIModel-->>Knowledge: file response
+  Knowledge->>AIModel: Attach file to vector store
+  AIModel->>Vectors: OpenAI vector attachment
+  Vectors-->>AIModel: status
+  AIModel-->>Knowledge: attachment response
+  Knowledge->>DB: Insert knowledge_files metadata
+  Knowledge-->>API: KnowledgeFileDto
+  API-->>Web: Uploaded file metadata
+  Web->>API: GET /admin/knowledge/status
+  API->>Knowledge: getStatus()
+  Knowledge->>AIModel: Refresh vector file statuses
+  AIModel->>Vectors: List vector store files
+  Vectors-->>AIModel: File statuses
+  AIModel-->>Knowledge: Status response
+  Knowledge->>DB: Update and read metadata
+  API-->>Web: vectorStoreIds and files

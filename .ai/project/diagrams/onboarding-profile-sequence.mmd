@@ -1,0 +1,42 @@
+sequenceDiagram
+  actor Student
+  participant Web as React Web Client
+  participant API as StudentProfileController
+  participant Auth as AuthGuard
+  participant Profile as StudentProfileService
+  participant Knowledge as KnowledgeService
+  participant DB as SQLite
+  participant AIModel as AiModelService
+  participant OpenAI as OpenAI-backed model provider
+
+  Student->>Web: Log in or register
+  Web->>API: GET /student-profile/me
+  API->>Auth: Validate session cookie
+  Auth-->>API: Authenticated student
+  API->>Profile: getStatus(user)
+  Profile->>DB: Read student_profiles
+  DB-->>Profile: No profile found
+  API-->>Web: onboardingRequired=true
+  Web-->>Student: Show first meeting
+  Student->>Web: Answer learning, motivation, preference, and diagnostic prompts
+  Web->>API: PUT /student-profile/me
+  API->>Profile: completeOnboarding(user, answers)
+  Profile->>Knowledge: getActiveVectorStoreIds()
+  Knowledge->>DB: Read knowledge_files when env ids absent
+  Knowledge-->>Profile: Vector store ids
+  Profile->>AIModel: Math knowledge diagnostician with optional file_search
+  AIModel->>OpenAI: Create specialist response
+  OpenAI-->>AIModel: knowledgeState with evidence
+  AIModel-->>Profile: knowledgeState
+  Profile->>AIModel: Psychopedagogical profiler with answers and knowledgeState
+  AIModel->>OpenAI: Create specialist response
+  OpenAI-->>AIModel: learningPreferences and psychologicalProfile
+  AIModel-->>Profile: learningPreferences and safe profile hypotheses
+  Profile->>AIModel: Teaching strategy planner with profile sections
+  AIModel->>OpenAI: Create specialist response
+  OpenAI-->>AIModel: explanationStrategy and aiSummary
+  AIModel-->>Profile: strategy and summary
+  Profile->>DB: Upsert student_profiles
+  Profile-->>API: Profile status
+  API-->>Web: onboardingRequired=false and profile
+  Web-->>Student: Open tutor workspace

@@ -1,0 +1,42 @@
+sequenceDiagram
+  actor Student
+  participant Web as React Web Client
+  participant API as TutorController
+  participant Auth as AuthGuard
+  participant Tutor as TutorService
+  participant Profile as StudentProfileService
+  participant Knowledge as KnowledgeService
+  participant DB as SQLite
+  participant AIModel as AiModelService
+  participant OpenAI as OpenAI-backed model provider
+
+  Student->>Web: Type prompt or use speech recognition
+  Web->>API: POST /tutor/message
+  API->>Auth: Validate session cookie
+  Auth-->>API: Authenticated user
+  API->>Tutor: answerMessage(user, message, source)
+  Tutor->>Profile: getTutorContext(userId)
+  Profile->>DB: Read student_profiles
+  DB-->>Profile: Profile summary and strategy
+  Profile-->>Tutor: Tutor profile context
+  Tutor->>Knowledge: getActiveVectorStoreIds()
+  Knowledge->>DB: Read knowledge_files when env ids absent
+  Knowledge-->>Tutor: Vector store ids
+  Tutor->>AIModel: Create response with profile context and optional file_search
+  AIModel->>OpenAI: Responses API request
+  OpenAI-->>AIModel: Structured tutor JSON and citations
+  AIModel-->>Tutor: Provider response
+  Tutor->>DB: Insert tutor_turn
+  Tutor-->>API: TutorAnswer
+  API-->>Web: Answer, tasks, examples, citations, image prompt
+  opt Image needed
+    Student->>Web: Request diagram
+    Web->>API: POST /tutor/image
+    API->>Tutor: generateImage(prompt, context)
+    Tutor->>AIModel: Generate explanatory PNG
+    AIModel->>OpenAI: Images API request
+    OpenAI-->>AIModel: Base64 image
+    AIModel-->>Tutor: Image response
+    Tutor-->>API: Data URL
+    API-->>Web: Render generated image
+  end

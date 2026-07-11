@@ -1,0 +1,37 @@
+flowchart TB
+  AppModule[AppModule] --> Config[ConfigModule]
+  AppModule --> Conversation[ConversationModule]
+  AppModule --> Database[DatabaseModule]
+  AppModule --> Auth[AuthModule]
+  AppModule --> OpenAI[OpenAiClientModule]
+  AppModule --> Providers[AiProviderModule]
+  AppModule --> WebRTC[WebRtcModule]
+  AppModule --> StudentProfile[StudentProfileModule]
+  AppModule --> Tutor[TutorModule]
+  AppModule --> Knowledge[KnowledgeModule]
+  AppModule --> Health[HealthModule]
+  AppModule --> ModelProvider[AiModelModule]
+
+  Tutor --> Auth
+  Tutor --> StudentProfile
+  Tutor --> Knowledge
+  Tutor --> DatabaseService[DatabaseService]
+  Tutor --> ModelService[AiModelService]
+
+  StudentProfile --> Auth
+  StudentProfile --> Knowledge
+  StudentProfile --> DatabaseService
+  StudentProfile --> ModelService
+
+  Knowledge --> Auth
+  Knowledge --> DatabaseService
+  Knowledge --> ModelService
+
+  ModelProvider --> OpenAIClient[OpenAiClientService]
+
+  WebRTC --> Conversation
+  WebRTC --> Providers
+  WebRTC --> OpenAIRealtimeBridge[OpenAiRealtimeBridgeService]
+
+  Health --> OpenAIRealtimeBridge
+  Auth --> DatabaseService

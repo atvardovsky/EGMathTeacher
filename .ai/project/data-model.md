@@ -1,0 +1,185 @@
+# EGMathTeacher Data Model
+
+This file records local, in-memory, file, and remote data owned or referenced
+by EGMathTeacher.
+
+## Local SQLite Database
+
+SQLite is initialized in `apps/api/src/database/database.service.ts`.
+
+Default path: `./data/app.sqlite` from `SQLITE_PATH`.
+
+The service enables:
+
+- `PRAGMA journal_mode = WAL`
+- `PRAGMA foreign_keys = ON`
+
+### `schema_migrations`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `version` | `TEXT` | primary key |
+| `applied_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/database/database.service.ts`.
+
+The current POC records migration `001_initial_schema` after creating the
+initial tables with idempotent SQL. This is a lightweight migration ledger, not
+a full production rollback, backfill, or backup system.
+
+### `users`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `name` | `TEXT` | required, unique |
+| `password_hash` | `TEXT` | required |
+| `role` | `TEXT` | required, `admin` or `student` |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/auth` and `apps/api/src/database/database.service.ts`.
+
+### `knowledge_files`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `original_name` | `TEXT` | required |
+| `mime_type` | `TEXT` | required |
+| `size_bytes` | `INTEGER` | required |
+| `openai_file_id` | `TEXT` | required |
+| `vector_store_id` | `TEXT` | required |
+| `status` | `TEXT` | required |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge`.
+
+### `student_profiles`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `user_id` | `TEXT` | primary key, references `users(id)` |
+| `onboarding_completed_at` | `TEXT` | required ISO timestamp |
+| `onboarding_answers_json` | `TEXT` | required serialized first-meeting answers |
+| `knowledge_state_json` | `TEXT` | required serialized AI-made knowledge state |
+| `learning_preferences_json` | `TEXT` | required serialized learning preferences |
+| `psychological_profile_json` | `TEXT` | required serialized tutoring-focused psychopedagogical profile |
+| `explanation_strategy_json` | `TEXT` | required serialized explanation strategy |
+| `ai_summary` | `TEXT` | required compact profile summary for tutor prompts |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/student-profile` and
+`apps/api/src/database/database.service.ts`.
+
+The personal student profile is DB memory, not RAG memory. RAG stores shared
+teaching knowledge, questionnaire strategy, diagnostic rubrics, task banks, and
+explanation playbooks. SQLite stores only teaching-useful signals about who the
+current student is and how the AI should adapt explanations to them.
+
+The JSON profile sections are produced by specialist AI calls:
+
+- `knowledge_state_json`: math diagnostician output.
+- `learning_preferences_json`: learning preference output from the
+  psychopedagogical profiler.
+- `psychological_profile_json`: tutoring-focused psychopedagogical hypotheses,
+  preferably with confidence and evidence per meaningful inference.
+- `explanation_strategy_json`: teaching strategy planner output.
+
+These fields remain flexible JSON in the POC. Sensitive non-teaching personal
+details are filtered before storage and before later profile specialist calls.
+
+### `tutor_turns`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | required |
+| `prompt` | `TEXT` | required |
+| `answer_json` | `TEXT` | required serialized tutor answer |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/tutor`.
+
+## In-Memory State
+
+### WebRTC Sessions
+
+`WebRtcSessionService` stores session state in memory:
+
+- session id
+- conversation id
+- timestamps
+- status: `pending`, `active`, or `closed`
+- preferred voice
+- optional translation config
+- SDP offer/answer
+- queued ICE candidates
+
+Closed sessions are cleaned from memory after the configured cleanup window.
+
+### Conversations
+
+`ConversationService` stores conversation records in memory:
+
+- voice turns
+- participant: user or assistant
+- transcript fragments
+- token usage counters
+- finalized transcript metadata
+
+This is not durable storage.
+
+## File Artifacts
+
+Transcript files are written under `TRANSCRIPT_LOG_DIR`, default `./logs`.
+
+Local certificates under `.cert` enable development HTTPS. They are local
+artifacts, not source truth or deployable secrets.
+
+## Remote AI Provider Objects
+
+The API uses an AI model provider facade. The current implemented provider is
+OpenAI. The API creates or references:
+
+- OpenAI Responses outputs
+- OpenAI Images outputs
+- OpenAI uploaded files
+- OpenAI vector stores
+- OpenAI vector store file attachments
+- OpenAI Realtime sessions and client secrets
+
+Remote provider state is not fully represented locally. Local
+`knowledge_files` stores metadata only.
+
+## Frontend Types
+
+The web client defines DTO-like interfaces in `apps/web/src/types.ts`:
+
+- `User`
+- `TutorAnswer`
+- `TutorTask`
+- `TutorExample`
+- `TutorCitation`
+- `TutorTurn`
+- `DiagnosticAnswer`
+- `StudentOnboardingAnswers`
+- `StudentProfile`
+- `StudentProfileStatus`
+- `KnowledgeFile`
+- `KnowledgeStatus`
+
+Keep these aligned with API response contracts when API shape changes.
+
+## Data Gaps
+
+- POC schema migration ledger exists, but no production rollback, backfill, or
+  backup workflow is defined.
+- No retention policy is defined for users, tutor turns, uploaded file
+  metadata, remote OpenAI files/vector stores, or transcript files.
+- No export/delete account workflow is present.
+- No backup/restore policy is defined.
+- PII classification is limited to the current teaching-only profile memory
+  and adapter-level safety notes.

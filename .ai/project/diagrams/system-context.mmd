@@ -1,0 +1,15 @@
+flowchart LR
+  Student[Student browser user] --> Web[React/Vite web client]
+  Admin[Admin browser user] --> Web
+  Web -->|same-origin fetch| Proxy[Vite dev proxy or production reverse proxy]
+  Proxy -->|/auth /student-profile /tutor /admin /webrtc /health| API[NestJS API]
+  Web --> Speech[Browser SpeechRecognition API]
+  API --> SQLite[(SQLite app.sqlite)]
+  API --> TranscriptFiles[Transcript log files]
+  API --> ModelProvider[AI model provider facade]
+  ModelProvider --> OpenAIResponses[OpenAI Responses API]
+  ModelProvider --> OpenAIImages[OpenAI Images API]
+  ModelProvider --> OpenAIFiles[OpenAI Files API]
+  ModelProvider --> OpenAIVectors[OpenAI Vector Stores]
+  API <-->|WebRTC and REST| OpenAIRealtime[OpenAI Realtime API]
+  API -. optional .-> STUN[Configured STUN/TURN servers]

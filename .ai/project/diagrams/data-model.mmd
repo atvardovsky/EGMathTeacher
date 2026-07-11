@@ -1,0 +1,50 @@
+erDiagram
+  USERS {
+    TEXT id PK
+    TEXT name UK
+    TEXT password_hash
+    TEXT role
+    TEXT created_at
+  }
+
+  KNOWLEDGE_FILES {
+    TEXT id PK
+    TEXT original_name
+    TEXT mime_type
+    INTEGER size_bytes
+    TEXT openai_file_id
+    TEXT vector_store_id
+    TEXT status
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  SCHEMA_MIGRATIONS {
+    TEXT version PK
+    TEXT applied_at
+  }
+
+  STUDENT_PROFILES {
+    TEXT user_id PK
+    TEXT onboarding_completed_at
+    TEXT onboarding_answers_json
+    TEXT knowledge_state_json
+    TEXT learning_preferences_json
+    TEXT psychological_profile_json
+    TEXT explanation_strategy_json
+    TEXT ai_summary
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  TUTOR_TURNS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT prompt
+    TEXT answer_json
+    TEXT created_at
+  }
+
+  USERS ||--o| STUDENT_PROFILES : has
+  USERS ||--o{ TUTOR_TURNS : owns

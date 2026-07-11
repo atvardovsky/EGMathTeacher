@@ -1,0 +1,178 @@
+# EGMathTeacher Security And Safety
+
+This file records project-owned security and safety boundaries from repository
+evidence. It is not a full production security or privacy policy.
+
+## Secrets
+
+Treat these as secrets:
+
+- `OPENAI_API_KEY`
+- `JWT_SECRET`
+- `GEMINI_API_KEY`
+- `HUME_API_KEY`
+- `HUME_SECRET_KEY`
+- `RETELL_API_KEY`
+- TLS private keys
+- signed auth cookies
+- OpenAI Realtime client secrets
+
+Do not print, commit, transform, or invent secret values.
+
+## Authentication And Sessions
+
+Current implementation:
+
+- local name/password auth
+- bcrypt password hashing
+- first registered user gets `admin`
+- later users get `student`
+- signed HMAC session token
+- HTTP-only cookie
+- `sameSite: lax`
+- cookie `secure` controlled by `AUTH_COOKIE_SECURE`
+- session expiry controlled by `AUTH_SESSION_DAYS`
+
+Auth gaps:
+
+- no password reset
+- no rate limiting
+- no account lockout
+- no MFA
+- no CSRF-specific token beyond SameSite cookie behavior
+- no formal session revocation store
+
+These gaps are accepted for the current POC only. Do not claim production auth
+readiness until explicit auth hardening requirements are added and
+implemented.
+
+## Authorization
+
+Current guards:
+
+- `AuthGuard` protects tutor endpoints.
+- `AdminGuard` protects admin knowledge endpoints.
+
+Guard coverage details are owned by `.ai/project/guards.md`.
+
+Current unguarded endpoints:
+
+- auth endpoints
+- health endpoint
+- WebRTC controller endpoints
+
+Do not broaden access or weaken guards without explicit approval.
+
+## Live External Services
+
+OpenAI calls can happen through the current model and realtime providers:
+
+- Responses API
+- Images API
+- Files API
+- Vector Stores API
+- Realtime API
+
+Other configured providers are stubs unless implemented later.
+
+Assistants must not trigger live external calls unless the task explicitly
+requires it and the user has approved credential/spend risk.
+
+## Student Data And Privacy
+
+Potential student data in this POC:
+
+- user names
+- password hashes
+- tutor prompts
+- tutor answers
+- first-login onboarding answers
+- AI-made knowledge state, learning preferences, tutoring-focused
+  psychopedagogical profile, explanation strategy, and profile summary
+- specialist profile evidence and confidence fields used for teaching strategy
+- generated images and prompts
+- uploaded knowledge file metadata
+- voice transcripts and transcript files
+- remote OpenAI files/vector stores/model outputs
+
+Current data-minimization rule:
+
+- store only information that can help choose explanations, pacing, tone,
+  examples, hints, practice, diagnostics, and visual support
+- do not store family, health, clinical, political, religious, intimate,
+  address/contact, or other non-teaching sensitive details
+- drop unsafe freeform details before profile generation, storage, and later
+  specialist prompt chaining
+
+The authenticated web settings view may display the signed-in user's own
+read-only tutoring profile memory. It must not add profile editing, export,
+or administrative profile browsing without a separate security and privacy
+review.
+
+Gaps:
+
+- no formal privacy policy
+- no retention policy
+- no delete/export workflow
+- no production compliance review
+
+## Logging And Redaction
+
+Current rule:
+
+- do not log secrets, auth cookies, session tokens, raw provider payloads, raw
+  tutor prompts, raw voice transcripts, or raw psychopedagogical profile data
+- WebRTC provider event logs may include event type, ids, and payload keys, but
+  not transcript or delta text
+- transcript files remain student data and are governed by the retention and
+  delete/export gaps listed in this file
+
+Current gaps:
+
+- no comprehensive automated log-redaction scanner
+- no production log retention policy
+
+Psychopedagogical profile rule:
+
+- store only tutoring-relevant signals
+- do not store clinical diagnoses or sensitive family/health/private details
+- sanitize first-meeting freeform text and AI-made profile JSON before storage
+- use the profile only to adapt explanations, pacing, tone, examples, and
+  practice strategy
+- phrase psychopedagogical fields as teaching hypotheses with evidence and
+  confidence when possible
+- do not claim production readiness for profiling minors without privacy review
+
+Do not claim this is production-ready for real student data until those gaps
+are closed.
+
+## Destructive Operations
+
+Require explicit programmer approval before:
+
+- deleting SQLite data
+- deleting transcript logs
+- deleting remote OpenAI files or vector stores
+- changing system web server config
+- reloading production services
+- rotating credentials
+- changing cookie/security settings in production
+
+## Dependencies
+
+Current dependency managers and package manifests:
+
+- root `package.json`
+- `apps/api/package.json`
+- `apps/web/package.json`
+- `package-lock.json`
+
+Adding production dependencies or external services requires approval.
+
+## Deployment Safety
+
+Deployment reference files exist under `deploy/`. They are repository
+references, not proof of active server state.
+
+Do not install, reload, or alter Apache, Nginx, PM2, certificate, or system
+configuration unless the user explicitly asks for that deployment action.

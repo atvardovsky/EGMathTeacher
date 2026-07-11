@@ -1,0 +1,40 @@
+sequenceDiagram
+  actor Client
+  participant API as WebRtcController
+  participant Sessions as WebRtcSessionService
+  participant Signaling as WebRtcSignalingService
+  participant Auth as WebRtcAuthService
+  participant Media as WebRtcMediaService
+  participant Bridge as OpenAiRealtimeBridgeService
+  participant Provider as OpenAI Realtime API
+  participant Conv as ConversationService
+  participant Logs as Transcript files
+
+  Client->>API: POST /webrtc/session
+  API->>Sessions: assertCapacity and createSession
+  API->>Conv: initializeConversation
+  API->>Signaling: buildBootstrapPayload
+  API-->>Client: sessionId, conversationId, ICE, persona, voices
+  Client->>API: POST /webrtc/session/:id/token
+  API->>Auth: createEphemeralToken
+  Auth->>Provider: Create realtime session
+  Provider-->>Auth: client secret
+  API-->>Client: ephemeral token
+  Client->>API: POST /webrtc/session/:id/offer
+  API->>Media: handleClientOffer
+  Media->>Bridge: ensure client and provider peers
+  Bridge->>Provider: SDP exchange
+  Provider-->>Bridge: SDP answer and realtime events
+  Bridge-->>Media: client SDP answer
+  API-->>Client: SDP answer
+  Client-->>Bridge: WebRTC audio
+  Bridge-->>Provider: Realtime audio and data channel events
+  Provider-->>Bridge: Synthetic audio and events
+  Bridge->>Conv: Record voice turns and token usage
+  Client->>API: POST /webrtc/session/:id/close
+  API->>Media: closeSession
+  API->>Sessions: closeSession
+  Sessions->>Conv: finalizeConversation
+  Conv->>Logs: Write transcript when available
+  API-->>Client: close status and transcript metadata
+
