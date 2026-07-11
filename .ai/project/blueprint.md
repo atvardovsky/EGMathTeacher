@@ -41,6 +41,13 @@ visible next actions.
   language, account info, and read-only DB-backed learning profile memory.
 - Tutor prompts include the stored student profile summary when available so
   explanations adapt to the teenager across compacted sessions.
+- Tutor turns enqueue delayed background AI work for learning-signal
+  extraction, session summaries, student profile refreshes, teaching strategy
+  refreshes, and rare quality review. These updates are eventually consistent
+  and do not block the immediate tutor answer.
+- Background assistant calls use the model-provider facade and can request
+  lower-cost OpenAI Flex processing through `service_tier=flex` when using
+  the OpenAI provider.
 - Admin-only upload of PDF, Markdown, TXT, DOCX, and TeX knowledge files.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
@@ -56,6 +63,9 @@ visible next actions.
   - `DatabaseModule`: SQLite storage and table initialization.
   - `StudentProfileModule`: first-login profile creation, profile status, and
     stored tutoring strategy memory.
+  - `BackgroundAiModule`: SQLite-backed background AI job queue for post-turn
+    learning signals, summaries, profile refresh, strategy refresh, and
+    quality review.
   - `TutorModule`: RAG tutor response and image generation endpoints.
   - `KnowledgeModule`: admin file upload and vector store status.
   - `WebRtcModule`: inherited voice assistant/WebRTC bridge.
@@ -83,6 +93,11 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
 - `student_profiles`: per-user onboarding answers, knowledge state, learning
   preferences, tutoring-focused psychopedagogical profile, explanation
   strategy, AI summary, and timestamps.
+- `background_ai_jobs`: queued background assistant jobs, status, attempts,
+  payload, result, error, and timestamps.
+- `student_learning_signals`: sanitized teaching-useful learning signals,
+  session summaries, profile-refresh evidence, strategy-refresh evidence, and
+  quality-review records.
 - `schema_migrations`: applied POC SQLite schema migration versions and
   timestamps.
 - `knowledge_files`: local metadata for OpenAI file and vector store records.
@@ -95,9 +110,11 @@ local source of truth.
 ## External Boundaries
 
 - AI model provider facade for tutor answers, first-login student profile
-  generation, explanatory images, files, and vector stores.
+  generation, background assistant jobs, explanatory images, files, and vector
+  stores.
 - OpenAI is the only implemented model provider in the current POC.
-- OpenAI Responses API for tutor answers and specialist profile generation.
+- OpenAI Responses API for tutor answers, specialist profile generation, and
+  background assistant jobs when the OpenAI provider is configured.
 - OpenAI Images API for explanatory diagrams.
 - OpenAI Files and Vector Stores API for RAG knowledge.
 - OpenAI Realtime API for WebRTC voice sessions.

@@ -90,6 +90,53 @@ export class DatabaseService implements OnModuleDestroy {
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
     `);
+
+    this.applyMigration('002_background_ai_jobs', `
+      CREATE TABLE IF NOT EXISTS background_ai_jobs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN (
+          'learning_signal_extraction',
+          'session_summary',
+          'student_profile_refresh',
+          'teaching_strategy_refresh',
+          'tutor_quality_review'
+        )),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        payload_json TEXT NOT NULL,
+        result_json TEXT,
+        error_message TEXT,
+        scheduled_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_status_scheduled
+        ON background_ai_jobs(status, scheduled_at);
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_user_type
+        ON background_ai_jobs(user_id, type, status);
+
+      CREATE TABLE IF NOT EXISTS student_learning_signals (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        signal_type TEXT NOT NULL,
+        signal_json TEXT NOT NULL,
+        source_job_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (source_job_id) REFERENCES background_ai_jobs(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_student_learning_signals_user_created
+        ON student_learning_signals(user_id, created_at);
+    `);
   }
 
   private applyMigration(version: string, sql: string): void {

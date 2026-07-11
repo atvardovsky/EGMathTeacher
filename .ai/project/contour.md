@@ -13,11 +13,13 @@ The project contour owns:
   examples, optional explanatory images, and admin knowledge upload.
 - Runtime architecture: NestJS API under `apps/api`, React/Vite web app under
   `apps/web`, shared root npm workspace, SQLite local storage, OpenAI-first
-  model provider facade for RAG/profile/tutor/image flows, and inherited
-  WebRTC/Realtime voice bridge.
+  model provider facade for RAG/profile/tutor/image/background assistant
+  flows, SQLite-backed background AI worker, and inherited WebRTC/Realtime
+  voice bridge.
 - Data ownership: local SQLite tables for users, student profiles, knowledge
-  file metadata, and tutor turns; OpenAI owns uploaded files, vector stores,
-  model responses, profile-generation responses, and generated images.
+  file metadata, tutor turns, background AI jobs, and learning signals; OpenAI
+  owns uploaded files, vector stores, model responses, profile-generation
+  responses, background model responses, and generated images.
 - UI facts: the web client uses Mantine, lucide icons, browser speech
   recognition, Russian/English static UI localization, and a teen-friendly
   modern tutor workspace.
@@ -50,8 +52,9 @@ The project contour does not own:
   `.ai/project/guards.md`, `.ai/project/diagrams.md`,
   `.ai/project/ui-guidelines.md`, `.ai/project/ui-tree.md`.
 - API modules: `apps/api/src/auth`, `apps/api/src/student-profile`,
-  `apps/api/src/tutor`, `apps/api/src/knowledge`, `apps/api/src/webrtc`,
-  `apps/api/src/openai`, `apps/api/src/database`.
+  `apps/api/src/tutor`, `apps/api/src/background-ai`,
+  `apps/api/src/knowledge`, `apps/api/src/webrtc`, `apps/api/src/openai`,
+  `apps/api/src/database`.
 - Web app: `apps/web/src/App.tsx`, `apps/web/src/api.ts`,
   `apps/web/src/types.ts`, `apps/web/src/styles.css`.
 - Tests: `apps/api/test`.

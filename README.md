@@ -47,10 +47,15 @@ Production domain:
   tutoring-focused psychopedagogical profile, and explanation strategy.
 - Specialist AI profile pipeline for first-login onboarding: math knowledge
   diagnostician, psychopedagogical profiler, and teaching strategy planner.
+- SQLite-backed background AI worker for delayed learning-signal extraction,
+  session summaries, profile refreshes, strategy refreshes, and rare quality
+  review after tutor turns.
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.
 - Tutor prompts combine shared RAG knowledge with the stored student profile.
+- Immediate tutor answers stay synchronous; delayed profile/strategy updates
+  are eventually consistent and do not block the student response.
 - Russian/English static web UI locale switch for auth, first meeting, tutor, and admin views.
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for

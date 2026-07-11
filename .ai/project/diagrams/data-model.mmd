@@ -46,5 +46,35 @@ erDiagram
     TEXT created_at
   }
 
+  BACKGROUND_AI_JOBS {
+    TEXT id PK
+    TEXT type
+    TEXT status
+    TEXT user_id FK
+    TEXT conversation_id
+    INTEGER attempts
+    TEXT payload_json
+    TEXT result_json
+    TEXT error_message
+    TEXT scheduled_at
+    TEXT started_at
+    TEXT completed_at
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  STUDENT_LEARNING_SIGNALS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT signal_type
+    TEXT signal_json
+    TEXT source_job_id FK
+    TEXT created_at
+  }
+
   USERS ||--o| STUDENT_PROFILES : has
   USERS ||--o{ TUTOR_TURNS : owns
+  USERS ||--o{ BACKGROUND_AI_JOBS : queues
+  USERS ||--o{ STUDENT_LEARNING_SIGNALS : has
+  BACKGROUND_AI_JOBS ||--o{ STUDENT_LEARNING_SIGNALS : produces

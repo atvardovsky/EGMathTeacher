@@ -90,6 +90,8 @@ Potential student data in this POC:
 - AI-made knowledge state, learning preferences, tutoring-focused
   psychopedagogical profile, explanation strategy, and profile summary
 - specialist profile evidence and confidence fields used for teaching strategy
+- background learning signals, session summaries, profile-refresh evidence,
+  strategy-refresh evidence, and quality-review records
 - generated images and prompts
 - uploaded knowledge file metadata
 - voice transcripts and transcript files
@@ -103,6 +105,9 @@ Current data-minimization rule:
   address/contact, or other non-teaching sensitive details
 - drop unsafe freeform details before profile generation, storage, and later
   specialist prompt chaining
+- background AI jobs must sanitize payloads and results before storage; they
+  must not store raw sensitive personal details, clinical diagnoses, or
+  non-teaching facts
 
 The authenticated web settings view may display the signed-in user's own
 read-only tutoring profile memory. It must not add profile editing, export,
@@ -137,6 +142,8 @@ Psychopedagogical profile rule:
 - store only tutoring-relevant signals
 - do not store clinical diagnoses or sensitive family/health/private details
 - sanitize first-meeting freeform text and AI-made profile JSON before storage
+- sanitize background learning signals and AI-made background refresh outputs
+  before storage
 - use the profile only to adapt explanations, pacing, tone, examples, and
   practice strategy
 - phrase psychopedagogical fields as teaching hypotheses with evidence and

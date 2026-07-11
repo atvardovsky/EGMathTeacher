@@ -59,6 +59,15 @@ Rules from current implementation:
 - If RAG materials are missing, the tutor prompt says not to invent citations.
 - If a student profile exists, the tutor prompt includes its compact DB summary
   and explanation strategy so the answer can adapt to the teenager.
+- After the immediate tutor answer is persisted, the API enqueues background
+  assistant work where logical:
+  - learning-signal extraction after each turn
+  - session summary after the configured number of turns in a conversation
+  - student profile and teaching strategy refresh after the configured number
+    of user turns
+  - quality review only for short or suspicious answers
+- Background updates are eventually consistent. They must not block the current
+  answer, and they must store only teaching-useful signals.
 
 ### Complete First-Login Meeting
 
@@ -86,6 +95,9 @@ Rules from current implementation:
   shared pedagogy, questionnaire strategies, rubrics, and explanation
   playbooks.
 - Personal profile memory is stored in SQLite, not in RAG.
+- Later profile and strategy updates are produced from sanitized tutor-turn
+  signals in background jobs, not from full synchronous profile regeneration
+  after every discussion turn.
 - The stored psychopedagogical profile is for explanation strategy only; it
   must not diagnose, manipulate, or preserve unnecessary sensitive details.
 - First-meeting answers and AI-made profile sections are filtered before

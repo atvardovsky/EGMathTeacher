@@ -15,6 +15,22 @@ export default registerAs('ai', () => ({
       .filter(Boolean),
     requestTimeoutMs: parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? '30000', 10),
   },
+  background: {
+    enabled: (process.env.AI_BACKGROUND_ENABLED ?? 'true').toLowerCase() !== 'false',
+    responsesModel: process.env.OPENAI_BACKGROUND_RESPONSES_MODEL ?? '',
+    serviceTier: process.env.OPENAI_BACKGROUND_SERVICE_TIER ?? 'flex',
+    drainIntervalMs: parseInt(process.env.AI_BACKGROUND_DRAIN_INTERVAL_MS ?? '2000', 10),
+    drainBatchSize: parseInt(process.env.AI_BACKGROUND_DRAIN_BATCH_SIZE ?? '3', 10),
+    maxAttempts: parseInt(process.env.AI_BACKGROUND_MAX_ATTEMPTS ?? '2', 10),
+    profileRefreshTurnInterval: parseInt(
+      process.env.AI_BACKGROUND_PROFILE_REFRESH_TURN_INTERVAL ?? '10',
+      10,
+    ),
+    sessionSummaryTurnInterval: parseInt(
+      process.env.AI_BACKGROUND_SESSION_SUMMARY_TURN_INTERVAL ?? '5',
+      10,
+    ),
+  },
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     liveModel: process.env.GEMINI_LIVE_MODEL ?? '',

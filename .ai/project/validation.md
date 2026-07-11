@@ -32,6 +32,8 @@ Current covered areas:
 - auth registration/login/session token behavior
 - student profile onboarding requirement, AI profile storage, and tutor context
   summary behavior, including specialist profile pipeline calls
+- background AI job queueing, flex-tier payload shape, learning-signal
+  storage, and profile/strategy refresh merging
 - tutor structured output and image data URL behavior
 - AI model-provider facade delegation
 - WebRTC token creation payload cleanup

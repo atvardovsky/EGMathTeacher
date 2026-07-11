@@ -24,8 +24,10 @@ The service enables:
 Source owner: `apps/api/src/database/database.service.ts`.
 
 The current POC records migration `001_initial_schema` after creating the
-initial tables with idempotent SQL. This is a lightweight migration ledger, not
-a full production rollback, backfill, or backup system.
+initial tables and migration `002_background_ai_jobs` after creating
+background AI job and learning-signal tables with idempotent SQL. This is a
+lightweight migration ledger, not a full production rollback, backfill, or
+backup system.
 
 ### `users`
 
@@ -89,6 +91,50 @@ The JSON profile sections are produced by specialist AI calls:
 
 These fields remain flexible JSON in the POC. Sensitive non-teaching personal
 details are filtered before storage and before later profile specialist calls.
+
+Background student profile and strategy refresh jobs can merge sanitized JSON
+patches into these fields after tutor turns. These updates are eventually
+consistent and use only teaching-useful signals stored in SQLite.
+
+### `background_ai_jobs`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `type` | `TEXT` | required; one of `learning_signal_extraction`, `session_summary`, `student_profile_refresh`, `teaching_strategy_refresh`, `tutor_quality_review` |
+| `status` | `TEXT` | required; `pending`, `running`, `succeeded`, or `failed` |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `attempts` | `INTEGER` | required retry counter |
+| `payload_json` | `TEXT` | required sanitized job payload |
+| `result_json` | `TEXT` | optional sanitized job result |
+| `error_message` | `TEXT` | optional failure reason |
+| `scheduled_at` | `TEXT` | required ISO timestamp |
+| `started_at` | `TEXT` | optional ISO timestamp |
+| `completed_at` | `TEXT` | optional ISO timestamp |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+### `student_learning_signals`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `signal_type` | `TEXT` | required signal category |
+| `signal_json` | `TEXT` | required sanitized teaching-useful signal JSON |
+| `source_job_id` | `TEXT` | optional background job id |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+Learning signals are DB memory for the current student only. They are not RAG
+knowledge and must not preserve sensitive non-teaching personal details.
 
 ### `tutor_turns`
 

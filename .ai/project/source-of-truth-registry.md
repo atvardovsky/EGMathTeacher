@@ -106,8 +106,9 @@ Final evidence: affected boundaries, diagram sync, validation, approval.
 
 Fact type: `data model`
 Canonical owner: `apps/api/src/database/database.service.ts`,
-`apps/api/src/student-profile`, `apps/api/src/tutor`, `apps/api/src/knowledge`,
-and `.ai/project/data-model.md`.
+`apps/api/src/student-profile`, `apps/api/src/tutor`,
+`apps/api/src/background-ai`, `apps/api/src/knowledge`, and
+`.ai/project/data-model.md`.
 Derived surfaces:
 
 - `.ai/project/runtime-flows.md`

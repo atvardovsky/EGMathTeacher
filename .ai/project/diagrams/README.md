@@ -10,18 +10,18 @@ are generated into `rendered/`.
 
 - `system-context.mmd`: browser, API, local stores, reverse proxy, model
   provider facade, and OpenAI boundaries.
-- `api-modules.mmd`: NestJS module ownership, model-provider facade, and
-  dependency direction.
+- `api-modules.mmd`: NestJS module ownership, background AI worker,
+  model-provider facade, and dependency direction.
 - `onboarding-profile-sequence.mmd`: first-login student profile creation,
   specialist evaluator pipeline, RAG/shared-knowledge lookup, DB memory
   persistence, and transition to tutor.
-- `tutor-rag-sequence.mmd`: tutor text/voice request, RAG, persistence, and
-  optional image flow.
+- `tutor-rag-sequence.mmd`: tutor text/voice request, RAG, persistence,
+  background AI enqueue, and optional image flow.
 - `knowledge-upload-sequence.mmd`: admin document upload and vector store flow.
 - `webrtc-realtime-sequence.mmd`: WebRTC session, token, SDP, media bridge,
   provider events, and transcript close flow.
-- `data-model.mmd`: local SQLite tables, in-memory runtime state, file
-  artifacts, and remote OpenAI objects.
+- `data-model.mmd`: local SQLite tables, background AI jobs/signals,
+  in-memory runtime state, file artifacts, and remote OpenAI objects.
 - `assistant-governance.mmd`: Alatyr framework/project/assistant contours,
   gates, operations, and evidence flow.
 - `ui-tree.mmd`: web UI state tree from auth through first meeting, tutor,

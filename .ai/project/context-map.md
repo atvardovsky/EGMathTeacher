@@ -29,8 +29,9 @@ This file maps project facts to their owning sources.
 | Data model | `apps/api/src/database/database.service.ts`, `.ai/project/data-model.md`, `apps/web/src/types.ts` |
 | Auth and roles | `apps/api/src/auth`, `.ai/project/security-safety.md`, `.ai/project/use-cases.md` |
 | First-login profile and student memory | `apps/api/src/student-profile`, `apps/web/src/App.tsx`, `.ai/project/use-cases.md`, `.ai/project/data-model.md` |
+| Background AI job queue and learning signals | `apps/api/src/background-ai`, `apps/api/src/database/database.service.ts`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
 | Tutor/RAG/image behavior | `apps/api/src/tutor`, `apps/api/src/knowledge`, `.ai/project/runtime-flows.md` |
-| Model-provider facade for profile, tutor, image, and knowledge flows | `apps/api/src/ai-model`, `apps/api/src/openai`, `.ai/project/architecture.md`, `.ai/project/runtime-flows.md` |
+| Model-provider facade for profile, tutor, background, image, and knowledge flows | `apps/api/src/ai-model`, `apps/api/src/openai`, `.ai/project/architecture.md`, `.ai/project/runtime-flows.md` |
 | WebRTC behavior | `apps/api/docs/webrtc-module.md`, `apps/api/src/webrtc`, `apps/api/README.md` |
 | Frontend workflow/UI facts | `apps/web/src/App.tsx`, `apps/web/src/i18n.ts`, `apps/web/src/styles.css`, `.ai/project/ui-guidelines.md`, `.ai/project/ui-tree.md`, `.ai/project/use-cases.md` |
 | Validation commands | package files, `.ai/project/validation.md` |

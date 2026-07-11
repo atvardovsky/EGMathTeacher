@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
 import { AuthSession } from '../auth/auth.types';
+import { BackgroundAiService } from '../background-ai/background-ai.service';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { StudentProfileService } from '../student-profile/student-profile.service';
@@ -28,6 +29,7 @@ export class TutorService {
     private readonly knowledgeService: KnowledgeService,
     private readonly aiModel: AiModelService,
     private readonly studentProfileService: StudentProfileService,
+    private readonly backgroundAiService: BackgroundAiService,
   ) {}
 
   async answerMessage(options: AnswerMessageOptions): Promise<TutorAnswer> {
@@ -48,6 +50,7 @@ export class TutorService {
     const answer = this.parseTutorAnswer(text, conversationId);
     answer.citations = this.extractCitations(response);
     this.persistTutorTurn(options.user.id, conversationId, message, answer);
+    this.enqueueBackgroundWork(options.user, conversationId, message, options.source, answer);
     return answer;
   }
 
@@ -179,6 +182,33 @@ export class TutorService {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [randomUUID(), userId, conversationId, prompt, JSON.stringify(answer), new Date().toISOString()],
     );
+  }
+
+  private enqueueBackgroundWork(
+    user: AuthSession,
+    conversationId: string,
+    prompt: string,
+    source: 'text' | 'voice',
+    answer: TutorAnswer,
+  ): void {
+    try {
+      this.backgroundAiService.enqueueTutorTurnWork({
+        userId: user.id,
+        userName: user.name,
+        conversationId,
+        source,
+        prompt,
+        answer: {
+          answer: answer.answer,
+          tasksCount: answer.tasks.length,
+          examplesCount: answer.examples.length,
+          citationsCount: answer.citations.length,
+          needsImage: answer.needsImage,
+        },
+      });
+    } catch {
+      // Background adaptation must never block the immediate tutor answer path.
+    }
   }
 
   private extractOutputText(response: Record<string, unknown>): string {

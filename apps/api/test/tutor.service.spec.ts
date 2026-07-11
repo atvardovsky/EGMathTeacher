@@ -64,6 +64,9 @@ describe('TutorService', () => {
     const studentProfile = {
       getTutorContext: jest.fn(() => 'Профиль ученика: нужен спокойный темп и примеры.'),
     };
+    const backgroundAi = {
+      enqueueTutorTurnWork: jest.fn(),
+    };
 
     return {
       service: new TutorService(
@@ -72,15 +75,17 @@ describe('TutorService', () => {
         knowledge as any,
         aiModel as any,
         studentProfile as any,
+        backgroundAi as any,
       ),
       db,
       aiModel,
       studentProfile,
+      backgroundAi,
     };
   }
 
   it('returns structured tutor output with citations', async () => {
-    const { service, db, aiModel } = createService();
+    const { service, db, aiModel, backgroundAi } = createService();
 
     const result = await service.answerMessage({
       user,
@@ -99,6 +104,20 @@ describe('TutorService', () => {
       expect.objectContaining({
         model: 'gpt-test',
         tools: [expect.objectContaining({ type: 'file_search', vector_store_ids: ['vs_test'] })],
+      }),
+    );
+    expect(backgroundAi.enqueueTutorTurnWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: user.id,
+        conversationId: 'conv-1',
+        source: 'text',
+        prompt: 'Объясни квадратное уравнение',
+        answer: expect.objectContaining({
+          tasksCount: 1,
+          examplesCount: 1,
+          citationsCount: 1,
+          needsImage: true,
+        }),
       }),
     );
   });

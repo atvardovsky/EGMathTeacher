@@ -5,6 +5,7 @@ sequenceDiagram
   participant Auth as AuthGuard
   participant Tutor as TutorService
   participant Profile as StudentProfileService
+  participant Background as BackgroundAiService
   participant Knowledge as KnowledgeService
   participant DB as SQLite
   participant AIModel as AiModelService
@@ -27,8 +28,16 @@ sequenceDiagram
   OpenAI-->>AIModel: Structured tutor JSON and citations
   AIModel-->>Tutor: Provider response
   Tutor->>DB: Insert tutor_turn
+  Tutor->>Background: enqueueTutorTurnWork()
+  Background->>DB: Insert background_ai_jobs
   Tutor-->>API: TutorAnswer
   API-->>Web: Answer, tasks, examples, citations, image prompt
+  Note over Background,AIModel: Later in-process drain extracts signals, summarizes sessions, refreshes profile/strategy, or reviews quality
+  Background->>AIModel: Background specialist response with optional flex tier
+  AIModel->>OpenAI: Responses API request
+  OpenAI-->>AIModel: Background JSON
+  AIModel-->>Background: Parsed model response
+  Background->>DB: Store student_learning_signals or update student_profiles
   opt Image needed
     Student->>Web: Request diagram
     Web->>API: POST /tutor/image

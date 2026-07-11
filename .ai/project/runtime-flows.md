@@ -89,8 +89,32 @@ This file records runtime flows from current source evidence.
 8. API parses model output as structured tutor JSON when possible.
 9. API extracts citations from file-search annotations/results.
 10. API writes the tutor turn to `tutor_turns`.
-11. Web client renders answer, tasks, examples, citations, and optional image
-   action.
+11. API enqueues background AI jobs for learning-signal extraction and, when
+    configured turn intervals are reached, session summary, student profile
+    refresh, teaching strategy refresh, or rare quality review. Enqueue
+    failures are isolated from the immediate answer path.
+12. Web client renders answer, tasks, examples, citations, and optional image
+    action.
+
+## Background AI Flow
+
+1. `BackgroundAiService` stores queued jobs in `background_ai_jobs`.
+2. The in-process worker drains pending jobs on
+   `AI_BACKGROUND_DRAIN_INTERVAL_MS`.
+3. Background jobs call `AiModelService` with task-specific specialist prompts:
+   `learning-signal-extractor`, `session-summarizer`,
+   `student-profile-background-refresher`,
+   `teaching-strategy-background-planner`, and
+   `tutor-quality-background-reviewer`.
+4. When the OpenAI provider is used, background calls can include
+   `service_tier=flex` through `OPENAI_BACKGROUND_SERVICE_TIER`.
+5. Learning signals, summaries, refresh evidence, and quality reviews are
+   stored in `student_learning_signals`.
+6. Profile refresh jobs merge sanitized patches into `student_profiles`.
+7. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
+   stay visible in `background_ai_jobs`.
+8. Background work must not store non-teaching sensitive details and must not
+   block the current tutor response.
 
 ## Tutor Image Flow
 

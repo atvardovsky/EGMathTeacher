@@ -5,6 +5,9 @@ flowchart LR
   Proxy -->|/auth /student-profile /tutor /admin /webrtc /health| API[NestJS API]
   Web --> Speech[Browser SpeechRecognition API]
   API --> SQLite[(SQLite app.sqlite)]
+  API --> BackgroundJobs[In-process background AI worker]
+  BackgroundJobs --> SQLite
+  BackgroundJobs --> ModelProvider
   API --> TranscriptFiles[Transcript log files]
   API --> ModelProvider[AI model provider facade]
   ModelProvider --> OpenAIResponses[OpenAI Responses API]

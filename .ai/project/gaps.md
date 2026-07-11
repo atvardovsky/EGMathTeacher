@@ -68,7 +68,8 @@ Still requires product/legal decisions before production implementation:
 
 Remaining AI behavior and policy work:
 
-- policy for updating or invalidating stale student profile memory
+- invalidation policy for stale student profile memory beyond the current POC
+  background refresh interval
 - broader adversarial tests for tutor adaptation boundaries
 - review of generated profile wording with a human pedagogy/privacy owner
 
