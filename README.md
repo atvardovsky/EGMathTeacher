@@ -50,6 +50,11 @@ Production domain:
 - SQLite-backed background AI worker for delayed learning-signal extraction,
   session summaries, profile refreshes, strategy refreshes, and rare quality
   review after tutor turns.
+- Optional background batching stores sanitized tutor-turn observations locally
+  and sends grouped analysis windows by count, idle timeout, or quality
+  trigger instead of calling the signal extractor after every turn. Set
+  `AI_BACKGROUND_BATCHING_ENABLED=false` to restore legacy per-turn
+  background extraction.
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.

@@ -45,6 +45,12 @@ visible next actions.
   extraction, session summaries, student profile refreshes, teaching strategy
   refreshes, and rare quality review. These updates are eventually consistent
   and do not block the immediate tutor answer.
+- Optional background batching stores sanitized tutor-turn observations in
+  SQLite and sends grouped learning-window analysis after a configured
+  observation count, idle timeout, or quality trigger. When batching is
+  enabled, profile and strategy refresh use one combined background job where
+  logical. `AI_BACKGROUND_BATCHING_ENABLED=false` restores legacy per-turn
+  signal extraction and split profile/strategy refresh jobs.
 - Background assistant calls use the model-provider facade and can request
   lower-cost OpenAI Flex processing through `service_tier=flex` when using
   the OpenAI provider.
@@ -64,8 +70,9 @@ visible next actions.
   - `StudentProfileModule`: first-login profile creation, profile status, and
     stored tutoring strategy memory.
   - `BackgroundAiModule`: SQLite-backed background AI job queue for post-turn
-    learning signals, summaries, profile refresh, strategy refresh, and
-    quality review.
+    learning observations, grouped learning-window analysis, summaries,
+    profile/strategy refresh, and quality review. Legacy per-turn extraction
+    is still available through configuration.
   - `TutorModule`: RAG tutor response and image generation endpoints.
   - `KnowledgeModule`: admin file upload and vector store status.
   - `WebRtcModule`: inherited voice assistant/WebRTC bridge.
@@ -95,6 +102,10 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   strategy, AI summary, and timestamps.
 - `background_ai_jobs`: queued background assistant jobs, status, attempts,
   payload, result, error, and timestamps.
+- `background_learning_observations`: sanitized tutor-turn observations stored
+  before grouped background analysis.
+- `background_analysis_windows`: durable records of grouped observation-window
+  analyses and their source job.
 - `student_learning_signals`: sanitized teaching-useful learning signals,
   session summaries, profile-refresh evidence, strategy-refresh evidence, and
   quality-review records.

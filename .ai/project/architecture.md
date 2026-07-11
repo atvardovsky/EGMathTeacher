@@ -13,8 +13,9 @@ EGMathTeacher is a browser-based POC with:
 - OpenAI-first model provider facade for tutor answers, specialist profile
   generation, delayed background assistant work, RAG files/vector stores, and
   image generation
-- SQLite-backed background AI worker for post-turn learning signals, session
-  summaries, profile refreshes, strategy refreshes, and rare quality reviews
+- SQLite-backed background AI worker for optional grouped learning observation
+  windows, learning signals, session summaries, profile/strategy refreshes,
+  and rare quality reviews
 - OpenAI Realtime for inherited realtime voice
 - optional production reverse proxy references under `deploy/`
 
@@ -66,7 +67,7 @@ flowchart LR
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade for profile, tutor, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
-| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI job queue for post-turn learning signals, session summaries, profile refreshes, strategy refreshes, and quality review. |
+| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, profile/strategy refreshes, and legacy per-turn background jobs. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
@@ -111,8 +112,12 @@ The current implementation delegates to `OpenAiClientService` when
 until their text/RAG/image/file contracts are implemented.
 
 `apps/api/src/background-ai` owns local background orchestration. It persists
-jobs in SQLite, drains them in-process on an interval, and calls the model
-provider from delayed jobs instead of the immediate tutor request path.
+jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
+an interval, and calls the model provider from delayed jobs instead of the
+immediate tutor request path. Batched mode groups observations by configured
+window size, idle timeout, or quality trigger, then can run a combined
+profile/strategy refresh. Legacy per-turn extraction remains available through
+configuration.
 
 ## Endpoint Map
 

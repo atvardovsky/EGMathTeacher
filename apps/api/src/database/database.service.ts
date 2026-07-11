@@ -137,6 +137,94 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_student_learning_signals_user_created
         ON student_learning_signals(user_id, created_at);
     `);
+
+    this.applyMigration('003_background_observation_windows', `
+      PRAGMA foreign_keys = OFF;
+
+      CREATE TABLE IF NOT EXISTS background_ai_jobs_next (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN (
+          'learning_signal_extraction',
+          'learning_window_analysis',
+          'session_summary',
+          'student_profile_refresh',
+          'profile_strategy_refresh',
+          'teaching_strategy_refresh',
+          'tutor_quality_review'
+        )),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        payload_json TEXT NOT NULL,
+        result_json TEXT,
+        error_message TEXT,
+        scheduled_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      INSERT OR IGNORE INTO background_ai_jobs_next (
+        id, type, status, user_id, conversation_id, attempts, payload_json,
+        result_json, error_message, scheduled_at, started_at, completed_at,
+        created_at, updated_at
+      )
+      SELECT
+        id, type, status, user_id, conversation_id, attempts, payload_json,
+        result_json, error_message, scheduled_at, started_at, completed_at,
+        created_at, updated_at
+      FROM background_ai_jobs;
+
+      DROP TABLE background_ai_jobs;
+      ALTER TABLE background_ai_jobs_next RENAME TO background_ai_jobs;
+
+      PRAGMA foreign_keys = ON;
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_status_scheduled
+        ON background_ai_jobs(status, scheduled_at);
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_user_type
+        ON background_ai_jobs(user_id, type, status);
+
+      CREATE TABLE IF NOT EXISTS background_analysis_windows (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed')),
+        trigger_reason TEXT NOT NULL,
+        observation_count INTEGER NOT NULL,
+        observation_ids_json TEXT NOT NULL,
+        result_json TEXT,
+        source_job_id TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (source_job_id) REFERENCES background_ai_jobs(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_background_analysis_windows_user_created
+        ON background_analysis_windows(user_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS background_learning_observations (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('text', 'voice')),
+        observation_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'queued', 'processed')),
+        window_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (window_id) REFERENCES background_analysis_windows(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_background_learning_observations_pending
+        ON background_learning_observations(user_id, conversation_id, status, created_at);
+    `);
   }
 
   private applyMigration(version: string, sql: string): void {

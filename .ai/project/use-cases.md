@@ -61,11 +61,16 @@ Rules from current implementation:
   and explanation strategy so the answer can adapt to the teenager.
 - After the immediate tutor answer is persisted, the API enqueues background
   assistant work where logical:
-  - learning-signal extraction after each turn
-  - session summary after the configured number of turns in a conversation
-  - student profile and teaching strategy refresh after the configured number
-    of user turns
-  - quality review only for short or suspicious answers
+  - in batched mode, sanitized tutor-turn observations are stored locally and
+    grouped into a learning-window analysis after the configured observation
+    count, idle timeout, or quality trigger
+  - in legacy mode, learning-signal extraction runs after each turn
+  - session summaries are produced by grouped learning-window analysis in
+    batched mode or by separate interval jobs in legacy mode
+  - student profile and teaching strategy refresh together after the configured
+    number of user turns in batched mode, or as split jobs in legacy mode
+  - quality review is included in grouped trigger analysis in batched mode or
+    runs as a rare separate job in legacy mode
 - Background updates are eventually consistent. They must not block the current
   answer, and they must store only teaching-useful signals.
 

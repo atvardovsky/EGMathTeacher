@@ -6,18 +6,26 @@ import { BackgroundAiService } from '../src/background-ai/background-ai.service'
 import { DatabaseService } from '../src/database/database.service';
 import { StudentProfileService } from '../src/student-profile/student-profile.service';
 
-function createConfig(sqlitePath: string): ConfigService {
+function createConfig(sqlitePath: string, overrides: Record<string, unknown> = {}): ConfigService {
   const values: Record<string, unknown> = {
     'app.sqlitePath': sqlitePath,
     'ai.openai.responsesModel': 'gpt-test',
     'ai.background.enabled': true,
+    'ai.background.batchingEnabled': true,
     'ai.background.responsesModel': 'gpt-background',
+    'ai.background.windowResponsesModel': 'gpt-window',
+    'ai.background.refreshResponsesModel': 'gpt-refresh',
     'ai.background.serviceTier': 'flex',
+    'ai.background.promptCacheKeyEnabled': true,
     'ai.background.drainIntervalMs': 60_000,
     'ai.background.drainBatchSize': 10,
     'ai.background.maxAttempts': 1,
+    'ai.background.observationWindowSize': 1,
+    'ai.background.observationMaxWindowSize': 12,
+    'ai.background.observationIdleFlushMs': 900_000,
     'ai.background.profileRefreshTurnInterval': 2,
     'ai.background.sessionSummaryTurnInterval': 2,
+    ...overrides,
   };
   return {
     get: <T>(key: string) => values[key] as T,
@@ -28,6 +36,8 @@ describe('BackgroundAiService', () => {
   let db: DatabaseService;
   let service: BackgroundAiService;
   let aiModel: { createResponse: jest.Mock };
+  let knowledge: { getActiveVectorStoreIds: jest.Mock };
+  let studentProfile: StudentProfileService;
 
   beforeEach(() => {
     const sqlitePath = join(tmpdir(), `egmathteacher-background-${randomUUID()}.sqlite`);
@@ -107,6 +117,7 @@ describe('BackgroundAiService', () => {
     aiModel.createResponse
       .mockResolvedValueOnce({
         output_text: JSON.stringify({
+          summary: 'Ученик разбирает производную через смысл скорости изменения.',
           signals: [
             {
               category: 'knowledge',
@@ -117,14 +128,8 @@ describe('BackgroundAiService', () => {
           ],
           knowledgeDelta: { topicSignals: [{ topic: 'производная', status: 'gap' }] },
           teachingStrategyHints: ['дать пример через скорость'],
-        }),
-      })
-      .mockResolvedValueOnce({
-        output_text: JSON.stringify({
-          summary: 'Ученик разбирает производную через смысл скорости изменения.',
-          topicsWorked: ['производная'],
-          mistakes: [],
-          nextSteps: ['закрепить простыми функциями'],
+          qualityReview: { risk: 'none', issues: [], repairHints: [] },
+          profileUpdateRecommended: true,
         }),
       })
       .mockResolvedValueOnce({
@@ -135,20 +140,15 @@ describe('BackgroundAiService', () => {
             confidenceWithMath: { value: 'needs_support', confidence: 'low' },
             familyDetails: 'do not store',
           },
-          aiSummary: 'Лучше объяснять производную через скорость и короткие примеры.',
-        }),
-      })
-      .mockResolvedValueOnce({
-        output_text: JSON.stringify({
           explanationStrategyPatch: { structure: 'meaning_example_formula' },
-          aiSummary: 'Используй смысл, пример, затем формулу.',
+          aiSummary: 'Лучше объяснять производную через скорость и короткие примеры.',
         }),
       });
 
-    const knowledge = {
+    knowledge = {
       getActiveVectorStoreIds: jest.fn(() => ['vs_background']),
     };
-    const studentProfile = new StudentProfileService(
+    studentProfile = new StudentProfileService(
       db,
       config,
       knowledge as any,
@@ -168,7 +168,7 @@ describe('BackgroundAiService', () => {
     db.onModuleDestroy();
   });
 
-  it('queues logical background jobs from tutor turns and drains them with flex tier', async () => {
+  it('stores tutor observations and drains them as a batched learning window', async () => {
     service.enqueueTutorTurnWork({
       userId: 'student-1',
       userName: 'Маша',
@@ -185,22 +185,45 @@ describe('BackgroundAiService', () => {
       },
     });
 
-    expect(service.getStatus().pending).toBe(4);
+    expect(service.getStatus().pending).toBe(1);
+    expect(
+      db.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_learning_observations WHERE status = 'pending'",
+      )?.count,
+    ).toBe(1);
 
-    await expect(service.drainPending()).resolves.toBe(4);
+    await expect(service.drainPending()).resolves.toBe(2);
 
     expect(service.getStatus()).toEqual({
       pending: 0,
       running: 0,
-      succeeded: 4,
+      succeeded: 2,
       failed: 0,
     });
-    expect(aiModel.createResponse).toHaveBeenCalledTimes(4);
-    expect(aiModel.createResponse).toHaveBeenCalledWith(
+    expect(aiModel.createResponse).toHaveBeenCalledTimes(2);
+    expect(aiModel.createResponse).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        model: 'gpt-background',
+        model: 'gpt-window',
         service_tier: 'flex',
-        metadata: expect.objectContaining({ background_ai: true }),
+        prompt_cache_key: expect.stringMatching(/^egmt:learningwind:[a-f0-9]{32}$/),
+        metadata: expect.objectContaining({
+          background_ai: true,
+          background_specialist: 'learning-window-analyzer',
+        }),
+      }),
+    );
+    expect(aiModel.createResponse).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        model: 'gpt-refresh',
+        service_tier: 'flex',
+        prompt_cache_key: expect.stringMatching(/^egmt:profilestrat:[a-f0-9]{32}$/),
+        metadata: expect.objectContaining({
+          background_ai: true,
+          background_specialist: 'profile-strategy-background-refresher',
+        }),
+        tools: [expect.objectContaining({ type: 'file_search', vector_store_ids: ['vs_background'] })],
       }),
     );
 
@@ -208,12 +231,20 @@ describe('BackgroundAiService', () => {
       'SELECT signal_type, signal_json FROM student_learning_signals ORDER BY created_at ASC',
     );
     expect(signals.map((signal) => signal.signal_type)).toEqual([
-      'turn_signal',
+      'learning_window',
       'session_summary',
-      'profile_refresh',
-      'strategy_refresh',
+      'profile_strategy_refresh',
     ]);
     expect(JSON.stringify(signals)).not.toMatch(/familyDetails|do not store/i);
+    expect(
+      db.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_learning_observations WHERE status = 'processed' AND window_id IS NOT NULL",
+      )?.count,
+    ).toBe(1);
+    expect(
+      db.get<{ count: number }>('SELECT COUNT(*) AS count FROM background_analysis_windows')
+        ?.count,
+    ).toBe(1);
 
     const profile = db.get<{
       knowledge_state_json: string;
@@ -224,7 +255,76 @@ describe('BackgroundAiService', () => {
     ]);
     expect(profile?.knowledge_state_json).toContain('derivative');
     expect(profile?.explanation_strategy_json).toContain('meaning_example_formula');
-    expect(profile?.ai_summary).toContain('смысл');
+    expect(profile?.ai_summary).toContain('скорость');
+  });
+
+  it('keeps the legacy per-turn background job mode when batching is disabled', async () => {
+    aiModel.createResponse.mockReset();
+    aiModel.createResponse
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          signals: [{ category: 'knowledge', value: 'legacy turn signal' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          summary: 'Legacy session summary.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          knowledgeStatePatch: { derivative: { status: 'gap' } },
+          aiSummary: 'Legacy profile summary.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          explanationStrategyPatch: { structure: 'legacy_strategy' },
+          aiSummary: 'Legacy strategy summary.',
+        }),
+      });
+
+    const legacyService = new BackgroundAiService(
+      db,
+      createConfig(':memory:', { 'ai.background.batchingEnabled': false }),
+      knowledge as any,
+      aiModel as any,
+      studentProfile,
+    );
+
+    legacyService.enqueueTutorTurnWork({
+      userId: 'student-1',
+      userName: 'Маша',
+      conversationId: 'conv-1',
+      source: 'text',
+      prompt: 'Я не понимаю производную',
+      answer: {
+        answer:
+          'Производная показывает скорость изменения функции, поэтому сначала смотрим на смысл, затем на формулу и простой пример.',
+        tasksCount: 0,
+        examplesCount: 0,
+        citationsCount: 0,
+        needsImage: false,
+      },
+    });
+
+    expect(legacyService.getStatus().pending).toBe(4);
+    await expect(legacyService.drainPending()).resolves.toBe(4);
+    expect(aiModel.createResponse).toHaveBeenCalledTimes(4);
+
+    const jobTypes = db.all<{ type: string }>(
+      'SELECT type FROM background_ai_jobs ORDER BY created_at ASC',
+    );
+    expect(jobTypes.map((job) => job.type)).toEqual([
+      'learning_signal_extraction',
+      'session_summary',
+      'student_profile_refresh',
+      'teaching_strategy_refresh',
+    ]);
+    expect(
+      db.get<{ count: number }>('SELECT COUNT(*) AS count FROM background_learning_observations')
+        ?.count,
+    ).toBe(0);
   });
 
   it('does not enqueue jobs when background processing is disabled', () => {

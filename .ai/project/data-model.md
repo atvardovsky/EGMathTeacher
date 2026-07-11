@@ -24,10 +24,11 @@ The service enables:
 Source owner: `apps/api/src/database/database.service.ts`.
 
 The current POC records migration `001_initial_schema` after creating the
-initial tables and migration `002_background_ai_jobs` after creating
-background AI job and learning-signal tables with idempotent SQL. This is a
-lightweight migration ledger, not a full production rollback, backfill, or
-backup system.
+initial tables, migration `002_background_ai_jobs` after creating background
+AI job and learning-signal tables, and migration
+`003_background_observation_windows` after adding grouped background
+observation-window storage. This is a lightweight migration ledger, not a full
+production rollback, backfill, or backup system.
 
 ### `users`
 
@@ -93,15 +94,16 @@ These fields remain flexible JSON in the POC. Sensitive non-teaching personal
 details are filtered before storage and before later profile specialist calls.
 
 Background student profile and strategy refresh jobs can merge sanitized JSON
-patches into these fields after tutor turns. These updates are eventually
-consistent and use only teaching-useful signals stored in SQLite.
+patches into these fields after tutor turns. Batched mode combines profile and
+strategy refresh in one background job where logical. These updates are
+eventually consistent and use only teaching-useful signals stored in SQLite.
 
 ### `background_ai_jobs`
 
 | Column | Type | Rule |
 | --- | --- | --- |
 | `id` | `TEXT` | primary key |
-| `type` | `TEXT` | required; one of `learning_signal_extraction`, `session_summary`, `student_profile_refresh`, `teaching_strategy_refresh`, `tutor_quality_review` |
+| `type` | `TEXT` | required; one of `learning_signal_extraction`, `learning_window_analysis`, `session_summary`, `student_profile_refresh`, `profile_strategy_refresh`, `teaching_strategy_refresh`, `tutor_quality_review` |
 | `status` | `TEXT` | required; `pending`, `running`, `succeeded`, or `failed` |
 | `user_id` | `TEXT` | required, references `users(id)` |
 | `conversation_id` | `TEXT` | optional tutor conversation id |
@@ -117,6 +119,56 @@ consistent and use only teaching-useful signals stored in SQLite.
 
 Source owner: `apps/api/src/background-ai` and
 `apps/api/src/database/database.service.ts`.
+
+Legacy mode uses per-turn `learning_signal_extraction` plus separate
+`student_profile_refresh` and `teaching_strategy_refresh` jobs. Batched mode
+uses `learning_window_analysis` and `profile_strategy_refresh` to reduce
+model calls while preserving eventually consistent profile updates.
+
+### `background_learning_observations`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `source` | `TEXT` | required; `text` or `voice` |
+| `observation_json` | `TEXT` | required sanitized tutor-turn observation JSON |
+| `status` | `TEXT` | required; `pending`, `queued`, or `processed` |
+| `window_id` | `TEXT` | optional reference to `background_analysis_windows(id)` |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+This table is the store-first mechanism for batched background processing. It
+stores sanitized teaching observations locally so the API does not call the
+background signal extractor after every tutor turn. Observations are marked
+processed only after a grouped learning-window model response succeeds.
+
+### `background_analysis_windows`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `status` | `TEXT` | required; `succeeded` or `failed` |
+| `trigger_reason` | `TEXT` | required count, idle, or quality trigger label |
+| `observation_count` | `INTEGER` | required number of grouped observations |
+| `observation_ids_json` | `TEXT` | required serialized observation ids |
+| `result_json` | `TEXT` | optional sanitized grouped-analysis result |
+| `source_job_id` | `TEXT` | optional background job id |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `completed_at` | `TEXT` | optional ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+Analysis windows are durable evidence of grouped background learning analysis.
+They are not RAG knowledge and must not preserve sensitive non-teaching
+details.
 
 ### `student_learning_signals`
 
@@ -135,6 +187,8 @@ Source owner: `apps/api/src/background-ai` and
 
 Learning signals are DB memory for the current student only. They are not RAG
 knowledge and must not preserve sensitive non-teaching personal details.
+Batched mode writes grouped `learning_window`, derived `session_summary`, and
+combined `profile_strategy_refresh` evidence here.
 
 ### `tutor_turns`
 

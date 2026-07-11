@@ -1,11 +1,14 @@
 export type BackgroundAiJobType =
   | 'learning_signal_extraction'
+  | 'learning_window_analysis'
   | 'session_summary'
   | 'student_profile_refresh'
+  | 'profile_strategy_refresh'
   | 'teaching_strategy_refresh'
   | 'tutor_quality_review';
 
 export type BackgroundAiJobStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+export type BackgroundLearningObservationStatus = 'pending' | 'queued' | 'processed';
 
 export interface BackgroundAiJobRecord {
   id: string;
@@ -44,4 +47,16 @@ export interface BackgroundAiStatus {
   running: number;
   succeeded: number;
   failed: number;
+}
+
+export interface BackgroundLearningObservationRecord {
+  id: string;
+  user_id: string;
+  conversation_id: string;
+  source: 'text' | 'voice';
+  observation_json: string;
+  status: BackgroundLearningObservationStatus;
+  window_id: string | null;
+  created_at: string;
+  updated_at: string;
 }

@@ -39,10 +39,14 @@ This repository houses a NestJS orchestration service that now handles both sign
   - `OPENAI_API_KEY`, `OPENAI_REALTIME_MODEL` – credentials/aliases used for session token issuance.
   - `OPENAI_INPUT_TRANSCRIPTION_MODEL` – model used to transcribe caller audio.
   - `AI_BACKGROUND_*`, `OPENAI_BACKGROUND_RESPONSES_MODEL`,
-    `OPENAI_BACKGROUND_SERVICE_TIER` – delayed tutor/profile assistant work
-    such as learning-signal extraction, summaries, profile refresh, strategy
-    refresh, and rare quality review. `flex` requests lower-cost OpenAI Flex
-    processing when the OpenAI model provider supports it.
+    `OPENAI_BACKGROUND_WINDOW_RESPONSES_MODEL`,
+    `OPENAI_BACKGROUND_REFRESH_RESPONSES_MODEL`, and
+    `OPENAI_BACKGROUND_SERVICE_TIER` – delayed tutor/profile assistant work.
+    `AI_BACKGROUND_BATCHING_ENABLED=true` stores sanitized tutor observations
+    locally and drains grouped learning windows by count, idle timeout, or
+    quality trigger. Set it to `false` to restore legacy per-turn signal
+    extraction and split profile/strategy jobs. `flex` requests lower-cost
+    OpenAI Flex processing when the OpenAI model provider supports it.
   - `WEBRTC_ICE_SERVERS`, `WEBRTC_MAX_SESSIONS`, `TRANSCRIPT_LOG_DIR` – handshake + operational tuning.
   - `WEBRTC_ENABLE_BARGE_IN`, `WEBRTC_SESSION_IDLE_TIMEOUT_MS`, `WEBRTC_IDLE_SWEEP_INTERVAL_MS` – realtime turn-taking and idle-session behavior.
   - `OPENAI_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`, `OPENAI_CLIENT_SECRET_GRACE_MS` – OpenAI request resiliency tuning.
@@ -100,7 +104,9 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
   OpenAI-first `AiModelService` facade; only the realtime voice provider uses
   `AI_PROVIDER`.
 - Background profile/signal assistant jobs also go through the `AiModelService`
-  facade and are stored in SQLite before being drained by the in-process worker.
+  facade. In batched mode, sanitized tutor observations are stored in SQLite
+  first, then grouped into learning windows before model calls; legacy
+  per-turn extraction remains available through configuration.
 - Audio is forwarded as Opus RTP frames end-to-end. Data channel events are processed in-process and persisted into conversation transcripts/token usage through `WebRtcProviderEventService`.
 - In translator mode, the bridge waits for completed transcription events and requests translation against the transcribed text to reduce free-form assistant replies.
 

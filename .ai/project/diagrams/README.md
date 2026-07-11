@@ -16,12 +16,14 @@ are generated into `rendered/`.
   specialist evaluator pipeline, RAG/shared-knowledge lookup, DB memory
   persistence, and transition to tutor.
 - `tutor-rag-sequence.mmd`: tutor text/voice request, RAG, persistence,
-  background AI enqueue, and optional image flow.
+  optional batched background observation windows, legacy background enqueue,
+  profile/strategy refresh, and optional image flow.
 - `knowledge-upload-sequence.mmd`: admin document upload and vector store flow.
 - `webrtc-realtime-sequence.mmd`: WebRTC session, token, SDP, media bridge,
   provider events, and transcript close flow.
-- `data-model.mmd`: local SQLite tables, background AI jobs/signals,
-  in-memory runtime state, file artifacts, and remote OpenAI objects.
+- `data-model.mmd`: local SQLite tables, background AI jobs, observation
+  windows, learning signals, in-memory runtime state, file artifacts, and
+  remote OpenAI objects.
 - `assistant-governance.mmd`: Alatyr framework/project/assistant contours,
   gates, operations, and evidence flow.
 - `ui-tree.mmd`: web UI state tree from auth through first meeting, tutor,

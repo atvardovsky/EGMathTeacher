@@ -29,15 +29,28 @@ sequenceDiagram
   AIModel-->>Tutor: Provider response
   Tutor->>DB: Insert tutor_turn
   Tutor->>Background: enqueueTutorTurnWork()
-  Background->>DB: Insert background_ai_jobs
+  alt Background batching enabled
+    Background->>DB: Insert background_learning_observations
+    Background->>DB: Schedule or reschedule learning_window_analysis job
+  else Legacy background mode
+    Background->>DB: Insert per-turn background_ai_jobs
+  end
   Tutor-->>API: TutorAnswer
   API-->>Web: Answer, tasks, examples, citations, image prompt
-  Note over Background,AIModel: Later in-process drain extracts signals, summarizes sessions, refreshes profile/strategy, or reviews quality
-  Background->>AIModel: Background specialist response with optional flex tier
+  Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, or quality trigger
+  Background->>DB: Read pending observations and job queue
+  Background->>AIModel: Window analysis with optional flex tier and prompt cache key
   AIModel->>OpenAI: Responses API request
-  OpenAI-->>AIModel: Background JSON
+  OpenAI-->>AIModel: Learning-window JSON
   AIModel-->>Background: Parsed model response
-  Background->>DB: Store student_learning_signals or update student_profiles
+  Background->>DB: Store analysis window and student_learning_signals
+  opt Profile refresh interval reached
+    Background->>AIModel: Combined profile/strategy refresh
+    AIModel->>OpenAI: Responses API request
+    OpenAI-->>AIModel: Profile and strategy patch JSON
+    AIModel-->>Background: Parsed model response
+    Background->>DB: Update student_profiles
+  end
   opt Image needed
     Student->>Web: Request diagram
     Web->>API: POST /tutor/image

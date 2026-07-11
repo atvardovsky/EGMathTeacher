@@ -63,6 +63,32 @@ erDiagram
     TEXT updated_at
   }
 
+  BACKGROUND_LEARNING_OBSERVATIONS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT source
+    TEXT observation_json
+    TEXT status
+    TEXT window_id FK
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  BACKGROUND_ANALYSIS_WINDOWS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT status
+    TEXT trigger_reason
+    INTEGER observation_count
+    TEXT observation_ids_json
+    TEXT result_json
+    TEXT source_job_id FK
+    TEXT created_at
+    TEXT completed_at
+  }
+
   STUDENT_LEARNING_SIGNALS {
     TEXT id PK
     TEXT user_id FK
@@ -76,5 +102,9 @@ erDiagram
   USERS ||--o| STUDENT_PROFILES : has
   USERS ||--o{ TUTOR_TURNS : owns
   USERS ||--o{ BACKGROUND_AI_JOBS : queues
+  USERS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : has
+  USERS ||--o{ BACKGROUND_ANALYSIS_WINDOWS : has
   USERS ||--o{ STUDENT_LEARNING_SIGNALS : has
+  BACKGROUND_ANALYSIS_WINDOWS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : groups
+  BACKGROUND_AI_JOBS ||--o{ BACKGROUND_ANALYSIS_WINDOWS : runs
   BACKGROUND_AI_JOBS ||--o{ STUDENT_LEARNING_SIGNALS : produces

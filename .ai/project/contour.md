@@ -14,11 +14,12 @@ The project contour owns:
 - Runtime architecture: NestJS API under `apps/api`, React/Vite web app under
   `apps/web`, shared root npm workspace, SQLite local storage, OpenAI-first
   model provider facade for RAG/profile/tutor/image/background assistant
-  flows, SQLite-backed background AI worker, and inherited WebRTC/Realtime
-  voice bridge.
+  flows, SQLite-backed background AI worker with optional grouped observation
+  windows, and inherited WebRTC/Realtime voice bridge.
 - Data ownership: local SQLite tables for users, student profiles, knowledge
-  file metadata, tutor turns, background AI jobs, and learning signals; OpenAI
-  owns uploaded files, vector stores, model responses, profile-generation
+  file metadata, tutor turns, background AI jobs, background learning
+  observations, background analysis windows, and learning signals; OpenAI owns
+  uploaded files, vector stores, model responses, profile-generation
   responses, background model responses, and generated images.
 - UI facts: the web client uses Mantine, lucide icons, browser speech
   recognition, Russian/English static UI localization, and a teen-friendly

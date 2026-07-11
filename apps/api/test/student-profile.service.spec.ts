@@ -190,5 +190,10 @@ describe('StudentProfileService', () => {
         '002_background_ai_jobs',
       ]),
     ).toEqual({ version: '002_background_ai_jobs' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '003_background_observation_windows',
+      ]),
+    ).toEqual({ version: '003_background_observation_windows' });
   });
 });

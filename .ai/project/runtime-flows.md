@@ -89,10 +89,12 @@ This file records runtime flows from current source evidence.
 8. API parses model output as structured tutor JSON when possible.
 9. API extracts citations from file-search annotations/results.
 10. API writes the tutor turn to `tutor_turns`.
-11. API enqueues background AI jobs for learning-signal extraction and, when
-    configured turn intervals are reached, session summary, student profile
-    refresh, teaching strategy refresh, or rare quality review. Enqueue
-    failures are isolated from the immediate answer path.
+11. API enqueues background AI work. In batched mode, it stores a sanitized
+    tutor-turn observation and schedules or reschedules a grouped
+    `learning_window_analysis` job. In legacy mode, it enqueues per-turn
+    learning-signal extraction and separate interval jobs for session summary,
+    student profile refresh, teaching strategy refresh, or rare quality review.
+    Enqueue failures are isolated from the immediate answer path.
 12. Web client renders answer, tasks, examples, citations, and optional image
     action.
 
@@ -101,19 +103,31 @@ This file records runtime flows from current source evidence.
 1. `BackgroundAiService` stores queued jobs in `background_ai_jobs`.
 2. The in-process worker drains pending jobs on
    `AI_BACKGROUND_DRAIN_INTERVAL_MS`.
-3. Background jobs call `AiModelService` with task-specific specialist prompts:
-   `learning-signal-extractor`, `session-summarizer`,
-   `student-profile-background-refresher`,
+3. When `AI_BACKGROUND_BATCHING_ENABLED=true`, each tutor turn stores a
+   sanitized row in `background_learning_observations`. A grouped
+   `learning_window_analysis` job is scheduled after
+   `AI_BACKGROUND_OBSERVATION_IDLE_FLUSH_MS`, pulled forward when
+   `AI_BACKGROUND_OBSERVATION_WINDOW_SIZE` pending observations are reached,
+   or run immediately for a quality trigger.
+4. The grouped learning-window job sends pending observations together,
+   stores `background_analysis_windows`, writes `student_learning_signals`,
+   and can enqueue one `profile_strategy_refresh` job when the configured
+   profile refresh turn interval is reached.
+5. When batching is disabled, legacy background jobs call `AiModelService`
+   with task-specific specialist prompts: `learning-signal-extractor`,
+   `session-summarizer`, `student-profile-background-refresher`,
    `teaching-strategy-background-planner`, and
    `tutor-quality-background-reviewer`.
-4. When the OpenAI provider is used, background calls can include
+6. When the OpenAI provider is used, background calls can include
    `service_tier=flex` through `OPENAI_BACKGROUND_SERVICE_TIER`.
-5. Learning signals, summaries, refresh evidence, and quality reviews are
+7. Batched background calls can include a hashed `prompt_cache_key` when
+   `AI_BACKGROUND_PROMPT_CACHE_KEY_ENABLED=true`.
+8. Learning signals, summaries, refresh evidence, and quality reviews are
    stored in `student_learning_signals`.
-6. Profile refresh jobs merge sanitized patches into `student_profiles`.
-7. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
+9. Profile refresh jobs merge sanitized patches into `student_profiles`.
+10. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
    stay visible in `background_ai_jobs`.
-8. Background work must not store non-teaching sensitive details and must not
+11. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow

@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
@@ -10,6 +10,7 @@ import {
   BackgroundAiJobStatus,
   BackgroundAiJobType,
   BackgroundAiStatus,
+  BackgroundLearningObservationRecord,
   TutorTurnBackgroundInput,
 } from './background-ai.types';
 
@@ -87,6 +88,19 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       capturedAt: now,
     };
 
+    if (this.isBatchingEnabled()) {
+      this.enqueueBatchedTutorTurnWork(input, basePayload, now);
+      return;
+    }
+
+    this.enqueueLegacyTutorTurnWork(input, basePayload, now);
+  }
+
+  private enqueueLegacyTutorTurnWork(
+    input: TutorTurnBackgroundInput,
+    basePayload: Record<string, unknown>,
+    now: string,
+  ): void {
     this.enqueueJob({
       type: 'learning_signal_extraction',
       userId: input.userId,
@@ -142,6 +156,38 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private enqueueBatchedTutorTurnWork(
+    input: TutorTurnBackgroundInput,
+    basePayload: Record<string, unknown>,
+    now: string,
+  ): void {
+    this.persistLearningObservation(input, basePayload, now);
+
+    const pendingCount = this.countPendingLearningObservations(
+      input.userId,
+      input.conversationId,
+    );
+    const qualityTrigger = this.shouldReviewQuality(input);
+    const dueNow = qualityTrigger || pendingCount >= this.getObservationWindowSize();
+    const triggerReason = qualityTrigger
+      ? 'quality_review_trigger'
+      : dueNow
+        ? `window_${pendingCount}_observations`
+        : 'idle_flush';
+    const scheduledAt = dueNow
+      ? now
+      : new Date(Date.now() + this.getObservationIdleFlushMs()).toISOString();
+
+    this.enqueueLearningWindowJob({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      scheduledAt,
+      triggerReason,
+      observationCount: pendingCount,
+      dueNow,
+    });
+  }
+
   async drainPending(limit = this.getDrainBatchSize()): Promise<number> {
     if (!this.isEnabled() || this.draining) {
       return 0;
@@ -180,10 +226,14 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     switch (job.type) {
       case 'learning_signal_extraction':
         return this.extractLearningSignals(job);
+      case 'learning_window_analysis':
+        return this.analyzeLearningWindow(job);
       case 'session_summary':
         return this.createSessionSummary(job);
       case 'student_profile_refresh':
         return this.refreshStudentProfile(job);
+      case 'profile_strategy_refresh':
+        return this.refreshProfileAndStrategy(job);
       case 'teaching_strategy_refresh':
         return this.refreshTeachingStrategy(job);
       case 'tutor_quality_review':
@@ -205,6 +255,73 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       useRag: false,
     });
     this.persistLearningSignal(job, 'turn_signal', parsed);
+    return parsed;
+  }
+
+  private async analyzeLearningWindow(
+    job: BackgroundAiJobRecord,
+  ): Promise<Record<string, unknown>> {
+    const payload = this.parsePayload(job);
+    const observations = this.getPendingLearningObservations(
+      job.user_id,
+      job.conversation_id,
+      this.getObservationMaxWindowSize(),
+    );
+    if (observations.length === 0) {
+      return { skipped: 'no_pending_observations' };
+    }
+
+    const parsed = await this.createBackgroundJsonResponse({
+      specialist: 'learning-window-analyzer',
+      instructions: this.getLearningWindowInstructions(),
+      inputText: [
+        'Окно последних учебных наблюдений ученика:',
+        JSON.stringify(
+          {
+            triggerReason: this.pickString(payload, ['triggerReason']) ?? 'unknown',
+            observations,
+          },
+          null,
+          2,
+        ),
+      ].join('\n'),
+      useRag: false,
+      model: this.getWindowModel(),
+      promptCacheKey: this.buildPromptCacheKey(
+        job.user_id,
+        job.conversation_id,
+        'learning-window',
+      ),
+    });
+
+    this.persistLearningSignal(job, 'learning_window', parsed);
+    const summary = this.pickString(parsed, ['summary', 'sessionSummary', 'session_summary']);
+    if (summary) {
+      this.persistLearningSignal(job, 'session_summary', {
+        summary,
+        source: 'learning_window_analysis',
+      });
+    }
+    const windowId = this.persistAnalysisWindow(job, payload, observations, parsed);
+    this.markObservationsProcessed(
+      observations.map((observation) => observation.id),
+      windowId,
+    );
+
+    if (this.shouldRefreshProfileStrategy(job.user_id)) {
+      this.enqueueJob({
+        type: 'profile_strategy_refresh',
+        userId: job.user_id,
+        conversationId: job.conversation_id ?? undefined,
+        payload: {
+          reason: this.pickString(payload, ['triggerReason']) ?? 'learning_window_analysis',
+          sourceJobId: job.id,
+          capturedAt: new Date().toISOString(),
+        },
+        dedupePending: true,
+      });
+    }
+
     return parsed;
   }
 
@@ -366,6 +483,105 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
+  private async refreshProfileAndStrategy(
+    job: BackgroundAiJobRecord,
+  ): Promise<Record<string, unknown>> {
+    const profile = this.studentProfileService.getProfile(job.user_id);
+    if (!profile) {
+      return { skipped: 'no_student_profile' };
+    }
+
+    const signals = this.getRecentLearningSignals(job.user_id, 30);
+    if (signals.length === 0) {
+      return { skipped: 'no_learning_signals' };
+    }
+
+    const parsed = await this.createBackgroundJsonResponse({
+      specialist: 'profile-strategy-background-refresher',
+      instructions: this.getProfileStrategyRefreshInstructions(this.hasVectorStores()),
+      inputText: [
+        'Текущий профиль и стратегия ученика:',
+        JSON.stringify({
+          knowledgeState: profile.knowledgeState,
+          learningPreferences: profile.learningPreferences,
+          psychologicalProfile: profile.psychologicalProfile,
+          explanationStrategy: profile.explanationStrategy,
+          aiSummary: profile.aiSummary,
+        }, null, 2),
+        'Новые агрегированные учебные сигналы:',
+        JSON.stringify(signals, null, 2),
+      ].join('\n'),
+      useRag: true,
+      model: this.getRefreshModel(),
+      promptCacheKey: this.buildPromptCacheKey(
+        job.user_id,
+        job.conversation_id,
+        'profile-strategy',
+      ),
+    });
+
+    const knowledgeStatePatch = this.pickObject(parsed, [
+      'knowledgeStatePatch',
+      'knowledge_state_patch',
+    ]);
+    const learningPreferencesPatch = this.pickObject(parsed, [
+      'learningPreferencesPatch',
+      'learning_preferences_patch',
+    ]);
+    const psychologicalProfilePatch = this.pickObject(parsed, [
+      'psychologicalProfilePatch',
+      'psychological_profile_patch',
+    ]);
+    const explanationStrategyPatch = this.pickObject(parsed, [
+      'explanationStrategyPatch',
+      'explanation_strategy_patch',
+    ]);
+    const aiSummary = this.pickString(parsed, ['aiSummary', 'ai_summary', 'summary']);
+    const now = new Date().toISOString();
+
+    const nextKnowledgeState = this.deepMerge(profile.knowledgeState, knowledgeStatePatch);
+    const nextLearningPreferences = this.deepMerge(
+      profile.learningPreferences,
+      learningPreferencesPatch,
+    );
+    const nextPsychologicalProfile = this.deepMerge(
+      profile.psychologicalProfile,
+      psychologicalProfilePatch,
+    );
+    const nextStrategy = this.deepMerge(profile.explanationStrategy, explanationStrategyPatch);
+
+    this.db.run(
+      `UPDATE student_profiles
+       SET knowledge_state_json = ?,
+           learning_preferences_json = ?,
+           psychological_profile_json = ?,
+           explanation_strategy_json = ?,
+           ai_summary = ?,
+           updated_at = ?
+       WHERE user_id = ?`,
+      [
+        JSON.stringify(this.sanitizeTeachingObject(nextKnowledgeState)),
+        JSON.stringify(this.sanitizeTeachingObject(nextLearningPreferences)),
+        JSON.stringify(this.sanitizeTeachingObject(nextPsychologicalProfile)),
+        JSON.stringify(this.sanitizeTeachingObject(nextStrategy)),
+        this.sanitizeTeachingString(aiSummary, 1_500) ?? profile.aiSummary,
+        now,
+        job.user_id,
+      ],
+    );
+
+    const result = {
+      updated: true,
+      knowledgeStatePatch,
+      learningPreferencesPatch,
+      psychologicalProfilePatch,
+      explanationStrategyPatch,
+      aiSummaryUpdated: Boolean(aiSummary),
+    };
+    this.persistLearningSignal(job, 'profile_strategy_refresh', result);
+    return result;
+  }
+
   private async reviewTutorQuality(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
     const payload = this.parsePayload(job);
     const parsed = await this.createBackgroundJsonResponse({
@@ -386,11 +602,13 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     instructions: string;
     inputText: string;
     useRag: boolean;
+    model?: string;
+    promptCacheKey?: string;
   }): Promise<Record<string, unknown>> {
     const vectorStoreIds = options.useRag ? this.knowledgeService.getActiveVectorStoreIds() : [];
     const useFileSearch = options.useRag && vectorStoreIds.length > 0;
     const request: Record<string, unknown> = {
-      model: this.getBackgroundModel(),
+      model: options.model ?? this.getBackgroundModel(),
       instructions: options.instructions,
       metadata: {
         background_ai: true,
@@ -423,6 +641,9 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     if (serviceTier) {
       request.service_tier = serviceTier;
     }
+    if (this.isPromptCacheKeyEnabled() && options.promptCacheKey) {
+      request.prompt_cache_key = options.promptCacheKey;
+    }
 
     const response = await this.aiModel.createResponse(request);
     const text = this.extractOutputText(response);
@@ -439,6 +660,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     conversationId?: string;
     payload: Record<string, unknown>;
     dedupePending?: boolean;
+    scheduledAt?: string;
   }): void {
     if (options.dedupePending) {
       const existing = this.db.get<{ id: string }>(
@@ -457,6 +679,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const now = new Date().toISOString();
+    const scheduledAt = options.scheduledAt ?? now;
     this.db.run(
       `INSERT INTO background_ai_jobs (
          id, type, status, user_id, conversation_id, attempts, payload_json,
@@ -469,11 +692,69 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
         options.userId,
         options.conversationId ?? null,
         JSON.stringify(this.sanitizeTeachingObject(options.payload)),
-        now,
+        scheduledAt,
         now,
         now,
       ],
     );
+  }
+
+  private enqueueLearningWindowJob(options: {
+    userId: string;
+    conversationId: string;
+    scheduledAt: string;
+    triggerReason: string;
+    observationCount: number;
+    dueNow: boolean;
+  }): void {
+    const existing = this.db.get<{ id: string; status: BackgroundAiJobStatus; scheduled_at: string }>(
+      `SELECT id, status, scheduled_at
+       FROM background_ai_jobs
+       WHERE type = 'learning_window_analysis'
+         AND user_id = ?
+         AND conversation_id = ?
+         AND status IN ('pending', 'running')
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [options.userId, options.conversationId],
+    );
+
+    const payload = {
+      triggerReason: options.triggerReason,
+      observationCount: options.observationCount,
+      capturedAt: new Date().toISOString(),
+    };
+
+    if (existing) {
+      const shouldReschedule =
+        existing.status === 'pending' &&
+        ((options.dueNow && existing.scheduled_at > options.scheduledAt) ||
+          (!options.dueNow && existing.scheduled_at < options.scheduledAt));
+      if (shouldReschedule) {
+        this.db.run(
+          `UPDATE background_ai_jobs
+           SET scheduled_at = ?,
+               payload_json = ?,
+               updated_at = ?
+           WHERE id = ?`,
+          [
+            options.scheduledAt,
+            JSON.stringify(this.sanitizeTeachingObject(payload)),
+            new Date().toISOString(),
+            existing.id,
+          ],
+        );
+      }
+      return;
+    }
+
+    this.enqueueJob({
+      type: 'learning_window_analysis',
+      userId: options.userId,
+      conversationId: options.conversationId,
+      payload,
+      scheduledAt: options.scheduledAt,
+    });
   }
 
   private nextPendingJob(): BackgroundAiJobRecord | undefined {
@@ -543,6 +824,111 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
            updated_at = ?
        WHERE id = ?`,
       [message.slice(0, 1_000), now, now, job.id],
+    );
+  }
+
+  private persistLearningObservation(
+    input: TutorTurnBackgroundInput,
+    payload: Record<string, unknown>,
+    now: string,
+  ): void {
+    this.db.run(
+      `INSERT INTO background_learning_observations (
+         id, user_id, conversation_id, source, observation_json, status,
+         window_id, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
+      [
+        randomUUID(),
+        input.userId,
+        input.conversationId,
+        input.source,
+        JSON.stringify(this.sanitizeTeachingObject(payload)),
+        now,
+        now,
+      ],
+    );
+  }
+
+  private countPendingLearningObservations(userId: string, conversationId: string): number {
+    const row = this.db.get<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM background_learning_observations
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND status = 'pending'`,
+      [userId, conversationId],
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  private getPendingLearningObservations(
+    userId: string,
+    conversationId: string | null,
+    limit: number,
+  ): Array<Record<string, unknown> & { id: string }> {
+    const rows = this.db.all<BackgroundLearningObservationRecord>(
+      `SELECT id, user_id, conversation_id, source, observation_json, status,
+              window_id, created_at, updated_at
+       FROM background_learning_observations
+       WHERE user_id = ?
+         AND conversation_id = COALESCE(?, conversation_id)
+         AND status = 'pending'
+       ORDER BY created_at ASC
+       LIMIT ?`,
+      [userId, conversationId, limit],
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      source: row.source,
+      observation: this.parseJsonObject(row.observation_json) ?? {},
+    }));
+  }
+
+  private persistAnalysisWindow(
+    job: BackgroundAiJobRecord,
+    payload: Record<string, unknown>,
+    observations: Array<Record<string, unknown> & { id: string }>,
+    result: Record<string, unknown>,
+  ): string {
+    const now = new Date().toISOString();
+    const windowId = randomUUID();
+    this.db.run(
+      `INSERT INTO background_analysis_windows (
+         id, user_id, conversation_id, status, trigger_reason, observation_count,
+         observation_ids_json, result_json, source_job_id, created_at, completed_at
+       )
+       VALUES (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        windowId,
+        job.user_id,
+        job.conversation_id,
+        this.pickString(payload, ['triggerReason']) ?? 'unknown',
+        observations.length,
+        JSON.stringify(observations.map((observation) => observation.id)),
+        JSON.stringify(this.sanitizeTeachingObject(result)),
+        job.id,
+        now,
+        now,
+      ],
+    );
+    return windowId;
+  }
+
+  private markObservationsProcessed(observationIds: string[], windowId: string): void {
+    if (observationIds.length === 0) {
+      return;
+    }
+    const placeholders = observationIds.map(() => '?').join(', ');
+    this.db.run(
+      `UPDATE background_learning_observations
+       SET status = 'processed',
+           window_id = ?,
+           updated_at = ?
+       WHERE id IN (${placeholders})`,
+      [windowId, new Date().toISOString(), ...observationIds],
     );
   }
 
@@ -621,6 +1007,11 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       [userId],
     );
     return Number(row?.count ?? 0);
+  }
+
+  private shouldRefreshProfileStrategy(userId: string): boolean {
+    const userTurnCount = this.countUserTurns(userId);
+    return userTurnCount > 0 && userTurnCount % this.getProfileRefreshTurnInterval() === 0;
   }
 
   private countConversationTurns(userId: string, conversationId: string): number {
@@ -819,6 +1210,19 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     ].join(' ');
   }
 
+  private getLearningWindowInstructions(): string {
+    return [
+      'Ты фоновый анализатор окна учебных наблюдений для AI-репетитора ЕГЭ.',
+      'Анализируй несколько ходов вместе, чтобы не вызывать модель после каждого сообщения.',
+      'Выделяй только сведения, которые помогают выбирать объяснения, темп, примеры, подсказки, визуализацию, диагностику и практику.',
+      'Сделай компактную сводку сессии, но не сохраняй сырые персональные детали.',
+      'Не сохраняй диагнозы, семейные подробности, адреса, контакты, религию, политику, здоровье, травмы или другие неучебные чувствительные сведения.',
+      'Если такие сведения встретились, пропусти их или замени на нейтральный учебный сигнал.',
+      'Верни только валидный JSON без Markdown.',
+      'Формат JSON: {"summary":"...","signals":[{"category":"knowledge|preference|confidence|misconception|pace|visual|motivation|quality","value":"...","confidence":"low|medium|high","evidence":["..."]}],"knowledgeDelta":{},"learningPreferenceDelta":{},"teachingStrategyHints":[],"qualityReview":{"risk":"none|low|needs_review","issues":[],"repairHints":[],"studentVisibleCorrectionNeeded":false},"profileUpdateRecommended":true}.',
+    ].join(' ');
+  }
+
   private getSessionSummaryInstructions(): string {
     return [
       'Ты фоновый суммаризатор учебной сессии AI-репетитора ЕГЭ.',
@@ -855,6 +1259,20 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     ].join(' ');
   }
 
+  private getProfileStrategyRefreshInstructions(hasRag: boolean): string {
+    return [
+      'Ты фоновый обновитель учебного профиля и стратегии объяснения для AI-репетитора ЕГЭ.',
+      'Используй агрегированные учебные сигналы, а не сырые диалоги, чтобы обновить только знания, учебные предпочтения, нейтральные психолого-педагогические гипотезы и практическую стратегию объяснения.',
+      'Стратегия должна помогать выбирать темп, структуру ответа, подсказки, примеры, визуальную поддержку и практику.',
+      'Не ставь диагнозы, не сохраняй чувствительные личные сведения и не делай выводы вне учебного контекста.',
+      hasRag
+        ? 'Используй file_search только для общих педагогических стратегий, рубрик ЕГЭ и безопасных методик объяснения.'
+        : 'Если RAG материалов нет, используй только текущий профиль, новые учебные сигналы и безопасные педагогические принципы.',
+      'Верни только валидный JSON без Markdown.',
+      'Формат JSON: {"knowledgeStatePatch":{},"learningPreferencesPatch":{},"psychologicalProfilePatch":{},"explanationStrategyPatch":{},"aiSummary":"короткое русское резюме для будущего prompt"}.',
+    ].join(' ');
+  }
+
   private getQualityReviewInstructions(): string {
     return [
       'Ты фоновый ревьюер качества ответа AI-репетитора по математике ЕГЭ.',
@@ -869,12 +1287,28 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.configService.get<boolean>('ai.background.enabled') ?? true;
   }
 
+  private isBatchingEnabled(): boolean {
+    return this.configService.get<boolean>('ai.background.batchingEnabled') ?? true;
+  }
+
+  private isPromptCacheKeyEnabled(): boolean {
+    return this.configService.get<boolean>('ai.background.promptCacheKeyEnabled') ?? true;
+  }
+
   private getBackgroundModel(): string {
     return (
       this.configService.get<string>('ai.background.responsesModel') ||
       this.configService.get<string>('ai.openai.responsesModel') ||
       'gpt-5.5'
     );
+  }
+
+  private getWindowModel(): string {
+    return this.configService.get<string>('ai.background.windowResponsesModel') || this.getBackgroundModel();
+  }
+
+  private getRefreshModel(): string {
+    return this.configService.get<string>('ai.background.refreshResponsesModel') || this.getBackgroundModel();
   }
 
   private getServiceTier(): string | undefined {
@@ -897,6 +1331,27 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.positiveNumber(this.configService.get<number>('ai.background.maxAttempts'), 2);
   }
 
+  private getObservationWindowSize(): number {
+    return this.positiveNumber(
+      this.configService.get<number>('ai.background.observationWindowSize'),
+      10,
+    );
+  }
+
+  private getObservationMaxWindowSize(): number {
+    return this.positiveNumber(
+      this.configService.get<number>('ai.background.observationMaxWindowSize'),
+      12,
+    );
+  }
+
+  private getObservationIdleFlushMs(): number {
+    return this.positiveNumber(
+      this.configService.get<number>('ai.background.observationIdleFlushMs'),
+      900_000,
+    );
+  }
+
   private getProfileRefreshTurnInterval(): number {
     return this.positiveNumber(
       this.configService.get<number>('ai.background.profileRefreshTurnInterval'),
@@ -909,6 +1364,22 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       this.configService.get<number>('ai.background.sessionSummaryTurnInterval'),
       5,
     );
+  }
+
+  private buildPromptCacheKey(
+    userId: string,
+    conversationId: string | null,
+    scope: string,
+  ): string | undefined {
+    if (!this.isPromptCacheKeyEnabled()) {
+      return undefined;
+    }
+    const digest = createHash('sha256')
+      .update(`${scope}:${userId}:${conversationId ?? 'all'}`)
+      .digest('hex')
+      .slice(0, 32);
+    const compactScope = scope.replace(/[^a-z0-9]/gi, '').slice(0, 12).toLowerCase();
+    return `egmt:${compactScope}:${digest}`;
   }
 
   private positiveNumber(value: unknown, fallback: number): number {
