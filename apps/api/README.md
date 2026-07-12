@@ -58,6 +58,11 @@ This repository houses a NestJS orchestration service that now handles both sign
     `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` controls stale running-job and
     queued-observation recovery. `flex` requests lower-cost OpenAI Flex
     processing when the OpenAI model provider supports it.
+  - `LESSON_*_LIMIT_MINUTES` and `LESSON_*_TURN_SECONDS` – configurable POC
+    lesson lifecycle heuristics for daily/continuous learning limits and
+    active-time estimation.
+  - `AI_USAGE_*` – local usage-ledger settings. Prices are configured locally
+    for user-visible estimates and are not provider billing proof.
   - `WEBRTC_ICE_SERVERS`, `WEBRTC_MAX_SESSIONS`, `TRANSCRIPT_LOG_DIR` – handshake + operational tuning.
   - `WEBRTC_ENABLE_BARGE_IN`, `WEBRTC_SESSION_IDLE_TIMEOUT_MS`, `WEBRTC_IDLE_SWEEP_INTERVAL_MS` – realtime turn-taking and idle-session behavior.
   - `OPENAI_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`, `OPENAI_CLIENT_SECRET_GRACE_MS` – OpenAI request resiliency tuning.
@@ -106,6 +111,15 @@ For full API details and translator behavior, see `docs/webrtc-module.md` (`Sess
 ## API Surface
 
 The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the full endpoint list and bootstrap flow.
+
+Tutor/product API surfaces also include:
+
+- `POST /tutor/message` for lesson-aware tutor answers with lifecycle and
+  usage snapshots.
+- `POST /tutor/image` for explicit explanatory image generation with optional
+  lesson usage attribution.
+- `GET /usage/me/summary` for the signed-in user's own usage estimates and
+  per-operation details.
 
 ## Notes on OpenAI Realtime
 

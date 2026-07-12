@@ -49,3 +49,14 @@ export interface AiModelProvider {
   ): Promise<Record<string, unknown>>;
   listVectorStoreFiles(vectorStoreId: string): Promise<Record<string, unknown>>;
 }
+
+export interface AiUsageContext {
+  userId?: string;
+  conversationId?: string;
+  lessonSessionId?: string;
+  lessonType?: string;
+}
+
+export interface AiOperationPayload extends Record<string, unknown> {
+  usageContext?: AiUsageContext;
+}

@@ -98,6 +98,8 @@ Remaining frontend validation gaps:
 Requires deployment decisions and system-level approval:
 
 - production migration rollback/backfill policy beyond the POC ledger
+- provider billing reconciliation and current price-management workflow for
+  AI usage estimates
 - domain-valid TLS/reverse-proxy setup
 - process manager/service ownership for the API and web assets
 - backup/restore policy for SQLite

@@ -22,6 +22,7 @@ Used by:
 
 - `TutorController`
 - `StudentProfileController`
+- `UsageController`
 
 Protected endpoints:
 
@@ -29,6 +30,7 @@ Protected endpoints:
 - `PUT /student-profile/me`
 - `POST /tutor/message`
 - `POST /tutor/image`
+- `GET /usage/me/summary`
 
 ### `AdminGuard`
 

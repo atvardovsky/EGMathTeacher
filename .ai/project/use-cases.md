@@ -50,8 +50,39 @@ Rules from current implementation:
 
 - Tutor requests are sent to `POST /tutor/message`.
 - The API records source as `text` or `voice`.
-- Tutor responses are expected to include explanation text, tasks, examples,
-  image need flag, image prompt, and citations when file search provides them.
+- The request may include `lessonType`; older clients can omit it and the API
+  infers a conservative type from the prompt.
+- Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
+  `diagnostic`, `exam_strategy`, `mistake_review`, `visual_explanation`, and
+  `reflection`.
+- The current tutor UI exposes the main POC modes: tutor, practice,
+  diagnostic, and mistake review.
+- Lesson type controls the goal of the response, expected block mix, and which
+  background learning signals should be emphasized.
+- Each tutor turn belongs to a lesson session with a lesson goal, success
+  criteria, current goal status, active-learning seconds, and daily/continuous
+  learning-limit state.
+- Learning-time limits are configurable POC teaching heuristics. They should
+  be presented as a practical rest/attention aid, not as medical fatigue
+  assessment.
+- Soft daily or continuous limits tell the tutor to finish the current step
+  and avoid starting a long new topic.
+- Hard daily or continuous limits return a local stop response without calling
+  the model for a new explanation.
+- The tutor can report `goalStatus=reached`; when that happens the lesson
+  session is completed and the answer should summarize and avoid opening a new
+  major topic.
+- Recent progress/regression signals inform the explanation strategy. Progress
+  can increase independence; regression should reduce step size, change the
+  example, add visual support, or check prerequisite understanding.
+- Tutor responses are expected to include an ordered `blocks` array for text,
+  task, example, and image blocks, plus legacy `answer`, `tasks`, `examples`,
+  `needsImage`, and `imagePrompt` fields for compatibility.
+- Tutor responses include `lessonLifecycle` state and a compact usage snapshot
+  for the current lesson/day.
+- Image blocks are visual plans, not generated image bytes. They include
+  prompt, caption, alt text, status, and priority so the UI can keep image
+  support inside the same tutor turn.
 - The tutor prompt instructs the model to answer in Russian, explain step by
   step, check understanding, and avoid returning only the final answer.
 - If RAG vector stores exist, the OpenAI-backed model provider uses file
@@ -71,8 +102,22 @@ Rules from current implementation:
     number of user turns in batched mode, or as split jobs in legacy mode
   - quality review is included in grouped trigger analysis in batched mode or
     runs as a rare separate job in legacy mode
+- Background analysis stores layered teaching evidence:
+  - L0 raw turn data stays limited to `tutor_turns`
+  - L1 sanitized turn observations stay in `background_learning_observations`
+  - L2 compact session summaries stay in `student_session_summaries`
+  - L3 teaching-useful learning signals stay in `student_learning_signals`
+  - L4 skill-level progress or regression stays in `student_skill_progress`
+  - L5 strategy/profile update hints are used by background refresh jobs
 - Background updates are eventually consistent. They must not block the current
   answer, and they must store only teaching-useful signals.
+- Lesson effectiveness signals store goal status, answer shape, and strategy
+  adjustment recommendations. They are teaching signals, not grades.
+- The web tutor workspace shows a user-visible usage bar for the signed-in
+  user's own AI expenses. It shows today's estimate, current lesson estimate,
+  and expanded operation/model/token/image details. It must not expose raw
+  prompts, hidden instructions, provider request ids, stack traces, secrets, or
+  another user's usage.
 
 ### Complete First-Login Meeting
 
@@ -120,22 +165,49 @@ Rules from current implementation:
   session.
 - Settings shows read-only learning profile memory when it is already loaded:
   compact AI summary, first-meeting answers, knowledge state, learning
-  preferences, pedagogical hypotheses, and explanation strategy.
+  preferences, pedagogical hypotheses, explanation strategy, recent session
+  summaries, and skill progress/regression signals.
 - Settings does not edit account fields, profile fields, privacy actions, or
   provider/RAG configuration in the current POC.
 
 ### Generate An Explanatory Image
 
 Authenticated user can request image generation when a tutor turn includes an
-image prompt.
+image block or legacy image prompt.
 
 Rules from current implementation:
 
 - Image requests use `POST /tutor/image`.
+- The tutor message response does not wait for image generation. It returns an
+  image block with prompt/caption/alt text, and the web client renders the
+  generated image inside that same tutor turn after the explicit image action.
 - The API calls the model-provider image operation. The current implementation
   delegates to OpenAI image generation and returns a PNG data URL.
+- Image generation usage is recorded in the same usage ledger when a lesson
+  session id is provided.
 - Images should explain math concepts, graphs, schemes, or coordinate-plane
   reasoning.
+
+### Review Lesson Usage
+
+Authenticated users can inspect their own AI usage estimates in the tutor
+workspace.
+
+Rules from current implementation:
+
+- Endpoint: `GET /usage/me/summary`.
+- The endpoint returns only the signed-in user's own today/current-lesson
+  usage.
+- The default bar is compact for teenage learners: today, current lesson,
+  goal status, and active-learning time.
+- Expanded details show operation, assistant role, model, service tier when
+  present, token counts, image counts, and estimated cost.
+- Estimated USD cost is calculated from local pricing configuration. If prices
+  are not configured, token/image counts remain visible and cost is shown as
+  zero with a pricing note.
+- Usage rows must not contain raw prompts, hidden system/developer
+  instructions, RAG chunks, provider request ids, secrets, or billing
+  credentials.
 
 ### Upload Knowledge Materials
 

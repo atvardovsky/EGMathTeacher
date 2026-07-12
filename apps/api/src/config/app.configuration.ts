@@ -10,4 +10,16 @@ export default registerAs('app', () => ({
     (process.env.AUTH_COOKIE_SECURE ?? 'false').toLowerCase(),
   ),
   authSessionDays: parseInt(process.env.AUTH_SESSION_DAYS ?? '7', 10),
+  lessonDailySoftLimitMinutes: parseInt(process.env.LESSON_DAILY_SOFT_LIMIT_MINUTES ?? '90', 10),
+  lessonDailyHardLimitMinutes: parseInt(process.env.LESSON_DAILY_HARD_LIMIT_MINUTES ?? '120', 10),
+  lessonContinuousSoftLimitMinutes: parseInt(
+    process.env.LESSON_CONTINUOUS_SOFT_LIMIT_MINUTES ?? '45',
+    10,
+  ),
+  lessonContinuousHardLimitMinutes: parseInt(
+    process.env.LESSON_CONTINUOUS_HARD_LIMIT_MINUTES ?? '60',
+    10,
+  ),
+  lessonMinTurnSeconds: parseInt(process.env.LESSON_MIN_TURN_SECONDS ?? '120', 10),
+  lessonMaxTurnGapSeconds: parseInt(process.env.LESSON_MAX_TURN_GAP_SECONDS ?? '900', 10),
 }));

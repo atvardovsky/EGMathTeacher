@@ -1,4 +1,5 @@
 import { AuthSession } from '../auth/auth.types';
+import type { LessonType } from '../tutor/tutor.types';
 
 export interface DiagnosticAnswer {
   prompt: string;
@@ -34,9 +35,40 @@ export interface StudentProfileDto {
   learningPreferences: Record<string, unknown>;
   psychologicalProfile: Record<string, unknown>;
   explanationStrategy: Record<string, unknown>;
+  recentSessionSummaries: StudentSessionSummaryDto[];
+  skillProgress: StudentSkillProgressDto[];
   aiSummary: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type SkillProgressDirection = 'progress' | 'regression' | 'stable' | 'unknown';
+export type SkillProgressConfidence = 'low' | 'medium' | 'high' | 'unknown';
+export type SkillSupportNeeded = 'none' | 'hint' | 'step_by_step' | 'full_explanation' | 'unknown';
+export type SkillIndependence = 'low' | 'medium' | 'high' | 'unknown';
+
+export interface StudentSessionSummaryDto {
+  id: string;
+  conversationId: string | null;
+  lessonType: LessonType;
+  summary: Record<string, unknown>;
+  evidenceLevels: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudentSkillProgressDto {
+  id: string;
+  conversationId: string | null;
+  lessonType: LessonType;
+  topic: string;
+  skill: string;
+  direction: SkillProgressDirection;
+  confidence: SkillProgressConfidence;
+  supportNeeded: SkillSupportNeeded;
+  independence: SkillIndependence;
+  evidence: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface StudentProfileStatus {

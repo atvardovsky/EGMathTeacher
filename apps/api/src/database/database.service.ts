@@ -243,6 +243,243 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_background_learning_observations_pending
         ON background_learning_observations(user_id, conversation_id, status, created_at);
     `, { disableForeignKeys: true });
+
+    this.applyMigration('004_session_progress_tracking', `
+      ALTER TABLE tutor_turns
+        ADD COLUMN lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          ));
+
+      ALTER TABLE background_learning_observations
+        ADD COLUMN lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          ));
+
+      CREATE TABLE IF NOT EXISTS student_session_summaries (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          )),
+        summary_json TEXT NOT NULL,
+        evidence_levels_json TEXT NOT NULL,
+        source_window_id TEXT,
+        source_job_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (source_window_id) REFERENCES background_analysis_windows(id),
+        FOREIGN KEY (source_job_id) REFERENCES background_ai_jobs(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_student_session_summaries_user_created
+        ON student_session_summaries(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_student_session_summaries_conversation
+        ON student_session_summaries(user_id, conversation_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS student_skill_progress (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          )),
+        topic TEXT NOT NULL,
+        skill TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('progress', 'regression', 'stable', 'unknown')),
+        confidence TEXT NOT NULL CHECK (confidence IN ('low', 'medium', 'high', 'unknown')),
+        support_needed TEXT NOT NULL CHECK (support_needed IN ('none', 'hint', 'step_by_step', 'full_explanation', 'unknown')),
+        independence TEXT NOT NULL CHECK (independence IN ('low', 'medium', 'high', 'unknown')),
+        evidence_json TEXT NOT NULL,
+        source_window_id TEXT,
+        source_job_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (source_window_id) REFERENCES background_analysis_windows(id),
+        FOREIGN KEY (source_job_id) REFERENCES background_ai_jobs(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_student_skill_progress_user_created
+        ON student_skill_progress(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_student_skill_progress_topic_created
+        ON student_skill_progress(user_id, topic, skill, created_at);
+    `);
+
+    this.applyMigration('005_lesson_lifecycle_usage', `
+      CREATE TABLE IF NOT EXISTS lesson_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          )),
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK (status IN (
+            'active',
+            'soft_limit_reached',
+            'hard_limit_reached',
+            'goal_reached',
+            'finished'
+          )),
+        goal_status TEXT NOT NULL DEFAULT 'in_progress'
+          CHECK (goal_status IN (
+            'in_progress',
+            'reached',
+            'blocked',
+            'stopped_by_limit'
+          )),
+        goal_text TEXT NOT NULL,
+        success_criteria_json TEXT NOT NULL,
+        finish_reason TEXT,
+        active_learning_seconds INTEGER NOT NULL DEFAULT 0,
+        turn_count INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        last_activity_at TEXT NOT NULL,
+        finished_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_sessions_user_conversation
+        ON lesson_sessions(user_id, conversation_id, updated_at);
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_sessions_user_status
+        ON lesson_sessions(user_id, status, updated_at);
+
+      CREATE TABLE IF NOT EXISTS lesson_effectiveness_signals (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          )),
+        goal_status TEXT NOT NULL
+          CHECK (goal_status IN (
+            'in_progress',
+            'reached',
+            'blocked',
+            'stopped_by_limit'
+          )),
+        strategy_signal_json TEXT NOT NULL,
+        answer_shape_json TEXT NOT NULL,
+        recommended_adjustment TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_effectiveness_user_created
+        ON lesson_effectiveness_signals(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_effectiveness_lesson_created
+        ON lesson_effectiveness_signals(lesson_session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS ai_usage_ledger (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        conversation_id TEXT,
+        lesson_session_id TEXT,
+        lesson_type TEXT
+          CHECK (
+            lesson_type IS NULL OR lesson_type IN (
+              'meeting',
+              'tutor',
+              'concept',
+              'practice',
+              'diagnostic',
+              'exam_strategy',
+              'mistake_review',
+              'visual_explanation',
+              'reflection'
+            )
+          ),
+        operation_key TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        assistant_role TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        response_format TEXT NOT NULL CHECK (response_format IN ('json', 'text', 'image')),
+        service_tier TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        image_count INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd REAL NOT NULL DEFAULT 0,
+        pricing_source TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_ledger_user_created
+        ON ai_usage_ledger(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_ledger_lesson_created
+        ON ai_usage_ledger(lesson_session_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_ledger_user_operation
+        ON ai_usage_ledger(user_id, operation_key, created_at);
+    `);
   }
 
   private applyMigration(

@@ -1,3 +1,5 @@
+import type { LessonType } from '../tutor/tutor.types';
+
 export type BackgroundAiJobType =
   | 'learning_signal_extraction'
   | 'learning_window_analysis'
@@ -31,6 +33,8 @@ export interface TutorTurnBackgroundInput {
   userId: string;
   userName: string;
   conversationId: string;
+  lessonSessionId?: string;
+  lessonType: LessonType;
   source: 'text' | 'voice';
   prompt: string;
   answer: {
@@ -39,6 +43,8 @@ export interface TutorTurnBackgroundInput {
     examplesCount: number;
     citationsCount: number;
     needsImage: boolean;
+    goalStatus?: string;
+    shouldStop?: boolean;
   };
 }
 
@@ -53,6 +59,7 @@ export interface BackgroundLearningObservationRecord {
   id: string;
   user_id: string;
   conversation_id: string;
+  lesson_type: LessonType;
   source: 'text' | 'voice';
   observation_json: string;
   status: BackgroundLearningObservationStatus;

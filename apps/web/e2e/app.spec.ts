@@ -42,6 +42,32 @@ const completedProfileStatus = {
       pacing: 'slow',
       structure: 'example_then_rule',
     },
+    recentSessionSummaries: [
+      {
+        id: 'session-summary-1',
+        conversationId: 'conv-e2e',
+        lessonType: 'tutor',
+        summary: { summary: 'Разбирали производную через смысл скорости.' },
+        evidenceLevels: { L2: 'сводка сессии', L4: ['стабильный прогресс'] },
+        createdAt: '2026-07-11T10:20:00.000Z',
+        updatedAt: '2026-07-11T10:20:00.000Z',
+      },
+    ],
+    skillProgress: [
+      {
+        id: 'skill-progress-1',
+        conversationId: 'conv-e2e',
+        lessonType: 'tutor',
+        topic: 'производная',
+        skill: 'смысл производной',
+        direction: 'progress',
+        confidence: 'medium',
+        supportNeeded: 'step_by_step',
+        independence: 'medium',
+        evidence: { evidence: ['связала производную со скоростью'] },
+        createdAt: '2026-07-11T10:20:00.000Z',
+      },
+    ],
     aiSummary: 'Лучше объяснять через короткий пример, затем правило и проверку понимания.',
     createdAt: '2026-07-11T10:10:00.000Z',
     updatedAt: '2026-07-11T10:10:00.000Z',
@@ -50,6 +76,92 @@ const completedProfileStatus = {
 
 const transparentPng =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axmXrQAAAAASUVORK5CYII=';
+
+const lessonLifecycle = {
+  lessonSessionId: 'lesson-e2e',
+  conversationId: 'conv-e2e',
+  lessonType: 'tutor',
+  status: 'active',
+  goalStatus: 'in_progress',
+  lessonGoal: 'Дать понятный разбор вопроса и проверить понимание.',
+  successCriteria: ['объяснен главный шаг', 'есть мини-задача'],
+  turnCount: 1,
+  activeLearningSeconds: 120,
+  dayActiveLearningSeconds: 120,
+  dailyLimit: {
+    status: 'ok',
+    softLimitSeconds: 5400,
+    hardLimitSeconds: 7200,
+    usedSeconds: 120,
+    remainingSeconds: 7080,
+  },
+  continuousLimit: {
+    status: 'ok',
+    softLimitSeconds: 2700,
+    hardLimitSeconds: 3600,
+    usedSeconds: 120,
+    remainingSeconds: 3480,
+  },
+  shouldSuggestBreak: false,
+  shouldStop: false,
+  strategySignal: {
+    direction: 'progress',
+    summary: 'Есть недавний прогресс.',
+    recommendedAdjustment: 'Дать чуть больше самостоятельности.',
+  },
+};
+
+const usageSummary = {
+  currency: 'USD',
+  today: {
+    estimatedCostUsd: 0.003,
+    inputTokens: 1200,
+    cachedInputTokens: 0,
+    outputTokens: 400,
+    totalTokens: 1600,
+    imageCount: 0,
+    pricingConfigured: true,
+  },
+  currentLesson: {
+    lessonSessionId: 'lesson-e2e',
+    conversationId: 'conv-e2e',
+    lessonType: 'tutor',
+    status: 'active',
+    goalStatus: 'in_progress',
+    total: {
+      estimatedCostUsd: 0.003,
+      inputTokens: 1200,
+      cachedInputTokens: 0,
+      outputTokens: 400,
+      totalTokens: 1600,
+      imageCount: 0,
+      pricingConfigured: true,
+    },
+    items: [
+      {
+        id: 'usage-1',
+        lessonSessionId: 'lesson-e2e',
+        conversationId: 'conv-e2e',
+        lessonType: 'tutor',
+        operationKey: 'tutorAnswerWithRag',
+        operation: 'tutor.answer_with_rag',
+        assistantRole: 'tutor',
+        provider: 'openai',
+        model: 'gpt-test',
+        responseFormat: 'json',
+        estimatedCostUsd: 0.003,
+        inputTokens: 1200,
+        cachedInputTokens: 0,
+        outputTokens: 400,
+        totalTokens: 1600,
+        imageCount: 0,
+        pricingSource: 'env_default',
+        createdAt: '2026-07-11T10:20:00.000Z',
+      },
+    ],
+  },
+  recentLessons: [],
+};
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -74,10 +186,47 @@ async function mockStudentSession(page: Page, options: { needsOnboarding: boolea
     }
     return fulfillJson(route, profileStatus);
   });
+  await page.route('**/usage/me/summary**', (route) => fulfillJson(route, usageSummary));
   await page.route('**/tutor/message', async (route) =>
     fulfillJson(route, {
       conversationId: 'conv-e2e',
+      lessonType: 'tutor',
+      lessonLifecycle,
+      usage: {
+        currency: 'USD',
+        lesson: usageSummary.currentLesson.total,
+        today: usageSummary.today,
+      },
       answer: 'Производная показывает скорость изменения. Начнем с простого примера.',
+      blocks: [
+        {
+          id: 'text-1',
+          type: 'text',
+          text: 'Производная показывает скорость изменения. Начнем с простого примера.',
+        },
+        {
+          id: 'example-1',
+          type: 'example',
+          title: 'Пример',
+          explanation: 'Если f(x)=x^2, то f’(x)=2x.',
+        },
+        {
+          id: 'task-1',
+          type: 'task',
+          title: 'Мини-задача',
+          prompt: 'Найдите производную f(x)=x^2 в точке x=3.',
+          difficulty: 'easy',
+        },
+        {
+          id: 'image-1',
+          type: 'image',
+          status: 'suggested',
+          prompt: 'Схема касательной к графику функции',
+          caption: 'Касательная показывает скорость изменения в точке',
+          altText: 'Схема графика функции с касательной в точке',
+          priority: 'important',
+        },
+      ],
       tasks: [
         {
           title: 'Мини-задача',
@@ -97,7 +246,7 @@ async function mockStudentSession(page: Page, options: { needsOnboarding: boolea
     }),
   );
   await page.route('**/tutor/image', (route) =>
-    fulfillJson(route, { dataUrl: transparentPng, mimeType: 'image/png' }),
+    fulfillJson(route, { dataUrl: transparentPng, mimeType: 'image/png', usage: usageSummary }),
   );
 }
 
@@ -133,14 +282,17 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
 
   await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
   await expect(page.getByText('профиль объяснений активен')).toBeVisible();
+  await expect(page.getByText('Расходы занятия')).toBeVisible();
 
   await page.getByPlaceholder('Например: объясни задание 12 с производной').fill('Объясни производную');
   await page.getByRole('button', { name: 'Спросить' }).click();
 
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+  await expect(page.getByText('$0.0030').first()).toBeVisible();
   await expect(page.getByText('Мини-задача')).toBeVisible();
+  await expect(page.getByText('Касательная показывает скорость изменения в точке')).toBeVisible();
   await expect(page.getByText('ege-derivatives.pdf')).toBeVisible();
 
   await page.getByRole('button', { name: 'Показать схему' }).click();
-  await expect(page.getByAltText('Математическая схема')).toBeVisible();
+  await expect(page.getByAltText('Схема графика функции с касательной в точке')).toBeVisible();
 });

@@ -39,9 +39,14 @@ The web UI follows this tree:
 3. Student first-meeting screen when profile onboarding is required.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
-6. Settings view for language, voice, account info, and read-only profile
-   memory.
-7. Admin knowledge-materials view only for admin users.
+6. Tutor lesson modes expose only the main POC choices in the UI: tutor,
+   practice, diagnostic, and mistake review.
+7. Tutor workspace shows a compact lesson usage bar for all signed-in users.
+   It can expand to safe operation/model/token/image details, but it should
+   not look like an admin debug console.
+8. Settings view for language, voice, account info, and read-only profile
+   memory, including recent session summaries and skill progress/regression.
+9. Admin knowledge-materials view only for admin users.
 
 The first screen after auth must be a usable app surface, not a marketing
 landing page.
@@ -66,6 +71,8 @@ landing page.
   collapsible navbar.
 - Use Mantine form components for inputs, selects, multi-selects, switches,
   segmented controls, file upload, alerts, badges, tables, and progress.
+- Use a segmented control for the main lesson type because it is a mode
+  choice, not a command.
 - Use lucide icons for buttons and navigation when an icon exists.
 - Keep route-like UI in one predictable tree: auth, first meeting, tutor,
   knowledge materials.
@@ -98,8 +105,18 @@ landing page.
   focused controls.
 - Voice controls must show disabled state when browser speech recognition is
   unavailable.
+- Tutor answers render ordered text, task, example, and image blocks inside
+  one turn card.
+- Tutor turn headers show the source and lesson type so the learner can see
+  whether the system is answering, practicing, checking level, or reviewing a
+  mistake.
 - Image generation remains explicit user action; generated images need alt
-  text in the current locale.
+  text and a short caption connected to the current explanation.
+- Recent session summaries and skill progress/regression are read-only
+  learning memory. They should be compact and should not look like grades.
+- The usage bar is learner-facing transparency. Show only the signed-in user's
+  own estimated usage, with no raw prompts, hidden instructions, provider
+  request ids, or stack traces.
 - Error states must be visible near the affected workflow.
 
 ## Validation

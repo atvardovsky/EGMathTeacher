@@ -129,6 +129,16 @@ export default registerAs('ai', () => {
         10,
       ),
     },
+    usage: {
+      trackingEnabled: (process.env.AI_USAGE_TRACKING_ENABLED ?? 'true').toLowerCase() !== 'false',
+      modelPricingJson: process.env.AI_USAGE_MODEL_PRICING_JSON ?? '',
+      defaultInputUsdPer1M: parseFloat(process.env.AI_USAGE_DEFAULT_INPUT_USD_PER_1M ?? '0'),
+      defaultCachedInputUsdPer1M: parseFloat(
+        process.env.AI_USAGE_DEFAULT_CACHED_INPUT_USD_PER_1M ?? '0',
+      ),
+      defaultOutputUsdPer1M: parseFloat(process.env.AI_USAGE_DEFAULT_OUTPUT_USD_PER_1M ?? '0'),
+      defaultImageUsd: parseFloat(process.env.AI_USAGE_DEFAULT_IMAGE_USD ?? '0'),
+    },
     gemini: {
       apiKey: process.env.GEMINI_API_KEY ?? '',
       liveModel: process.env.GEMINI_LIVE_MODEL ?? '',

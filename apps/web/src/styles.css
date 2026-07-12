@@ -279,6 +279,20 @@ textarea {
   border-left: 4px solid #14b8a6;
 }
 
+.usage-bar {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+.usage-metric {
+  background: var(--surface-muted);
+  min-height: 68px;
+}
+
+.usage-details {
+  overflow-x: auto;
+}
+
 .task-panel {
   background: var(--amber-soft);
   border-color: #fed7aa;
@@ -321,6 +335,10 @@ textarea {
 .generated-image {
   max-width: 560px;
   border: 1px solid var(--line);
+}
+
+.image-block {
+  max-width: 620px;
 }
 
 .file-input {

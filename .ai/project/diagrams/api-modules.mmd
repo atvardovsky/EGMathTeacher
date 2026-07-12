@@ -8,6 +8,8 @@ flowchart TB
   AppModule --> WebRTC[WebRtcModule]
   AppModule --> StudentProfile[StudentProfileModule]
   AppModule --> BackgroundAI[BackgroundAiModule]
+  AppModule --> Lesson[LessonModule]
+  AppModule --> Usage[UsageModule]
   AppModule --> Tutor[TutorModule]
   AppModule --> Knowledge[KnowledgeModule]
   AppModule --> Health[HealthModule]
@@ -16,6 +18,8 @@ flowchart TB
   Tutor --> Auth
   Tutor --> StudentProfile
   Tutor --> BackgroundAI
+  Tutor --> Lesson
+  Tutor --> Usage
   Tutor --> Knowledge
   Tutor --> DatabaseService[DatabaseService]
   Tutor --> ModelService[AiModelService]
@@ -24,6 +28,11 @@ flowchart TB
   BackgroundAI --> Knowledge
   BackgroundAI --> DatabaseService
   BackgroundAI --> ModelService
+
+  Usage --> Auth
+  Usage --> DatabaseService
+
+  Lesson --> DatabaseService
 
   StudentProfile --> Auth
   StudentProfile --> Knowledge

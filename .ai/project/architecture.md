@@ -17,8 +17,10 @@ EGMathTeacher is a browser-based POC with:
   background, quality-review, and image assistant roles can use different
   models and service-tier settings
 - SQLite-backed background AI worker for optional grouped learning observation
-  windows, learning signals, session summaries, profile/strategy refreshes,
-  and rare quality reviews
+  windows, learning signals, session summaries, skill progress/regression,
+  profile/strategy refreshes, and rare quality reviews
+- SQLite-backed lesson lifecycle and usage ledger for lesson goals, time-limit
+  heuristics, effectiveness signals, and user-visible cost estimates
 - OpenAI Realtime for inherited realtime voice
 - optional production reverse proxy references under `deploy/`
 
@@ -47,7 +49,7 @@ The overview below mirrors `system-context.mmd` for quick reading.
 ```mermaid
 flowchart LR
   Browser[React/Vite browser client] -->|same-origin fetch| WebHost[Vite dev proxy or production reverse proxy]
-  WebHost -->|/auth /student-profile /tutor /admin /webrtc /health| API[NestJS API]
+  WebHost -->|/auth /student-profile /tutor /admin /usage /webrtc /health| API[NestJS API]
   API --> SQLite[(SQLite app.sqlite)]
   API --> BackgroundJobs[In-process background AI worker]
   BackgroundJobs --> SQLite
@@ -70,7 +72,9 @@ flowchart LR
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
-| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, profile/strategy refreshes, and legacy per-turn background jobs. |
+| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, and legacy per-turn background jobs. |
+| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, goal status, configurable learning-time heuristics, and effectiveness-signal storage. |
+| `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
@@ -97,12 +101,16 @@ Main UI areas in `apps/web/src/App.tsx`:
 
 - auth screen with login/register mode
 - first-login student meeting for profile creation
-- tutor workspace with text and speech recognition input
-- tutor turn cards for answer, tasks, examples, citations, and optional image
-  generation
+- tutor workspace with lesson mode selector plus text and speech recognition
+  input
+- user-visible lesson usage bar with today's estimate, current lesson
+  estimate, and expanded operation/model/token/image details
+- tutor turn cards for ordered text, task, example, and image response blocks,
+  lesson-type badge, citations, and optional image generation
 - admin knowledge screen for file upload and status table
-- settings screen for language, voice input language, account info, and
-  read-only student profile memory
+- settings screen for language, voice input language, account info, read-only
+  student profile memory, recent session summaries, and skill
+  progress/regression
 - language switch shared by auth, first meeting, and authenticated app shell
 
 ## AI Model Provider Boundary
@@ -117,6 +125,12 @@ delegates the request. The current implementation delegates to
 `OpenAiClientService` when `AI_MODEL_PROVIDER=openai`. Other model providers
 intentionally fail as stubs until their text/RAG/image/file contracts are
 implemented.
+
+When a caller supplies local usage context, `AiModelService` records the model
+operation in `ai_usage_ledger` after the provider returns. The usage context is
+stripped before the provider request. The ledger stores operation/model/token/
+image counts and local cost estimates only; it is not a provider billing
+source of truth.
 
 `apps/api/src/background-ai` owns local background orchestration. It persists
 jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
@@ -136,8 +150,9 @@ configuration.
 | `GET /auth/me` | none | Return current cookie session or null. |
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
 | `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile. |
-| `POST /tutor/message` | authenticated | Send text or voice-origin prompt to tutor. |
-| `POST /tutor/image` | authenticated | Generate explanatory image from prompt/context. |
+| `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type and return ordered response blocks plus compatibility fields. |
+| `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context. |
+| `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates and per-operation details. |
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |

@@ -49,11 +49,19 @@ describe('AiModelService', () => {
       }),
     };
     const policy = new AiOperationPolicyService(config as any);
-    const service = new AiModelService(provider, policy);
+    const usage = {
+      recordOperation: jest.fn(),
+    };
+    const service = new AiModelService(provider, policy, usage as any);
 
     await service.createOperationResponse('tutorAnswerWithRag', {
       instructions: 'answer',
       metadata: { existing: 'value' },
+      usageContext: {
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        lessonSessionId: 'lesson-1',
+      },
     });
 
     expect(provider.createResponse).toHaveBeenCalledWith(
@@ -67,6 +75,17 @@ describe('AiModelService', () => {
           ai_provider: 'openai',
         }),
       }),
+    );
+    expect(provider.createResponse).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        usageContext: expect.anything(),
+      }),
+    );
+    expect(usage.recordOperation).toHaveBeenCalledWith(
+      expect.objectContaining({ operationKey: 'tutorAnswerWithRag' }),
+      expect.objectContaining({ lessonSessionId: 'lesson-1' }),
+      expect.not.objectContaining({ usageContext: expect.anything() }),
+      { output_text: '{}' },
     );
   });
 

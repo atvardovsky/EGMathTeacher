@@ -2,17 +2,21 @@ import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { TutorService } from './tutor.service';
-import { TutorAnswer } from './tutor.types';
+import type { LessonType, TutorAnswer } from './tutor.types';
 
 interface TutorMessageBody {
   message?: string;
   conversationId?: string;
   source?: 'text' | 'voice';
+  lessonType?: LessonType;
 }
 
 interface TutorImageBody {
   prompt?: string;
   context?: string;
+  conversationId?: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
 }
 
 @Controller('tutor')
@@ -30,14 +34,22 @@ export class TutorController {
       message: body.message,
       conversationId: body.conversationId,
       source: body.source ?? 'text',
+      lessonType: body.lessonType,
     });
   }
 
   @Post('image')
-  async image(@Body() body: TutorImageBody): Promise<unknown> {
+  async image(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: TutorImageBody,
+  ): Promise<unknown> {
     return this.tutorService.generateImage({
+      user: request.user!,
       prompt: body.prompt,
       context: body.context,
+      conversationId: body.conversationId,
+      lessonSessionId: body.lessonSessionId,
+      lessonType: body.lessonType,
     });
   }
 }

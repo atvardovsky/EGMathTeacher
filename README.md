@@ -27,7 +27,7 @@ Production domain:
 
 - `https://atvardovsky.dev`
 - The web client defaults to same-origin API calls in production. Configure a reverse proxy so
-  `/auth`, `/student-profile`, `/tutor`, `/admin`, `/webrtc`, and `/health` go to the Nest API
+  `/auth`, `/student-profile`, `/tutor`, `/admin`, `/usage`, `/webrtc`, and `/health` go to the Nest API
   on port `3000`, and all other paths serve `apps/web/dist`.
 - Set `CORS_ORIGINS=https://atvardovsky.dev,https://www.atvardovsky.dev` and
   `AUTH_COOKIE_SECURE=true` for HTTPS production.
@@ -62,9 +62,26 @@ Production domain:
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.
+- Lesson type support for tutor sessions: the API supports meeting, tutor,
+  concept, practice, diagnostic, exam strategy, mistake review, visual
+  explanation, and reflection modes; the POC web UI exposes tutor, practice,
+  level check, and mistake review.
+- Tutor answers return ordered response blocks for text, examples, tasks, and
+  optional image plans while preserving legacy `answer`, `tasks`, `examples`,
+  `needsImage`, and `imagePrompt` fields.
 - Tutor prompts combine shared RAG knowledge with the stored student profile.
 - Immediate tutor answers stay synchronous; delayed profile/strategy updates
   are eventually consistent and do not block the student response.
+- Background analysis stores layered session evidence and skill trends:
+  compact session summaries, learning signals, and progress/regression rows
+  by topic and skill are kept in SQLite for future explanation strategy.
+- Lesson lifecycle tracking records active lesson sessions, configurable daily
+  and continuous learning-time limits, goal status, and effectiveness signals
+  so the tutor can stop when the lesson goal is reached or a hard limit is hit.
+- User-visible lesson usage bar shows the signed-in user's own estimated
+  daily and per-lesson AI expenses with operation/model/token/image details.
+  Cost estimates come from local pricing configuration; they are not provider
+  billing proof.
 - Russian/English static web UI locale switch for auth, first meeting, tutor, and admin views.
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for
@@ -72,7 +89,8 @@ Production domain:
 - POC SQLite schema migration ledger records applied schema versions after
   transactional migration application.
 - Admin upload endpoint for PDF/Markdown/TXT/DOCX/TeX knowledge files.
-- Image endpoint for explanatory math diagrams.
+- Image endpoint for explanatory math diagrams generated from a tutor image
+  block prompt and rendered in the same tutor turn after explicit user action.
 - Browser voice input using speech recognition, submitted to the same RAG tutor endpoint.
 - Imported WebRTC/Realtime voice service remains available under `/webrtc`.
 

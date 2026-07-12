@@ -203,6 +203,16 @@ describe('StudentProfileService', () => {
         '003_background_observation_windows',
       ]),
     ).toEqual({ version: '003_background_observation_windows' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '004_session_progress_tracking',
+      ]),
+    ).toEqual({ version: '004_session_progress_tracking' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '005_lesson_lifecycle_usage',
+      ]),
+    ).toEqual({ version: '005_lesson_lifecycle_usage' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

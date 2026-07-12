@@ -2,10 +2,12 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AI_MODEL_PROVIDER_TOKEN } from './ai-model.constants';
 import { AiOperationPolicyService } from './ai-operation-policy.service';
 import {
+  AiOperationPayload,
   AiModelProvider,
   AiOperationKey,
   ResolvedAiOperationPolicy,
 } from './ai-model.types';
+import { UsageService } from '../usage/usage.service';
 
 @Injectable()
 export class AiModelService implements AiModelProvider {
@@ -14,6 +16,8 @@ export class AiModelService implements AiModelProvider {
     private readonly provider: AiModelProvider,
     @Optional()
     private readonly operationPolicy?: AiOperationPolicyService,
+    @Optional()
+    private readonly usageService?: UsageService,
   ) {}
 
   get id(): string {
@@ -26,10 +30,11 @@ export class AiModelService implements AiModelProvider {
 
   createOperationResponse(
     operationKey: AiOperationKey,
-    payload: Record<string, unknown>,
+    payload: AiOperationPayload,
   ): Promise<Record<string, unknown>> {
     const policy = this.resolveOperationPolicy(operationKey);
-    return this.provider.createResponse(this.applyResponsePolicy(payload, policy));
+    const request = this.applyResponsePolicy(payload, policy);
+    return this.callResponseProvider(policy, payload, request);
   }
 
   generateImage(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -38,10 +43,11 @@ export class AiModelService implements AiModelProvider {
 
   generateOperationImage(
     operationKey: AiOperationKey,
-    payload: Record<string, unknown>,
+    payload: AiOperationPayload,
   ): Promise<Record<string, unknown>> {
     const policy = this.resolveOperationPolicy(operationKey);
-    return this.provider.generateImage({ ...payload, model: policy.model });
+    const request = this.withoutUsageContext({ ...payload, model: policy.model });
+    return this.callImageProvider(policy, payload, request);
   }
 
   resolveOperationPolicy(operationKey: AiOperationKey): ResolvedAiOperationPolicy {
@@ -80,18 +86,44 @@ export class AiModelService implements AiModelProvider {
   }
 
   private applyResponsePolicy(
-    payload: Record<string, unknown>,
+    payload: AiOperationPayload,
     policy: ResolvedAiOperationPolicy,
   ): Record<string, unknown> {
+    const providerPayload = this.withoutUsageContext(payload);
     const request: Record<string, unknown> = {
-      ...payload,
+      ...providerPayload,
       model: policy.model,
-      metadata: this.mergeMetadata(payload.metadata, policy),
+      metadata: this.mergeMetadata(providerPayload.metadata, policy),
     };
     if (policy.serviceTier) {
       request.service_tier = policy.serviceTier;
     }
     return request;
+  }
+
+  private async callResponseProvider(
+    policy: ResolvedAiOperationPolicy,
+    payload: AiOperationPayload,
+    request: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.provider.createResponse(request);
+    this.usageService?.recordOperation(policy, payload.usageContext, request, response);
+    return response;
+  }
+
+  private async callImageProvider(
+    policy: ResolvedAiOperationPolicy,
+    payload: AiOperationPayload,
+    request: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.provider.generateImage(request);
+    this.usageService?.recordOperation(policy, payload.usageContext, request, response);
+    return response;
+  }
+
+  private withoutUsageContext(payload: AiOperationPayload): Record<string, unknown> {
+    const { usageContext: _usageContext, ...providerPayload } = payload;
+    return providerPayload;
   }
 
   private mergeMetadata(

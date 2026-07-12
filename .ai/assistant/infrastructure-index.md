@@ -198,6 +198,8 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260712-background-batching.md`
 - `.ai/assistant/approvals/ALATYR-20260712-framework-context-router-update.md`
 - `.ai/assistant/approvals/ALATYR-20260712-role-operation-model-policy.md`
+- `.ai/assistant/approvals/ALATYR-20260712-session-progress-tracking.md`
+- `.ai/assistant/approvals/ALATYR-20260712-tutor-response-blocks.md`
 - `.ai/assistant/approvals/approval-template.md`
 - `.ai/assistant/checklists/change-impact.md`
 

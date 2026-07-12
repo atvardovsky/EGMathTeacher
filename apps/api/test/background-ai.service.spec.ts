@@ -129,6 +129,32 @@ describe('BackgroundAiService', () => {
           ],
           knowledgeDelta: { topicSignals: [{ topic: 'производная', status: 'gap' }] },
           teachingStrategyHints: ['дать пример через скорость'],
+          sessionSummary: {
+            summary: 'Ученик разбирает производную через смысл скорости изменения.',
+            topicsWorked: ['производная'],
+            nextSteps: ['короткая практика на смысл производной'],
+          },
+          evidenceLevels: {
+            L0: 'raw tutor turns stored separately',
+            L1: ['просит объяснение производной'],
+            L2: 'работа со смыслом производной',
+            L3: ['путает смысл производной'],
+            L4: ['нужна поддержка'],
+            L5: ['пример через скорость'],
+          },
+          skillProgressSignals: [
+            {
+              topic: 'производная',
+              skill: 'смысл производной',
+              direction: 'progress',
+              confidence: 'medium',
+              evidence: ['связал производную со скоростью изменения'],
+              mistakePatterns: ['путает смысл с формулой'],
+              supportNeeded: 'step_by_step',
+              independence: 'medium',
+              recommendedNextAction: 'дать похожую задачу на скорость',
+            },
+          ],
           qualityReview: { risk: 'none', issues: [], repairHints: [] },
           profileUpdateRecommended: true,
         }),
@@ -173,6 +199,7 @@ describe('BackgroundAiService', () => {
       userId: 'student-1',
       userName: 'Маша',
       conversationId: 'conv-1',
+      lessonType: 'tutor',
       source: 'text',
       prompt: 'Я не понимаю производную',
       answer: {
@@ -243,6 +270,16 @@ describe('BackgroundAiService', () => {
       db.get<{ count: number }>('SELECT COUNT(*) AS count FROM background_analysis_windows')
         ?.count,
     ).toBe(1);
+    expect(
+      db.get<{ count: number }>('SELECT COUNT(*) AS count FROM student_session_summaries')
+        ?.count,
+    ).toBe(1);
+    expect(
+      db.get<{ direction: string; support_needed: string }>(
+        'SELECT direction, support_needed FROM student_skill_progress WHERE topic = ?',
+        ['производная'],
+      ),
+    ).toEqual({ direction: 'progress', support_needed: 'step_by_step' });
 
     const profile = db.get<{
       knowledge_state_json: string;
@@ -294,6 +331,7 @@ describe('BackgroundAiService', () => {
       userId: 'student-1',
       userName: 'Маша',
       conversationId: 'conv-1',
+      lessonType: 'tutor',
       source: 'text',
       prompt: 'Я не понимаю производную',
       answer: {
@@ -351,6 +389,7 @@ describe('BackgroundAiService', () => {
       userId: 'student-1',
       userName: 'Маша',
       conversationId: 'conv-disabled',
+      lessonType: 'tutor',
       source: 'text',
       prompt: 'test',
       answer: {
@@ -378,6 +417,7 @@ describe('BackgroundAiService', () => {
       userId: 'student-1',
       userName: 'Маша',
       conversationId: 'conv-1',
+      lessonType: 'tutor',
       source: 'text',
       prompt: 'Я не понимаю производную',
       answer: {

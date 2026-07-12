@@ -24,9 +24,164 @@ export interface TutorCitation {
   quote?: string;
 }
 
+export type LessonType =
+  | 'meeting'
+  | 'tutor'
+  | 'concept'
+  | 'practice'
+  | 'diagnostic'
+  | 'exam_strategy'
+  | 'mistake_review'
+  | 'visual_explanation'
+  | 'reflection';
+
+export type TutorImageStatus = 'suggested' | 'queued' | 'ready' | 'failed';
+
+export type TutorImagePriority = 'optional' | 'important' | 'required';
+
+export type LessonSessionStatus =
+  | 'active'
+  | 'soft_limit_reached'
+  | 'hard_limit_reached'
+  | 'goal_reached'
+  | 'finished';
+
+export type LessonGoalStatus =
+  | 'in_progress'
+  | 'reached'
+  | 'blocked'
+  | 'stopped_by_limit';
+
+export type LessonLimitStatus = 'ok' | 'soft_limit' | 'hard_limit';
+
+export interface LessonLimitState {
+  status: LessonLimitStatus;
+  softLimitSeconds: number;
+  hardLimitSeconds: number;
+  usedSeconds: number;
+  remainingSeconds: number;
+}
+
+export interface LessonStrategySignal {
+  direction: 'progress' | 'regression' | 'stable' | 'unknown';
+  summary: string;
+  recommendedAdjustment: string;
+}
+
+export interface TutorLessonLifecycle {
+  lessonSessionId: string;
+  conversationId: string;
+  lessonType: LessonType;
+  status: LessonSessionStatus;
+  goalStatus: LessonGoalStatus;
+  lessonGoal: string;
+  successCriteria: string[];
+  finishReason?: string;
+  turnCount: number;
+  activeLearningSeconds: number;
+  dayActiveLearningSeconds: number;
+  dailyLimit: LessonLimitState;
+  continuousLimit: LessonLimitState;
+  shouldSuggestBreak: boolean;
+  shouldStop: boolean;
+  strategySignal: LessonStrategySignal;
+}
+
+export interface UsageTotals {
+  estimatedCostUsd: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  imageCount: number;
+  pricingConfigured: boolean;
+}
+
+export interface UsageLedgerItem {
+  id: string;
+  lessonSessionId: string | null;
+  conversationId: string | null;
+  lessonType: LessonType | null;
+  operationKey: string;
+  operation: string;
+  assistantRole: string;
+  provider: string;
+  model: string;
+  responseFormat: 'json' | 'text' | 'image';
+  serviceTier?: string;
+  estimatedCostUsd: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  imageCount: number;
+  pricingSource: string;
+  createdAt: string;
+}
+
+export interface LessonUsageSummary {
+  lessonSessionId: string;
+  conversationId: string | null;
+  lessonType: LessonType | null;
+  status: string | null;
+  goalStatus: string | null;
+  total: UsageTotals;
+  items: UsageLedgerItem[];
+}
+
+export interface UserUsageSummary {
+  currency: 'USD';
+  today: UsageTotals;
+  currentLesson: LessonUsageSummary | null;
+  recentLessons: LessonUsageSummary[];
+}
+
+export interface TutorUsageSnapshot {
+  currency: 'USD';
+  lesson: UsageTotals;
+  today: UsageTotals;
+}
+
+export interface TutorTextBlock {
+  id: string;
+  type: 'text';
+  text: string;
+}
+
+export interface TutorTaskBlock extends TutorTask {
+  id: string;
+  type: 'task';
+}
+
+export interface TutorExampleBlock extends TutorExample {
+  id: string;
+  type: 'example';
+}
+
+export interface TutorImageBlock {
+  id: string;
+  type: 'image';
+  status: TutorImageStatus;
+  prompt: string;
+  caption: string;
+  altText: string;
+  priority: TutorImagePriority;
+  url?: string;
+}
+
+export type TutorResponseBlock =
+  | TutorTextBlock
+  | TutorTaskBlock
+  | TutorExampleBlock
+  | TutorImageBlock;
+
 export interface TutorAnswer {
   conversationId: string;
+  lessonType?: LessonType;
+  lessonLifecycle: TutorLessonLifecycle;
+  usage?: TutorUsageSnapshot;
   answer: string;
+  blocks?: TutorResponseBlock[];
   tasks: TutorTask[];
   examples: TutorExample[];
   needsImage: boolean;
@@ -37,10 +192,11 @@ export interface TutorAnswer {
 export interface TutorTurn {
   id: string;
   prompt: string;
+  lessonType: LessonType;
   source: 'text' | 'voice';
   answer?: TutorAnswer;
-  imageUrl?: string;
-  loadingImage?: boolean;
+  imageUrls?: Record<string, string>;
+  loadingImages?: Record<string, boolean>;
 }
 
 export interface DiagnosticAnswer {
@@ -77,9 +233,37 @@ export interface StudentProfile {
   learningPreferences: Record<string, unknown>;
   psychologicalProfile: Record<string, unknown>;
   explanationStrategy: Record<string, unknown>;
+  recentSessionSummaries: StudentSessionSummary[];
+  skillProgress: StudentSkillProgress[];
   aiSummary: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type SkillProgressDirection = 'progress' | 'regression' | 'stable' | 'unknown';
+
+export interface StudentSessionSummary {
+  id: string;
+  conversationId: string | null;
+  lessonType: LessonType;
+  summary: Record<string, unknown>;
+  evidenceLevels: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudentSkillProgress {
+  id: string;
+  conversationId: string | null;
+  lessonType: LessonType;
+  topic: string;
+  skill: string;
+  direction: SkillProgressDirection;
+  confidence: 'low' | 'medium' | 'high' | 'unknown';
+  supportNeeded: 'none' | 'hint' | 'step_by_step' | 'full_explanation' | 'unknown';
+  independence: 'low' | 'medium' | 'high' | 'unknown';
+  evidence: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface StudentProfileStatus {
@@ -102,4 +286,10 @@ export interface KnowledgeFile {
 export interface KnowledgeStatus {
   vectorStoreIds: string[];
   files: KnowledgeFile[];
+}
+
+export interface TutorImageResult {
+  dataUrl: string;
+  mimeType?: string;
+  usage?: TutorUsageSnapshot;
 }

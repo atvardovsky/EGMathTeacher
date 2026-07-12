@@ -51,6 +51,7 @@ implemented.
 Current guards:
 
 - `AuthGuard` protects tutor endpoints.
+- `AuthGuard` protects the signed-in user's usage summary endpoint.
 - `AdminGuard` protects admin knowledge endpoints.
 
 Guard coverage details are owned by `.ai/project/guards.md`.
@@ -91,8 +92,11 @@ Potential student data in this POC:
   psychopedagogical profile, explanation strategy, and profile summary
 - specialist profile evidence and confidence fields used for teaching strategy
 - background learning observations, grouped analysis windows, learning signals,
-  session summaries, profile-refresh evidence, strategy-refresh evidence, and
-  quality-review records
+  session summaries, skill progress/regression rows, profile-refresh evidence,
+  strategy-refresh evidence, and quality-review records
+- lesson session lifecycle rows, lesson effectiveness signals, and local AI
+  usage ledger rows for the signed-in user's operation/model/token/image/cost
+  estimates
 - generated images and prompts
 - uploaded knowledge file metadata
 - voice transcripts and transcript files
@@ -107,13 +111,22 @@ Current data-minimization rule:
 - drop unsafe freeform details before profile generation, storage, and later
   specialist prompt chaining
 - background AI jobs, stored observations, grouped analysis windows, and
-  results must sanitize payloads before storage; they must not store raw
+  results must sanitize payloads before storage; session summaries and skill
+  progress/regression rows must stay teaching-useful and must not store raw
   sensitive personal details, clinical diagnoses, or non-teaching facts
 
 The authenticated web settings view may display the signed-in user's own
 read-only tutoring profile memory. It must not add profile editing, export,
 or administrative profile browsing without a separate security and privacy
 review.
+
+The tutor workspace may display a signed-in user's own usage bar. The usage
+bar can show operation names, assistant roles, model names, token counts,
+image counts, service tier, and locally estimated cost. It must not show raw
+prompts, hidden system/developer instructions, RAG chunks, provider request
+ids, secrets, billing credentials, stack traces, or another user's usage. Cost
+values are local estimates based on configured prices and are not provider
+billing proof.
 
 Gaps:
 
@@ -144,7 +157,8 @@ Psychopedagogical profile rule:
 - do not store clinical diagnoses or sensitive family/health/private details
 - sanitize first-meeting freeform text and AI-made profile JSON before storage
 - sanitize background observations, learning signals, grouped analysis windows,
-  and AI-made background refresh outputs before storage
+  session summaries, skill progress/regression rows, and AI-made background
+  refresh outputs before storage
 - use the profile only to adapt explanations, pacing, tone, examples, and
   practice strategy
 - phrase psychopedagogical fields as teaching hypotheses with evidence and

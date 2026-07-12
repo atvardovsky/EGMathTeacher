@@ -12,8 +12,8 @@ This file records runtime flows from current source evidence.
 4. Web dev server listens on `5137`.
 5. If `.cert/localhost-key.pem` and `.cert/localhost-cert.pem` exist, Vite
    serves HTTPS at `https://localhost:5137`.
-6. Vite proxies `/auth`, `/student-profile`, `/tutor`, `/admin`, `/webrtc`,
-   and `/health` to the API on `127.0.0.1:3000`.
+6. Vite proxies `/auth`, `/student-profile`, `/tutor`, `/admin`, `/usage`,
+   `/webrtc`, and `/health` to the API on `127.0.0.1:3000`.
 
 ## SQLite Schema Initialization Flow
 
@@ -77,31 +77,59 @@ This file records runtime flows from current source evidence.
    - `message`
    - optional `conversationId`
    - source `text` or `voice`
-3. `TutorService` normalizes the message and conversation id.
-4. `StudentProfileService` loads the stored student profile summary and
+   - optional `lessonType`
+3. `TutorService` normalizes the message, conversation id, and lesson type.
+   If lesson type is omitted, it infers a conservative default from the
+   prompt.
+4. `LessonService` creates or touches the active `lesson_sessions` row for the
+   conversation. It updates turn count, active-learning heuristic seconds,
+   daily and continuous learning-limit state, goal status, and the current
+   progress/regression strategy signal.
+5. If a hard daily or continuous learning limit is reached, `TutorService`
+   returns a local stop response, persists the tutor turn, and does not call
+   the model for a new explanation.
+6. `StudentProfileService` loads the stored student profile summary and
    explanation strategy when available.
-5. `KnowledgeService` returns configured or uploaded vector store ids.
-6. `TutorService` builds a model-provider request:
+7. `KnowledgeService` returns configured or uploaded vector store ids.
+8. `TutorService` builds a model-provider request:
    - Russian ЕГЭ tutor instructions
    - user name
    - source type
+   - lesson type description, goal, and preferred block mix
+   - lesson lifecycle state, goal criteria, learning-limit state, and
+     progress/regression strategy signal
    - optional DB-backed student profile context
    - user prompt
    - optional `file_search` tool
-7. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
+   - local-only usage context for user, conversation, lesson session, and
+     lesson type
+9. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
    operation policy, including model, metadata, and optional service tier.
-8. The current OpenAI-backed provider calls Responses API.
-9. API parses model output as structured tutor JSON when possible.
-10. API extracts citations from file-search annotations/results.
-11. API writes the tutor turn to `tutor_turns`.
-12. API enqueues background AI work. In batched mode, it stores a sanitized
-    tutor-turn observation and schedules or reschedules a grouped
+10. The current OpenAI-backed provider calls Responses API.
+11. After the provider returns, `AiModelService` strips local usage context
+    from provider payloads and writes `ai_usage_ledger` when usage context is
+    present.
+12. API parses model output as structured tutor JSON when possible. The
+   preferred response contract is an ordered `blocks` array containing text,
+   task, example, and image blocks. Legacy `answer`, `tasks`, `examples`,
+   `needsImage`, and `imagePrompt` fields remain populated for compatibility.
+   The preferred contract also includes `lessonLifecycle.goalStatus` so the
+   model can mark the lesson goal reached or blocked.
+13. API extracts citations from file-search annotations/results.
+14. `LessonService` completes the turn, stores a lesson effectiveness signal,
+    and marks the lesson goal reached when the answer reports it.
+15. API writes the tutor turn and lesson type to `tutor_turns`.
+16. API enqueues background AI work. In batched mode, it stores a sanitized
+    tutor-turn observation with lesson type and schedules or reschedules a grouped
     `learning_window_analysis` job. In legacy mode, it enqueues per-turn
     learning-signal extraction and separate interval jobs for session summary,
     student profile refresh, teaching strategy refresh, or rare quality review.
     Enqueue failures are isolated from the immediate answer path.
-13. Web client renders answer, tasks, examples, citations, and optional image
-    action.
+17. API returns the tutor answer with lesson lifecycle and a compact usage
+    snapshot for current lesson/day.
+18. Web client refreshes `GET /usage/me/summary`, renders the usage bar, then
+    renders ordered response blocks, lesson-type badge, citations, and
+    optional image actions inside the same tutor turn.
 
 ## Background AI Flow
 
@@ -120,9 +148,11 @@ This file records runtime flows from current source evidence.
    or run immediately for a quality trigger.
 5. The grouped learning-window job marks selected observations `queued`,
    sends them together, stores `background_analysis_windows`, writes
-   `student_learning_signals`, and marks the observations `processed` in one
-   local SQLite transaction after the model response succeeds. If the model
-   call fails, claimed observations return to `pending`.
+   `student_learning_signals`, writes `student_session_summaries`, writes
+   `student_skill_progress` trend rows, and marks the observations
+   `processed` in one local SQLite transaction after the model response
+   succeeds. If the model call fails, claimed observations return to
+   `pending`.
 6. A successful grouped learning-window job can enqueue one
    `profile_strategy_refresh` job when the configured profile refresh turn
    interval is reached.
@@ -135,27 +165,59 @@ This file records runtime flows from current source evidence.
 8. When the OpenAI provider is used, background operation service-tier policy
    can include `service_tier=flex`; per-operation tier overrides fall back to
    `OPENAI_BACKGROUND_SERVICE_TIER`.
-9. Batched background calls can include a hashed `prompt_cache_key` when
+9. Background jobs include user/conversation usage context, and lesson-session
+   context when it was captured from the tutor turn or grouped observation, so
+   delayed background costs can appear in the same usage ledger.
+10. Batched background calls can include a hashed `prompt_cache_key` when
    `AI_BACKGROUND_PROMPT_CACHE_KEY_ENABLED=true`.
-10. Learning signals, summaries, refresh evidence, and quality reviews are
-   stored in `student_learning_signals`.
-11. Profile refresh jobs merge sanitized patches into `student_profiles`.
-12. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
+11. Layered learning memory is stored as:
+    - L0 limited raw turn data in `tutor_turns`
+    - L1 sanitized observations in `background_learning_observations`
+    - L2 session summaries in `student_session_summaries`
+    - L3 learning signals, refresh evidence, and quality reviews in
+      `student_learning_signals`
+    - L4 topic/skill progress or regression in `student_skill_progress`
+    - L5 strategy hints consumed by profile/strategy refresh jobs
+12. Profile refresh jobs merge sanitized patches into `student_profiles` using
+    recent learning signals, session summaries, and skill progress rows.
+13. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
    stay visible in `background_ai_jobs`.
-13. Background work must not store non-teaching sensitive details and must not
+14. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow
 
-1. Tutor response says `needsImage=true` and includes `imagePrompt`, or the
-   service infers a visual prompt for unstructured visual text.
-2. User clicks image generation in the web client.
-3. Web client calls `POST /tutor/image`.
+1. Tutor response includes an image block with prompt, caption, alt text,
+   status, and priority, or legacy `needsImage=true` plus `imagePrompt`.
+2. User clicks image generation in the web client. The current POC keeps image
+   generation explicit instead of blocking the immediate tutor response.
+3. Web client calls `POST /tutor/image` with prompt/context plus optional
+   conversation id, lesson session id, and lesson type for usage attribution.
 4. API calls the `tutorImage` model-provider operation. The current
    implementation resolves the image operation model policy, then delegates to
    OpenAI image generation using configured size and quality.
-5. API returns a PNG data URL.
-6. Web client renders the generated image in the tutor turn.
+5. `AiModelService` writes image usage to `ai_usage_ledger` when user and
+   lesson context are present.
+6. API returns a PNG data URL and optional usage snapshot.
+7. Web client refreshes usage and renders the generated image in the same tutor turn and image
+   block where the visual was requested.
+
+## Usage Summary Flow
+
+1. Authenticated web client calls `GET /usage/me/summary`, optionally with
+   `lessonSessionId`.
+2. `AuthGuard` attaches the signed-in user.
+3. `UsageService` reads only rows in `ai_usage_ledger` for that user.
+4. The response includes:
+   - today's total usage
+   - current lesson total when a lesson session exists
+   - recent lesson summaries
+   - per-operation details for the selected/current lesson
+5. The web tutor workspace renders a compact user-visible usage bar and an
+   expanded table with operation, assistant role, model, service tier, token
+   counts, image counts, and local estimated cost.
+6. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
+   provider request ids, secrets, stack traces, or another user's rows.
 
 ## Settings Flow
 
@@ -168,7 +230,8 @@ This file records runtime flows from current source evidence.
 4. If a stored student profile exists, the web client renders read-only
    profile memory from the already loaded `GET /student-profile/me` response:
    AI summary, first-meeting answers, knowledge state, learning preferences,
-   teaching hypotheses, and explanation strategy.
+   teaching hypotheses, explanation strategy, recent session summaries, and
+   skill progress/regression rows.
 5. Settings does not edit account data or regenerate the AI profile in the
    current POC.
 
@@ -215,7 +278,7 @@ Expected reference shape:
 1. Built web files are served from `apps/web/dist`.
 2. API runs on `127.0.0.1:3000`.
 3. Reverse proxy routes `/auth`, `/student-profile`, `/tutor`, `/admin`,
-   `/webrtc`, and `/health` to the API.
+   `/usage`, `/webrtc`, and `/health` to the API.
 4. Other paths serve the web app for client-side routing.
 
 Do not modify or reload system web server configuration unless explicitly

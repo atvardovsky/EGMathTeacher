@@ -36,19 +36,27 @@ App
    └─ Main
       ├─ TutorWorkspace
       │  ├─ Page title and profile/conversation status badges
+      │  ├─ Lesson type segmented control: tutor, practice, diagnostic, mistake review
       │  ├─ Question -> walkthrough -> practice step strip
       │  ├─ Quick prompt pills
+      │  ├─ Lesson usage bar
+      │  │  ├─ Today estimate
+      │  │  ├─ Current lesson estimate
+      │  │  ├─ Goal status and active-learning time
+      │  │  └─ Expandable operation/model/token/image details
       │  ├─ Textarea composer
       │  ├─ Voice action
       │  ├─ Send action
       │  ├─ Empty state
       │  └─ TutorTurnCard list
-      │     ├─ Prompt/source header
-      │     ├─ Explanation
-      │     ├─ Task panels
-      │     ├─ Example panels
+      │     ├─ Prompt/source/lesson-type header
+      │     ├─ Ordered response blocks
+      │     │  ├─ Text block
+      │     │  ├─ Task block
+      │     │  ├─ Example block
+      │     │  └─ Image block prompt/action/display
       │     ├─ Citation badges
-      │     └─ Optional image generation/display
+      │     └─ Optional generated image inside the related block
       ├─ SettingsView
       │  ├─ Interface card
       │  │  ├─ Language switch
@@ -63,7 +71,9 @@ App
       │     ├─ Knowledge state
       │     ├─ Learning preferences
       │     ├─ Explanation strategy
-      │     └─ Teaching hypotheses
+      │     ├─ Teaching hypotheses
+      │     ├─ Recent session summaries
+      │     └─ Skill progress/regression
       └─ KnowledgeAdmin
          ├─ Status refresh
          ├─ File upload form
@@ -74,6 +84,9 @@ App
 ## Current Navigation Rules
 
 - The tutor workspace is the default authenticated view.
+- The tutor workspace exposes the main POC lesson modes: tutor, practice,
+  diagnostic, and mistake review. Older API clients may omit lesson type and
+  let the API infer it.
 - Admin users can switch to the materials view.
 - Authenticated users can switch to Settings.
 - Student users without a stored profile must complete the first meeting before
@@ -81,10 +94,17 @@ App
 - The language switch changes static UI copy immediately and persists locally.
 - Browser speech recognition language follows the selected UI locale.
 - Settings is read-only for account/profile data in the current POC.
+- Settings can display compact recent session summaries and skill
+  progress/regression rows that were already returned by
+  `GET /student-profile/me`.
+- The tutor workspace displays the signed-in user's own usage bar. It is
+  informational for all users, not admin-only. It must stay compact by default
+  and only show safe usage details when expanded.
 
 ## Non-Goals
 
 - No client-side router exists in the current POC.
 - No packaged desktop shell exists in the current repository.
 - No parent, teacher, school, class, payment, or progress-dashboard UI exists.
+  The usage bar is cost transparency, not a subscription or billing dashboard.
 - No frontend automated E2E, accessibility, or visual regression suite exists.

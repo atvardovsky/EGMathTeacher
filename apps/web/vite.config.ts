@@ -39,6 +39,7 @@ export default defineConfig({
       '/student-profile': apiProxy,
       '/tutor': apiProxy,
       '/admin': apiProxy,
+      '/usage': apiProxy,
       '/webrtc': apiProxy,
       '/health': apiProxy,
     },

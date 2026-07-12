@@ -33,12 +33,31 @@ visible next actions.
   family, health, clinical, political, religious, and other non-teaching
   personal details must not be stored or used for tutoring strategy.
 - Tutor messages submitted from text or browser voice recognition.
-- Structured tutor answers with explanation text, task cards, example cards,
-  citations when RAG returns file references, and optional image prompts.
+- Tutor messages can be associated with a lesson type. The API supports
+  `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
+  `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
+  exposes tutor, practice, diagnostic, and mistake-review modes and the API
+  infers a safe default for older clients.
+- Tutor turns are attached to a lesson session with a goal, success criteria,
+  goal status, active-learning time, daily/continuous learning-limit status,
+  and a progress/regression strategy signal. The POC uses configurable
+  educational time-limit heuristics, not clinical fatigue diagnosis.
+- A lesson can stop when a hard learning limit is reached or when the tutor
+  reports the lesson goal as reached. Soft limits ask the tutor to wrap up the
+  current step instead of starting a long new topic.
+- Structured tutor answers with ordered response blocks for text, task cards,
+  example cards, citations when RAG returns file references, and optional
+  image blocks carrying prompt, caption, alt text, status, and priority.
+- Structured tutor answers include lesson lifecycle state and a compact usage
+  snapshot for the current lesson/day.
 - Static web UI text supports Russian and English locale switching across
   auth, first meeting, tutor, and admin views.
 - Authenticated users can open a settings view for language, voice input
-  language, account info, and read-only DB-backed learning profile memory.
+  language, account info, and read-only DB-backed learning profile memory,
+  including recent session summaries and skill progress/regression signals.
+- Authenticated users can see their own lesson usage bar in the tutor
+  workspace, including today's estimate, current lesson estimate, and expanded
+  operation/model/token/image details.
 - Tutor prompts include the stored student profile summary when available so
   explanations adapt to the teenager across compacted sessions.
 - Tutor turns enqueue delayed background AI work for learning-signal
@@ -52,9 +71,24 @@ visible next actions.
   logical. `AI_BACKGROUND_BATCHING_ENABLED=false` restores legacy per-turn
   signal extraction and split profile/strategy refresh jobs. Interrupted
   `queued` observations and stale `running` jobs are recovered by the worker.
+- Background analysis stores layered teaching evidence: L0 raw turn data in
+  `tutor_turns`, L1 sanitized observations in
+  `background_learning_observations`, L2 session summaries in
+  `student_session_summaries`, L3 learning signals in
+  `student_learning_signals`, L4 skill progress/regression rows in
+  `student_skill_progress`, and L5 strategy hints consumed by profile/strategy
+  refresh jobs.
+- Lesson effectiveness signals store goal status, answer shape, and the
+  current strategy adjustment recommendation so recent progress/regression can
+  change how later explanations are framed.
 - Background assistant calls use the model-provider facade and can request
   lower-cost OpenAI Flex processing through operation-level service-tier
   policy when using the OpenAI provider.
+- Model-provider operation calls can write a local usage ledger for the
+  signed-in user when usage context is present. The ledger stores provider,
+  model, operation, assistant role, token/image counts, and locally estimated
+  USD cost; it does not store raw prompts, hidden instructions, provider
+  request ids, or billing credentials.
 - Tutor, onboarding, background, quality-review, and image calls resolve
   model settings through role/operation policy before reaching the provider,
   so each assistant role can be tuned independently while provider support
@@ -62,6 +96,8 @@ visible next actions.
 - Admin-only upload of PDF, Markdown, TXT, DOCX, and TeX knowledge files.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
+- Image generation remains asynchronous and explicit; generated images render
+  inside the same tutor turn after the text/blocks response is already shown.
 - Imported WebRTC/Realtime voice assistant under `/webrtc`.
 
 ## Architecture
@@ -72,6 +108,10 @@ visible next actions.
 - API modules:
   - `AuthModule`: local users, roles, signed session cookies.
   - `DatabaseModule`: SQLite storage and table initialization.
+  - `LessonModule`: lesson session lifecycle, goal status, learning-time
+    heuristics, and effectiveness-signal storage.
+  - `UsageModule`: authenticated user usage summaries backed by the local AI
+    usage ledger.
   - `StudentProfileModule`: first-login profile creation, profile status, and
     stored tutoring strategy memory.
   - `BackgroundAiModule`: SQLite-backed background AI job queue for post-turn
@@ -111,13 +151,25 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   before grouped background analysis.
 - `background_analysis_windows`: durable records of grouped observation-window
   analyses and their source job.
+- `student_session_summaries`: compact per-session summaries and explicit
+  evidence-level JSON for future teaching strategy.
+- `student_skill_progress`: topic/skill trend rows recording progress,
+  regression, stability, support needed, independence, and evidence.
+- `lesson_sessions`: active and completed lesson sessions with goal status,
+  configurable learning-limit state, turn count, and active-learning seconds.
+- `lesson_effectiveness_signals`: teaching-only signals about goal status,
+  answer shape, and strategy adjustment recommendations.
+- `ai_usage_ledger`: per-operation model usage records for signed-in users,
+  including operation, assistant role, model, token/image counts, local cost
+  estimate, and pricing source.
 - `student_learning_signals`: sanitized teaching-useful learning signals,
   session summaries, profile-refresh evidence, strategy-refresh evidence, and
   quality-review records.
 - `schema_migrations`: applied POC SQLite schema migration versions and
   timestamps.
 - `knowledge_files`: local metadata for OpenAI file and vector store records.
-- `tutor_turns`: user prompt, conversation id, answer JSON, timestamp.
+- `tutor_turns`: user prompt, conversation id, lesson type, answer JSON, and
+  timestamp.
 
 OpenAI stores remote files, vector stores, generated model responses, realtime
 session data, and image generation outputs. Those external objects are not

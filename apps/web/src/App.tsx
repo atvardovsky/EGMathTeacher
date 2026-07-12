@@ -67,11 +67,18 @@ import {
 } from './i18n';
 import {
   KnowledgeStatus,
+  LessonType,
   StudentOnboardingAnswers,
   StudentProfile,
   StudentProfileStatus,
   TutorAnswer,
+  TutorImageBlock,
+  TutorImageResult,
+  TutorLessonLifecycle,
+  TutorResponseBlock,
   TutorTurn,
+  UserUsageSummary,
+  UsageTotals,
   User,
 } from './types';
 
@@ -807,10 +814,13 @@ function TutorWorkspace({
   const [draft, setDraft] = useState('');
   const [turns, setTurns] = useState<TutorTurn[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
+  const [lessonType, setLessonType] = useState<LessonType>('tutor');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceInterim, setVoiceInterim] = useState('');
+  const [usageSummary, setUsageSummary] = useState<UserUsageSummary | null>(null);
+  const [usageExpanded, setUsageExpanded] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -818,6 +828,24 @@ function TutorWorkspace({
     () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
     [],
   );
+
+  const latestLifecycle = useMemo(
+    () => turns.find((turn) => turn.answer?.lessonLifecycle)?.answer?.lessonLifecycle,
+    [turns],
+  );
+
+  useEffect(() => {
+    void refreshUsage();
+  }, []);
+
+  async function refreshUsage(lessonSessionId?: string) {
+    const query = lessonSessionId ? `?lessonSessionId=${encodeURIComponent(lessonSessionId)}` : '';
+    try {
+      setUsageSummary(await api<UserUsageSummary>(`/usage/me/summary${query}`));
+    } catch {
+      // Usage visibility must not block tutoring when the POC API is unavailable.
+    }
+  }
 
   async function sendMessage(rawPrompt = draft, source: 'text' | 'voice' = 'text') {
     const prompt = rawPrompt.trim();
@@ -829,16 +857,23 @@ function TutorWorkspace({
     setDraft('');
     setVoiceInterim('');
     const id = crypto.randomUUID();
-    setTurns((current) => [{ id, prompt, source }, ...current]);
+    const currentLessonType = lessonType;
+    setTurns((current) => [{ id, prompt, source, lessonType: currentLessonType }, ...current]);
     try {
       const answer = await api<TutorAnswer>('/tutor/message', {
         method: 'POST',
-        body: JSON.stringify({ message: prompt, conversationId, source }),
+        body: JSON.stringify({
+          message: prompt,
+          conversationId,
+          source,
+          lessonType: currentLessonType,
+        }),
       });
       setConversationId(answer.conversationId);
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
+      void refreshUsage(answer.lessonLifecycle?.lessonSessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.tutor);
       setTurns((current) => current.filter((turn) => turn.id !== id));
@@ -900,27 +935,54 @@ function TutorWorkspace({
     textareaRef.current?.focus();
   }
 
-  async function generateImage(turn: TutorTurn) {
-    if (!turn.answer?.imagePrompt || turn.loadingImage) {
+  async function generateImage(turn: TutorTurn, block: TutorImageBlock) {
+    if (!block.prompt || turn.loadingImages?.[block.id]) {
       return;
     }
     setTurns((current) =>
-      current.map((item) => (item.id === turn.id ? { ...item, loadingImage: true } : item)),
+      current.map((item) =>
+        item.id === turn.id
+          ? {
+              ...item,
+              loadingImages: { ...(item.loadingImages ?? {}), [block.id]: true },
+            }
+          : item,
+      ),
     );
     try {
-      const result = await api<{ dataUrl: string }>('/tutor/image', {
+      const result = await api<TutorImageResult>('/tutor/image', {
         method: 'POST',
-        body: JSON.stringify({ prompt: turn.answer.imagePrompt, context: turn.answer.answer }),
+        body: JSON.stringify({
+          prompt: block.prompt,
+          context: turn.answer?.answer,
+          conversationId: turn.answer?.conversationId,
+          lessonSessionId: turn.answer?.lessonLifecycle?.lessonSessionId,
+          lessonType: turn.answer?.lessonType ?? turn.lessonType,
+        }),
       });
       setTurns((current) =>
         current.map((item) =>
-          item.id === turn.id ? { ...item, imageUrl: result.dataUrl, loadingImage: false } : item,
+          item.id === turn.id
+            ? {
+                ...item,
+                imageUrls: { ...(item.imageUrls ?? {}), [block.id]: result.dataUrl },
+                loadingImages: { ...(item.loadingImages ?? {}), [block.id]: false },
+              }
+            : item,
         ),
       );
+      void refreshUsage(turn.answer?.lessonLifecycle?.lessonSessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.image);
       setTurns((current) =>
-        current.map((item) => (item.id === turn.id ? { ...item, loadingImage: false } : item)),
+        current.map((item) =>
+          item.id === turn.id
+            ? {
+                ...item,
+                loadingImages: { ...(item.loadingImages ?? {}), [block.id]: false },
+              }
+            : item,
+        ),
       );
     }
   }
@@ -942,6 +1004,23 @@ function TutorWorkspace({
             </Badge>
           </Group>
         </Group>
+
+        <Box>
+          <Text fw={800} mb={6}>
+            {t.tutor.lessonMode}
+          </Text>
+          <SegmentedControl
+            fullWidth
+            value={lessonType}
+            onChange={(value) => setLessonType(toLessonType(value))}
+            data={[
+              { value: 'tutor', label: t.tutor.lessonModeOptions.tutor },
+              { value: 'practice', label: t.tutor.lessonModeOptions.practice },
+              { value: 'diagnostic', label: t.tutor.lessonModeOptions.diagnostic },
+              { value: 'mistake_review', label: t.tutor.lessonModeOptions.mistake_review },
+            ]}
+          />
+        </Box>
 
         <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs">
           {t.tutor.stages.map((label, index) => (
@@ -965,6 +1044,15 @@ function TutorWorkspace({
             </Pill>
           ))}
         </Group>
+
+        <UsageBar
+          t={t}
+          locale={locale}
+          summary={usageSummary}
+          lifecycle={latestLifecycle}
+          expanded={usageExpanded}
+          onToggle={() => setUsageExpanded((current) => !current)}
+        />
 
         <Card withBorder shadow="sm" padding="md" className="tutor-composer">
           <form
@@ -1040,6 +1128,150 @@ function TutorWorkspace({
   );
 }
 
+function UsageBar({
+  t,
+  locale,
+  summary,
+  lifecycle,
+  expanded,
+  onToggle,
+}: {
+  t: Copy;
+  locale: Locale;
+  summary: UserUsageSummary | null;
+  lifecycle?: TutorLessonLifecycle;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const today = summary?.today ?? emptyUsageTotals();
+  const lesson = summary?.currentLesson?.total ?? emptyUsageTotals();
+  const details = summary?.currentLesson?.items ?? [];
+  const needsPricingNote =
+    !today.pricingConfigured &&
+    (today.totalTokens > 0 || today.imageCount > 0 || lesson.totalTokens > 0 || lesson.imageCount > 0);
+
+  return (
+    <Paper withBorder radius="md" p="sm" className="usage-bar">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" gap="sm">
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon variant="light" color="teal">
+              <Sparkles size={18} />
+            </ThemeIcon>
+            <Box>
+              <Text fw={900}>{t.tutor.usage.title}</Text>
+              <Text size="xs" c="dimmed">
+                {needsPricingNote ? t.tutor.usage.pricingNotConfigured : t.tutor.usage.subtitle}
+              </Text>
+            </Box>
+          </Group>
+          <Button variant="subtle" size="xs" onClick={onToggle}>
+            {expanded ? t.tutor.usage.hideDetails : t.tutor.usage.details}
+          </Button>
+        </Group>
+
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+          <UsageMetric label={t.tutor.usage.today} value={formatUsageCost(today)} />
+          <UsageMetric label={t.tutor.usage.lesson} value={formatUsageCost(lesson)} />
+          <UsageMetric
+            label={t.tutor.usage.goal}
+            value={
+              lifecycle
+                ? t.tutor.usage.goalStatuses[lifecycle.goalStatus]
+                : t.tutor.usage.noData
+            }
+          />
+          <UsageMetric
+            label={t.tutor.usage.time}
+            value={
+              lifecycle
+                ? `${formatDuration(lifecycle.activeLearningSeconds)} / ${formatDuration(lifecycle.dayActiveLearningSeconds)}`
+                : t.tutor.usage.noData
+            }
+          />
+        </SimpleGrid>
+
+        {lifecycle?.shouldSuggestBreak && (
+          <Alert color={lifecycle.shouldStop ? 'red' : 'yellow'} variant="light">
+            {lifecycle.shouldStop ? t.tutor.usage.stopRecommended : t.tutor.usage.breakRecommended}
+          </Alert>
+        )}
+
+        {expanded && (
+          <Box className="usage-details">
+            {details.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                {t.tutor.usage.noDetails}
+              </Text>
+            ) : (
+              <Table striped highlightOnHover withTableBorder={false}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>{t.tutor.usage.operation}</Table.Th>
+                    <Table.Th>{t.tutor.usage.model}</Table.Th>
+                    <Table.Th>{t.tutor.usage.tokens}</Table.Th>
+                    <Table.Th>{t.tutor.usage.images}</Table.Th>
+                    <Table.Th>{t.tutor.usage.cost}</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {details.map((item) => (
+                    <Table.Tr key={item.id}>
+                      <Table.Td>
+                        <Text size="sm" fw={700}>
+                          {item.operation}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {item.assistantRole}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" className="break-anywhere">
+                          {item.model}
+                        </Text>
+                        {item.serviceTier && (
+                          <Text size="xs" c="dimmed">
+                            {item.serviceTier}
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">
+                          {item.totalTokens.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {t.tutor.usage.input}: {item.inputTokens.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+                          {' / '}
+                          {t.tutor.usage.output}: {item.outputTokens.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>{item.imageCount}</Table.Td>
+                      <Table.Td>{formatCurrency(item.estimatedCostUsd)}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
+          </Box>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function UsageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <Paper withBorder radius="md" p="xs" className="usage-metric">
+      <Text size="xs" c="dimmed">
+        {label}
+      </Text>
+      <Text fw={900} className="break-anywhere">
+        {value}
+      </Text>
+    </Paper>
+  );
+}
+
 function TutorTurnCard({
   t,
   turn,
@@ -1047,7 +1279,7 @@ function TutorTurnCard({
 }: {
   t: Copy;
   turn: TutorTurn;
-  onGenerateImage: (turn: TutorTurn) => Promise<void>;
+  onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
 }) {
   return (
     <Card withBorder shadow="sm" padding="lg" className="turn-card">
@@ -1055,6 +1287,9 @@ function TutorTurnCard({
         <Group align="flex-start" gap="sm" wrap="nowrap">
           <Badge variant="light" color={turn.source === 'voice' ? 'indigo' : 'teal'}>
             {turn.source === 'voice' ? t.common.voice : t.common.text}
+          </Badge>
+          <Badge variant="light" color={lessonColor(turn.lessonType)}>
+            {t.tutor.lessonModes[turn.lessonType]}
           </Badge>
           <Text fw={900} className="break-anywhere">
             {turn.prompt}
@@ -1070,16 +1305,7 @@ function TutorTurnCard({
 
         {turn.answer && (
           <Stack gap="lg">
-            <Box>
-              <Title order={3} mb={6}>
-                {t.tutor.explanation}
-              </Title>
-              <Text className="prewrap" lh={1.65}>
-                {turn.answer.answer}
-              </Text>
-            </Box>
-            <TaskList title={t.tutor.tasks} items={turn.answer.tasks} />
-            <ExampleList title={t.tutor.examples} items={turn.answer.examples} />
+            <TutorBlockList t={t} turn={turn} onGenerateImage={onGenerateImage} />
 
             {turn.answer.citations.length > 0 && (
               <Box>
@@ -1095,35 +1321,6 @@ function TutorTurnCard({
                 </Group>
               </Box>
             )}
-
-            {turn.answer.needsImage && turn.answer.imagePrompt && (
-              <Box>
-                {turn.imageUrl ? (
-                  <Image
-                    src={turn.imageUrl}
-                    alt={t.tutor.imageAlt}
-                    radius="md"
-                    className="generated-image"
-                  />
-                ) : (
-                  <Button
-                    variant="light"
-                    color="indigo"
-                    leftSection={
-                      turn.loadingImage ? (
-                        <Loader2 className="spin" size={18} />
-                      ) : (
-                        <ImageIcon size={18} />
-                      )
-                    }
-                    onClick={() => void onGenerateImage(turn)}
-                    disabled={turn.loadingImage}
-                  >
-                    {t.tutor.showImage}
-                  </Button>
-                )}
-              </Box>
-            )}
           </Stack>
         )}
       </Stack>
@@ -1131,65 +1328,218 @@ function TutorTurnCard({
   );
 }
 
-function TaskList({ title, items }: { title: string; items: TutorAnswer['tasks'] }) {
-  if (items.length === 0) {
+function emptyUsageTotals(): UsageTotals {
+  return {
+    estimatedCostUsd: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    imageCount: 0,
+    pricingConfigured: false,
+  };
+}
+
+function formatUsageCost(totals: UsageTotals): string {
+  return `${formatCurrency(totals.estimatedCostUsd)}${totals.pricingConfigured ? '' : '*'}`;
+}
+
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(value >= 1 ? 2 : 4)}`;
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  return `${minutes}m`;
+}
+
+function TutorBlockList({
+  t,
+  turn,
+  onGenerateImage,
+}: {
+  t: Copy;
+  turn: TutorTurn;
+  onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
+}) {
+  if (!turn.answer) {
     return null;
   }
+
+  const blocks = getTutorBlocks(turn.answer, t.tutor.imageAlt);
   return (
-    <Box>
-      <Title order={3} mb="xs">
-        {title}
-      </Title>
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-        {items.map((task, index) => (
-          <Paper withBorder radius="md" p="md" className="task-panel" key={`${task.title}-${index}`}>
-            <Group justify="space-between" align="flex-start" mb={8}>
-              <Text fw={900}>{task.title}</Text>
-              {task.difficulty && (
-                <Badge color="orange" variant="light">
-                  {task.difficulty}
-                </Badge>
-              )}
-            </Group>
-            <Text className="break-anywhere" lh={1.5}>
-              {task.prompt}
-            </Text>
-          </Paper>
-        ))}
-      </SimpleGrid>
+    <Stack gap="md">
+      {blocks.map((block, index) => (
+        <TutorBlock
+          key={block.id}
+          t={t}
+          turn={turn}
+          block={block}
+          showTextTitle={index === 0 && block.type === 'text'}
+          onGenerateImage={onGenerateImage}
+        />
+      ))}
+    </Stack>
+  );
+}
+
+function TutorBlock({
+  t,
+  turn,
+  block,
+  showTextTitle,
+  onGenerateImage,
+}: {
+  t: Copy;
+  turn: TutorTurn;
+  block: TutorResponseBlock;
+  showTextTitle: boolean;
+  onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
+}) {
+  if (block.type === 'text') {
+    return (
+      <Box>
+        {showTextTitle && (
+          <Title order={3} mb={6}>
+            {t.tutor.explanation}
+          </Title>
+        )}
+        <Text className="prewrap" lh={1.65}>
+          {block.text}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (block.type === 'task') {
+    return (
+      <Paper withBorder radius="md" p="md" className="task-panel">
+        <Group justify="space-between" align="flex-start" mb={8}>
+          <Text fw={900}>{block.title}</Text>
+          {block.difficulty && (
+            <Badge color="orange" variant="light">
+              {block.difficulty}
+            </Badge>
+          )}
+        </Group>
+        <Text className="break-anywhere" lh={1.5}>
+          {block.prompt}
+        </Text>
+      </Paper>
+    );
+  }
+
+  if (block.type === 'example') {
+    return (
+      <Paper withBorder radius="md" p="md" className="example-panel">
+        <Text fw={900} mb={6}>
+          {block.title}
+        </Text>
+        <Text className="break-anywhere" lh={1.5}>
+          {block.explanation}
+        </Text>
+      </Paper>
+    );
+  }
+
+  const imageUrl = block.url ?? turn.imageUrls?.[block.id];
+  const loading = Boolean(turn.loadingImages?.[block.id]);
+  return (
+    <Box className="image-block">
+      <Text fw={800} size="sm" mb={6}>
+        {block.caption}
+      </Text>
+      {imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={block.altText || t.tutor.imageAlt}
+          radius="md"
+          className="generated-image"
+        />
+      ) : (
+        <Button
+          variant={block.priority === 'required' ? 'filled' : 'light'}
+          color="indigo"
+          leftSection={loading ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />}
+          onClick={() => void onGenerateImage(turn, block)}
+          disabled={loading}
+        >
+          {t.tutor.showImage}
+        </Button>
+      )}
     </Box>
   );
 }
 
-function ExampleList({ title, items }: { title: string; items: TutorAnswer['examples'] }) {
-  if (items.length === 0) {
-    return null;
+function getTutorBlocks(answer: TutorAnswer, imageAlt: string): TutorResponseBlock[] {
+  if (Array.isArray(answer.blocks) && answer.blocks.length > 0) {
+    return answer.blocks;
   }
-  return (
-    <Box>
-      <Title order={3} mb="xs">
-        {title}
-      </Title>
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-        {items.map((example, index) => (
-          <Paper
-            withBorder
-            radius="md"
-            p="md"
-            className="example-panel"
-            key={`${example.title}-${index}`}
-          >
-            <Text fw={900} mb={6}>
-              {example.title}
-            </Text>
-            <Text className="break-anywhere" lh={1.5}>
-              {example.explanation}
-            </Text>
-          </Paper>
-        ))}
-      </SimpleGrid>
-    </Box>
-  );
+
+  const blocks: TutorResponseBlock[] = [];
+  if (answer.answer.trim()) {
+    blocks.push({ id: 'text-1', type: 'text', text: answer.answer });
+  }
+  answer.tasks.forEach((task, index) => {
+    blocks.push({
+      id: `task-${index + 1}`,
+      type: 'task',
+      title: task.title,
+      prompt: task.prompt,
+      difficulty: task.difficulty,
+    });
+  });
+  answer.examples.forEach((example, index) => {
+    blocks.push({
+      id: `example-${index + 1}`,
+      type: 'example',
+      title: example.title,
+      explanation: example.explanation,
+    });
+  });
+  if (answer.needsImage && answer.imagePrompt) {
+    blocks.push({
+      id: 'image-1',
+      type: 'image',
+      status: 'suggested',
+      prompt: answer.imagePrompt,
+      caption: imageAlt,
+      altText: imageAlt,
+      priority: 'optional',
+    });
+  }
+  return blocks;
+}
+
+function toLessonType(value: string): LessonType {
+  return isLessonType(value) ? value : 'tutor';
+}
+
+function isLessonType(value: string): value is LessonType {
+  return [
+    'meeting',
+    'tutor',
+    'concept',
+    'practice',
+    'diagnostic',
+    'exam_strategy',
+    'mistake_review',
+    'visual_explanation',
+    'reflection',
+  ].includes(value);
+}
+
+function lessonColor(lessonType: LessonType): string {
+  if (lessonType === 'practice') {
+    return 'orange';
+  }
+  if (lessonType === 'diagnostic') {
+    return 'indigo';
+  }
+  if (lessonType === 'mistake_review') {
+    return 'red';
+  }
+  return 'teal';
 }
 
 function SettingsView({
@@ -1349,6 +1699,16 @@ function SettingsView({
                     rows={rowsFromRecord(profile.psychologicalProfile)}
                     t={t}
                   />
+                  <SettingsPanel
+                    title={t.settings.recentSessions}
+                    rows={rowsFromSessionSummaries(profile.recentSessionSummaries, locale, t)}
+                    t={t}
+                  />
+                  <SettingsPanel
+                    title={t.settings.skillProgress}
+                    rows={rowsFromSkillProgress(profile.skillProgress, locale, t)}
+                    t={t}
+                  />
                 </SimpleGrid>
 
                 <Alert color="yellow" variant="light">
@@ -1425,6 +1785,41 @@ function SettingsPanel({
 
 function rowsFromRecord(record: Record<string, unknown>): { label: string; value: unknown }[] {
   return Object.entries(record ?? {}).map(([label, value]) => ({ label, value }));
+}
+
+function rowsFromSessionSummaries(
+  summaries: StudentProfile['recentSessionSummaries'],
+  locale: Locale,
+  t: Copy,
+): { label: string; value: unknown }[] {
+  return summaries.map((summary, index) => ({
+    label: `${t.settings.session} ${index + 1}`,
+    value: {
+      lessonType: t.tutor.lessonModes[summary.lessonType],
+      createdAt: formatDateTime(summary.createdAt, locale),
+      ...summary.summary,
+      evidenceLevels: summary.evidenceLevels,
+    },
+  }));
+}
+
+function rowsFromSkillProgress(
+  progress: StudentProfile['skillProgress'],
+  locale: Locale,
+  t: Copy,
+): { label: string; value: unknown }[] {
+  return progress.map((item) => ({
+    label: `${item.topic} / ${item.skill}`,
+    value: {
+      lessonType: t.tutor.lessonModes[item.lessonType],
+      direction: t.settings.progressDirections[item.direction],
+      confidence: item.confidence,
+      supportNeeded: item.supportNeeded,
+      independence: item.independence,
+      evidence: item.evidence,
+      createdAt: formatDateTime(item.createdAt, locale),
+    },
+  }));
 }
 
 function hasSettingValue(value: unknown): boolean {

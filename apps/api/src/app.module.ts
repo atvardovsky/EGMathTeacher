@@ -14,6 +14,8 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
 import { OpenAiClientModule } from './openai/openai-client.module';
 import { StudentProfileModule } from './student-profile/student-profile.module';
 import { AiModelModule } from './ai-model/ai-model.module';
+import { LessonModule } from './lesson/lesson.module';
+import { UsageModule } from './usage/usage.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { AiModelModule } from './ai-model/ai-model.module';
     ConversationModule,
     DatabaseModule,
     AuthModule,
+    LessonModule,
+    UsageModule,
     StudentProfileModule,
     OpenAiClientModule,
     AiModelModule,

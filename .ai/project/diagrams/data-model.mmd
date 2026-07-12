@@ -41,6 +41,7 @@ erDiagram
     TEXT id PK
     TEXT user_id FK
     TEXT conversation_id
+    TEXT lesson_type
     TEXT prompt
     TEXT answer_json
     TEXT created_at
@@ -67,6 +68,7 @@ erDiagram
     TEXT id PK
     TEXT user_id FK
     TEXT conversation_id
+    TEXT lesson_type
     TEXT source
     TEXT observation_json
     TEXT status
@@ -99,12 +101,108 @@ erDiagram
     TEXT created_at
   }
 
+  STUDENT_SESSION_SUMMARIES {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT lesson_type
+    TEXT summary_json
+    TEXT evidence_levels_json
+    TEXT source_window_id FK
+    TEXT source_job_id FK
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  STUDENT_SKILL_PROGRESS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT lesson_type
+    TEXT topic
+    TEXT skill
+    TEXT direction
+    TEXT confidence
+    TEXT support_needed
+    TEXT independence
+    TEXT evidence_json
+    TEXT source_window_id FK
+    TEXT source_job_id FK
+    TEXT created_at
+  }
+
+  LESSON_SESSIONS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT lesson_type
+    TEXT status
+    TEXT goal_status
+    TEXT goal_text
+    TEXT success_criteria_json
+    TEXT finish_reason
+    INTEGER active_learning_seconds
+    INTEGER turn_count
+    TEXT started_at
+    TEXT last_activity_at
+    TEXT finished_at
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  LESSON_EFFECTIVENESS_SIGNALS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT lesson_session_id FK
+    TEXT conversation_id
+    TEXT lesson_type
+    TEXT goal_status
+    TEXT strategy_signal_json
+    TEXT answer_shape_json
+    TEXT recommended_adjustment
+    TEXT created_at
+  }
+
+  AI_USAGE_LEDGER {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT lesson_session_id FK
+    TEXT lesson_type
+    TEXT operation_key
+    TEXT operation
+    TEXT assistant_role
+    TEXT provider
+    TEXT model
+    TEXT response_format
+    TEXT service_tier
+    INTEGER input_tokens
+    INTEGER cached_input_tokens
+    INTEGER output_tokens
+    INTEGER total_tokens
+    INTEGER image_count
+    REAL estimated_cost_usd
+    TEXT pricing_source
+    TEXT created_at
+  }
+
   USERS ||--o| STUDENT_PROFILES : has
   USERS ||--o{ TUTOR_TURNS : owns
   USERS ||--o{ BACKGROUND_AI_JOBS : queues
   USERS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : has
   USERS ||--o{ BACKGROUND_ANALYSIS_WINDOWS : has
   USERS ||--o{ STUDENT_LEARNING_SIGNALS : has
+  USERS ||--o{ STUDENT_SESSION_SUMMARIES : has
+  USERS ||--o{ STUDENT_SKILL_PROGRESS : has
+  USERS ||--o{ LESSON_SESSIONS : has
+  USERS ||--o{ LESSON_EFFECTIVENESS_SIGNALS : has
+  USERS ||--o{ AI_USAGE_LEDGER : has
+  LESSON_SESSIONS ||--o{ LESSON_EFFECTIVENESS_SIGNALS : records
+  LESSON_SESSIONS ||--o{ AI_USAGE_LEDGER : attributes
   BACKGROUND_ANALYSIS_WINDOWS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : groups
+  BACKGROUND_ANALYSIS_WINDOWS ||--o{ STUDENT_SESSION_SUMMARIES : summarizes
+  BACKGROUND_ANALYSIS_WINDOWS ||--o{ STUDENT_SKILL_PROGRESS : trends
   BACKGROUND_AI_JOBS ||--o{ BACKGROUND_ANALYSIS_WINDOWS : runs
   BACKGROUND_AI_JOBS ||--o{ STUDENT_LEARNING_SIGNALS : produces
+  BACKGROUND_AI_JOBS ||--o{ STUDENT_SESSION_SUMMARIES : produces
+  BACKGROUND_AI_JOBS ||--o{ STUDENT_SKILL_PROGRESS : produces

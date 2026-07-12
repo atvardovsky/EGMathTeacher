@@ -9,8 +9,10 @@ The project contour owns:
 - Product purpose: a POC AI math tutor for Russian ЕГЭ preparation.
 - Target audience: teenagers around 14-16 years old.
 - Main user workflows: registration/login, voice or text math questions,
-  first-login student profile meeting, tutor answers, practice tasks, worked
-  examples, optional explanatory images, and admin knowledge upload.
+  lesson-type selection, first-login student profile meeting, tutor answers,
+  practice tasks, worked examples, optional explanatory images, read-only
+  progress memory, user-visible lesson usage estimates, and admin knowledge
+  upload.
 - Runtime architecture: NestJS API under `apps/api`, React/Vite web app under
   `apps/web`, shared root npm workspace, SQLite local storage, OpenAI-first
   model provider facade for RAG/profile/tutor/image/background assistant
@@ -18,9 +20,11 @@ The project contour owns:
   windows, and inherited WebRTC/Realtime voice bridge.
 - Data ownership: local SQLite tables for users, student profiles, knowledge
   file metadata, tutor turns, background AI jobs, background learning
-  observations, background analysis windows, and learning signals; OpenAI owns
-  uploaded files, vector stores, model responses, profile-generation
-  responses, background model responses, and generated images.
+  observations, background analysis windows, session summaries, skill
+  progress/regression, lesson sessions, lesson effectiveness signals, AI usage
+  ledger rows, and learning signals; OpenAI owns uploaded files, vector
+  stores, model responses, profile-generation responses, background model
+  responses, and generated images.
 - UI facts: the web client uses Mantine, lucide icons, browser speech
   recognition, Russian/English static UI localization, and a teen-friendly
   modern tutor workspace.
@@ -54,8 +58,8 @@ The project contour does not own:
   `.ai/project/ui-guidelines.md`, `.ai/project/ui-tree.md`.
 - API modules: `apps/api/src/auth`, `apps/api/src/student-profile`,
   `apps/api/src/tutor`, `apps/api/src/background-ai`,
-  `apps/api/src/knowledge`, `apps/api/src/webrtc`, `apps/api/src/openai`,
-  `apps/api/src/database`.
+  `apps/api/src/lesson`, `apps/api/src/usage`, `apps/api/src/knowledge`,
+  `apps/api/src/webrtc`, `apps/api/src/openai`, `apps/api/src/database`.
 - Web app: `apps/web/src/App.tsx`, `apps/web/src/api.ts`,
   `apps/web/src/types.ts`, `apps/web/src/styles.css`.
 - Tests: `apps/api/test`.

@@ -11,6 +11,8 @@ import {
   StudentProfileRecord,
   StudentProfileRequestContext,
   StudentProfileStatus,
+  StudentSessionSummaryDto,
+  StudentSkillProgressDto,
 } from './student-profile.types';
 
 interface GeneratedProfile {
@@ -24,6 +26,7 @@ interface GeneratedProfile {
 interface ProfileSpecialistRequest {
   operation: AiOperationKey;
   specialist: string;
+  userId: string;
   instructions: string;
   inputText: string;
   vectorStoreIds: string[];
@@ -78,7 +81,13 @@ export class StudentProfileService {
       `Предпочтения обучения: ${JSON.stringify(profile.learningPreferences)}`,
       `Психолого-педагогический профиль: ${JSON.stringify(profile.psychologicalProfile)}`,
       `Стратегия объяснения: ${JSON.stringify(profile.explanationStrategy)}`,
-    ].join('\n');
+      profile.recentSessionSummaries.length > 0
+        ? `Недавние сводки занятий: ${JSON.stringify(profile.recentSessionSummaries)}`
+        : undefined,
+      profile.skillProgress.length > 0
+        ? `Прогресс и регресс по навыкам: ${JSON.stringify(profile.skillProgress)}`
+        : undefined,
+    ].filter(Boolean).join('\n');
   }
 
   async completeOnboarding(
@@ -139,6 +148,7 @@ export class StudentProfileService {
     const knowledgeParsed = await this.runProfileSpecialist({
       operation: 'onboardingKnowledgeDiagnosis',
       specialist: 'math-knowledge-diagnostician',
+      userId: user.id,
       instructions: this.getKnowledgeDiagnosticInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -159,6 +169,7 @@ export class StudentProfileService {
     const psychopedagogicalParsed = await this.runProfileSpecialist({
       operation: 'onboardingPsychopedagogicalProfile',
       specialist: 'psychopedagogical-profiler',
+      userId: user.id,
       instructions: this.getPsychopedagogicalInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -184,6 +195,7 @@ export class StudentProfileService {
     const strategyParsed = await this.runProfileSpecialist({
       operation: 'onboardingStrategyPlan',
       specialist: 'teaching-strategy-planner',
+      userId: user.id,
       instructions: this.getTeachingStrategyInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -255,6 +267,10 @@ export class StudentProfileService {
 
     return {
       instructions: request.instructions,
+      usageContext: {
+        userId: request.userId,
+        lessonType: 'meeting',
+      },
       metadata: {
         profile_specialist: request.specialist,
       },
@@ -472,10 +488,80 @@ export class StudentProfileService {
       learningPreferences: this.parseJson(record.learning_preferences_json, {}),
       psychologicalProfile: this.parseJson(record.psychological_profile_json, {}),
       explanationStrategy: this.parseJson(record.explanation_strategy_json, {}),
+      recentSessionSummaries: this.getRecentSessionSummaries(record.user_id),
+      skillProgress: this.getRecentSkillProgress(record.user_id),
       aiSummary: record.ai_summary,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     };
+  }
+
+  private getRecentSessionSummaries(userId: string): StudentSessionSummaryDto[] {
+    const rows = this.db.all<{
+      id: string;
+      conversation_id: string | null;
+      lesson_type: StudentSessionSummaryDto['lessonType'];
+      summary_json: string;
+      evidence_levels_json: string;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `SELECT id, conversation_id, lesson_type, summary_json,
+              evidence_levels_json, created_at, updated_at
+       FROM student_session_summaries
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [userId],
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      lessonType: row.lesson_type,
+      summary: this.parseJson(row.summary_json, {}),
+      evidenceLevels: this.parseJson(row.evidence_levels_json, {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  private getRecentSkillProgress(userId: string): StudentSkillProgressDto[] {
+    const rows = this.db.all<{
+      id: string;
+      conversation_id: string | null;
+      lesson_type: StudentSkillProgressDto['lessonType'];
+      topic: string;
+      skill: string;
+      direction: StudentSkillProgressDto['direction'];
+      confidence: StudentSkillProgressDto['confidence'];
+      support_needed: StudentSkillProgressDto['supportNeeded'];
+      independence: StudentSkillProgressDto['independence'];
+      evidence_json: string;
+      created_at: string;
+    }>(
+      `SELECT id, conversation_id, lesson_type, topic, skill, direction,
+              confidence, support_needed, independence, evidence_json, created_at
+       FROM student_skill_progress
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT 12`,
+      [userId],
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      lessonType: row.lesson_type,
+      topic: row.topic,
+      skill: row.skill,
+      direction: row.direction,
+      confidence: row.confidence,
+      supportNeeded: row.support_needed,
+      independence: row.independence,
+      evidence: this.parseJson(row.evidence_json, {}),
+      createdAt: row.created_at,
+    }));
   }
 
   private parseJson<T>(value: string, fallback: T): T {

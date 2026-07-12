@@ -27,10 +27,14 @@ The current POC records migration `001_initial_schema` after creating the
 initial tables, migration `002_background_ai_jobs` after creating background
 AI job and learning-signal tables, and migration
 `003_background_observation_windows` after adding grouped background
-observation-window storage. Migrations are applied inside a local SQLite
-transaction, and table-rebuild migrations must pass `PRAGMA foreign_key_check`
-before the version is recorded. This is a lightweight migration ledger, not a
-full production rollback, backfill, or backup system.
+observation-window storage, and migration `004_session_progress_tracking`
+after adding lesson type, session-summary, and skill-progress storage, and
+migration `005_lesson_lifecycle_usage` after adding lesson sessions,
+effectiveness signals, and the AI usage ledger.
+Migrations are applied inside a local SQLite transaction, and table-rebuild
+migrations must pass `PRAGMA foreign_key_check` before the version is
+recorded. This is a lightweight migration ledger, not a full production
+rollback, backfill, or backup system.
 
 ### `users`
 
@@ -137,6 +141,7 @@ exhausted jobs become `failed`.
 | `id` | `TEXT` | primary key |
 | `user_id` | `TEXT` | required, references `users(id)` |
 | `conversation_id` | `TEXT` | required tutor conversation id |
+| `lesson_type` | `TEXT` | required; one of `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`, `mistake_review`, `visual_explanation`, `reflection` |
 | `source` | `TEXT` | required; `text` or `voice` |
 | `observation_json` | `TEXT` | required sanitized tutor-turn observation JSON |
 | `status` | `TEXT` | required; `pending`, `queued`, or `processed` |
@@ -199,6 +204,146 @@ knowledge and must not preserve sensitive non-teaching personal details.
 Batched mode writes grouped `learning_window`, derived `session_summary`, and
 combined `profile_strategy_refresh` evidence here.
 
+### `student_session_summaries`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `summary_json` | `TEXT` | required compact sanitized session summary |
+| `evidence_levels_json` | `TEXT` | required L0-L5 evidence-level summary |
+| `source_window_id` | `TEXT` | optional reference to `background_analysis_windows(id)` |
+| `source_job_id` | `TEXT` | optional reference to `background_ai_jobs(id)` |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+Session summaries are DB memory for the current student only. They store
+compact session evidence for future teaching strategy:
+
+- L0: raw turn data remains in `tutor_turns` and is referenced only by count or
+  storage location.
+- L1: sanitized turn observations are summarized from
+  `background_learning_observations`.
+- L2: compact session summary lives in `summary_json`.
+- L3: learning signals are linked through `student_learning_signals`.
+- L4: skill trend rows are linked through `student_skill_progress`.
+- L5: strategy hints are consumed by profile/strategy refresh jobs.
+
+### `student_skill_progress`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `topic` | `TEXT` | required topic label |
+| `skill` | `TEXT` | required skill label |
+| `direction` | `TEXT` | required; `progress`, `regression`, `stable`, or `unknown` |
+| `confidence` | `TEXT` | required; `low`, `medium`, `high`, or `unknown` |
+| `support_needed` | `TEXT` | required; `none`, `hint`, `step_by_step`, `full_explanation`, or `unknown` |
+| `independence` | `TEXT` | required; `low`, `medium`, `high`, or `unknown` |
+| `evidence_json` | `TEXT` | required sanitized evidence and next-action hints |
+| `source_window_id` | `TEXT` | optional reference to `background_analysis_windows(id)` |
+| `source_job_id` | `TEXT` | optional reference to `background_ai_jobs(id)` |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/background-ai` and
+`apps/api/src/database/database.service.ts`.
+
+Skill progress rows track progression or regression by topic and skill.
+They are not grades and are used only to choose explanations, hints, pacing,
+practice difficulty, repetition, or visual support.
+
+### `lesson_sessions`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `status` | `TEXT` | required; `active`, `soft_limit_reached`, `hard_limit_reached`, `goal_reached`, or `finished` |
+| `goal_status` | `TEXT` | required; `in_progress`, `reached`, `blocked`, or `stopped_by_limit` |
+| `goal_text` | `TEXT` | required lesson goal |
+| `success_criteria_json` | `TEXT` | required serialized success criteria |
+| `finish_reason` | `TEXT` | optional stop/completion reason |
+| `active_learning_seconds` | `INTEGER` | required active-learning heuristic total |
+| `turn_count` | `INTEGER` | required tutor-turn count for the lesson session |
+| `started_at` | `TEXT` | required ISO timestamp |
+| `last_activity_at` | `TEXT` | required ISO timestamp |
+| `finished_at` | `TEXT` | optional ISO timestamp |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/lesson`, `apps/api/src/tutor`, and
+`apps/api/src/database/database.service.ts`.
+
+Lesson sessions are DB memory for the current student. They track lesson goal
+state, configurable daily/continuous learning-time heuristic status, and
+goal-based stopping. The time-limit fields are product heuristics for pacing
+and breaks, not clinical fatigue assessment.
+
+### `lesson_effectiveness_signals`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `lesson_session_id` | `TEXT` | required, references `lesson_sessions(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `goal_status` | `TEXT` | required goal status |
+| `strategy_signal_json` | `TEXT` | required serialized progress/regression strategy signal |
+| `answer_shape_json` | `TEXT` | required serialized answer-shape counts |
+| `recommended_adjustment` | `TEXT` | optional strategy adjustment or finish reason |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/lesson` and
+`apps/api/src/database/database.service.ts`.
+
+Effectiveness signals are teaching-only records used to connect recent
+progress/regression with explanation strategy. They are not grades and must
+not store sensitive non-teaching details.
+
+### `ai_usage_ledger`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | optional user reference |
+| `conversation_id` | `TEXT` | optional tutor conversation id |
+| `lesson_session_id` | `TEXT` | optional reference to `lesson_sessions(id)` |
+| `lesson_type` | `TEXT` | optional lesson type |
+| `operation_key` | `TEXT` | required internal operation key |
+| `operation` | `TEXT` | required normalized operation name |
+| `assistant_role` | `TEXT` | required assistant role |
+| `provider` | `TEXT` | required provider id |
+| `model` | `TEXT` | required model name used by the provider facade |
+| `response_format` | `TEXT` | required; `json`, `text`, or `image` |
+| `service_tier` | `TEXT` | optional provider service tier |
+| `input_tokens` | `INTEGER` | required, defaults to 0 |
+| `cached_input_tokens` | `INTEGER` | required, defaults to 0 |
+| `output_tokens` | `INTEGER` | required, defaults to 0 |
+| `total_tokens` | `INTEGER` | required, defaults to 0 |
+| `image_count` | `INTEGER` | required, defaults to 0 |
+| `estimated_cost_usd` | `REAL` | required local cost estimate, defaults to 0 |
+| `pricing_source` | `TEXT` | required; local pricing source label or `not_configured` |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/usage`, `apps/api/src/ai-model`, and
+`apps/api/src/database/database.service.ts`.
+
+The usage ledger supports the signed-in user's visible lesson usage bar. It
+stores operation/model/token/image counts and local cost estimates only. It
+must not store raw prompts, hidden instructions, RAG chunks, provider request
+ids, secrets, billing credentials, or another user's usage in a response.
+
 ### `tutor_turns`
 
 | Column | Type | Rule |
@@ -206,11 +351,20 @@ combined `profile_strategy_refresh` evidence here.
 | `id` | `TEXT` | primary key |
 | `user_id` | `TEXT` | required, references `users(id)` |
 | `conversation_id` | `TEXT` | required |
+| `lesson_type` | `TEXT` | required lesson type |
 | `prompt` | `TEXT` | required |
 | `answer_json` | `TEXT` | required serialized tutor answer |
 | `created_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/tutor`.
+
+`answer_json` stores the structured tutor answer. The current response
+contract includes ordered `blocks` for text, task, example, and image visual
+plan blocks, while retaining legacy `answer`, `tasks`, `examples`,
+`needsImage`, and `imagePrompt` fields for compatibility with background
+analysis and older clients. Image bytes are not stored in `tutor_turns`;
+generated images are remote provider outputs returned to the web client as
+data URLs in the current POC.
 
 ## In-Memory State
 
@@ -269,6 +423,9 @@ The web client defines DTO-like interfaces in `apps/web/src/types.ts`:
 
 - `User`
 - `TutorAnswer`
+- `LessonType`
+- `TutorResponseBlock`
+- `TutorImageBlock`
 - `TutorTask`
 - `TutorExample`
 - `TutorCitation`
@@ -276,6 +433,8 @@ The web client defines DTO-like interfaces in `apps/web/src/types.ts`:
 - `DiagnosticAnswer`
 - `StudentOnboardingAnswers`
 - `StudentProfile`
+- `StudentSessionSummary`
+- `StudentSkillProgress`
 - `StudentProfileStatus`
 - `KnowledgeFile`
 - `KnowledgeStatus`

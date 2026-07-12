@@ -6,6 +6,7 @@ import { AiOperationKey } from '../ai-model/ai-model.types';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { StudentProfileService } from '../student-profile/student-profile.service';
+import type { LessonType } from '../tutor/tutor.types';
 import {
   BackgroundAiJobRecord,
   BackgroundAiJobStatus,
@@ -83,9 +84,12 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const basePayload = {
       userName: this.cleanString(input.userName, 80),
       source: input.source,
+      lessonSessionId: input.lessonSessionId,
+      lessonType: input.lessonType,
       prompt,
       answer,
       answerShape: input.answer,
+      evidenceLevel: 'L1_turn_observation',
       capturedAt: now,
     };
 
@@ -117,6 +121,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
         conversationId: input.conversationId,
         payload: {
           reason: `conversation_${conversationTurnCount}_turns`,
+          lessonSessionId: input.lessonSessionId,
           capturedAt: now,
         },
         dedupePending: true,
@@ -186,6 +191,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       triggerReason,
       observationCount: pendingCount,
       dueNow,
+      lessonSessionId: input.lessonSessionId,
     });
   }
 
@@ -250,6 +256,10 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundLearningSignal',
       specialist: 'learning-signal-extractor',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(payload, ['lessonSessionId', 'lesson_session_id']),
+      lessonType: this.normalizeLessonType(payload.lessonType),
       instructions: this.getLearningSignalInstructions(),
       inputText: [
         'Один учебный ход ученика и ответ репетитора:',
@@ -257,6 +267,11 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       ].join('\n'),
       useRag: false,
     });
+    this.persistSkillProgressSignals(
+      job,
+      parsed,
+      this.normalizeLessonType(payload.lessonType),
+    );
     this.persistLearningSignal(job, 'turn_signal', parsed);
     return parsed;
   }
@@ -280,9 +295,17 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      const lessonType = this.pickWindowLessonType(observations, payload);
+      const lessonSessionId =
+        this.pickString(payload, ['lessonSessionId', 'lesson_session_id']) ??
+        this.pickObservationLessonSessionId(observations);
       const parsed = await this.createBackgroundJsonResponse({
         operation: 'backgroundLearningWindow',
         specialist: 'learning-window-analyzer',
+        userId: job.user_id,
+        conversationId: job.conversation_id ?? undefined,
+        lessonSessionId,
+        lessonType,
         instructions: this.getLearningWindowInstructions(),
         inputText: [
           'Окно последних учебных наблюдений ученика:',
@@ -304,15 +327,18 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.db.transaction(() => {
+        const windowId = this.persistAnalysisWindow(job, payload, observations, parsed);
         this.persistLearningSignal(job, 'learning_window', parsed);
-        const summary = this.pickString(parsed, ['summary', 'sessionSummary', 'session_summary']);
+        const summary = this.extractSessionSummaryText(parsed);
         if (summary) {
           this.persistLearningSignal(job, 'session_summary', {
             summary,
+            lessonType,
             source: 'learning_window_analysis',
           });
         }
-        const windowId = this.persistAnalysisWindow(job, payload, observations, parsed);
+        this.persistSessionSummary(job, parsed, lessonType, windowId);
+        this.persistSkillProgressSignals(job, parsed, lessonType, windowId);
         this.markObservationsProcessed(observationIds, windowId);
 
         if (this.shouldRefreshProfileStrategy(job.user_id)) {
@@ -343,9 +369,15 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       return { skipped: 'no_turns' };
     }
 
+    const lessonType = this.pickTurnLessonType(turns);
+    const payload = this.parsePayload(job);
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundSessionSummary',
       specialist: 'session-summarizer',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(payload, ['lessonSessionId', 'lesson_session_id']),
+      lessonType,
       instructions: this.getSessionSummaryInstructions(),
       inputText: [
         'Последние ходы учебной сессии:',
@@ -353,6 +385,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       ].join('\n'),
       useRag: false,
     });
+    this.persistSessionSummary(job, parsed, lessonType);
     this.persistLearningSignal(job, 'session_summary', parsed);
     return parsed;
   }
@@ -364,13 +397,21 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const signals = this.getRecentLearningSignals(job.user_id, 30);
-    if (signals.length === 0) {
+    const sessionSummaries = this.getRecentSessionSummaries(job.user_id, 5);
+    const skillProgress = this.getRecentSkillProgressSignals(job.user_id, 30);
+    if (signals.length === 0 && sessionSummaries.length === 0 && skillProgress.length === 0) {
       return { skipped: 'no_learning_signals' };
     }
 
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundProfileRefresh',
       specialist: 'student-profile-background-refresher',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(this.parsePayload(job), [
+        'lessonSessionId',
+        'lesson_session_id',
+      ]),
       instructions: this.getProfileRefreshInstructions(this.hasVectorStores()),
       inputText: [
         'Текущий профиль ученика:',
@@ -381,7 +422,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
           aiSummary: profile.aiSummary,
         }, null, 2),
         'Новые учебные сигналы:',
-        JSON.stringify(signals, null, 2),
+        JSON.stringify({ signals, sessionSummaries, skillProgress }, null, 2),
       ].join('\n'),
       useRag: true,
     });
@@ -444,13 +485,21 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const signals = this.getRecentLearningSignals(job.user_id, 30);
-    if (signals.length === 0) {
+    const sessionSummaries = this.getRecentSessionSummaries(job.user_id, 5);
+    const skillProgress = this.getRecentSkillProgressSignals(job.user_id, 30);
+    if (signals.length === 0 && sessionSummaries.length === 0 && skillProgress.length === 0) {
       return { skipped: 'no_learning_signals' };
     }
 
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundTeachingStrategyRefresh',
       specialist: 'teaching-strategy-background-planner',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(this.parsePayload(job), [
+        'lessonSessionId',
+        'lesson_session_id',
+      ]),
       instructions: this.getStrategyRefreshInstructions(this.hasVectorStores()),
       inputText: [
         'Текущий профиль и стратегия:',
@@ -462,7 +511,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
           aiSummary: profile.aiSummary,
         }, null, 2),
         'Новые учебные сигналы:',
-        JSON.stringify(signals, null, 2),
+        JSON.stringify({ signals, sessionSummaries, skillProgress }, null, 2),
       ].join('\n'),
       useRag: true,
     });
@@ -507,13 +556,21 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const signals = this.getRecentLearningSignals(job.user_id, 30);
-    if (signals.length === 0) {
+    const sessionSummaries = this.getRecentSessionSummaries(job.user_id, 5);
+    const skillProgress = this.getRecentSkillProgressSignals(job.user_id, 30);
+    if (signals.length === 0 && sessionSummaries.length === 0 && skillProgress.length === 0) {
       return { skipped: 'no_learning_signals' };
     }
 
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundProfileStrategyRefresh',
       specialist: 'profile-strategy-background-refresher',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(this.parsePayload(job), [
+        'lessonSessionId',
+        'lesson_session_id',
+      ]),
       instructions: this.getProfileStrategyRefreshInstructions(this.hasVectorStores()),
       inputText: [
         'Текущий профиль и стратегия ученика:',
@@ -525,7 +582,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
           aiSummary: profile.aiSummary,
         }, null, 2),
         'Новые агрегированные учебные сигналы:',
-        JSON.stringify(signals, null, 2),
+        JSON.stringify({ signals, sessionSummaries, skillProgress }, null, 2),
       ].join('\n'),
       useRag: true,
       promptCacheKey: this.buildPromptCacheKey(
@@ -602,6 +659,10 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundQualityReview',
       specialist: 'tutor-quality-background-reviewer',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(payload, ['lessonSessionId', 'lesson_session_id']),
+      lessonType: this.normalizeLessonType(payload.lessonType),
       instructions: this.getQualityReviewInstructions(),
       inputText: [
         'Проверь учебное качество одного ответа. Не переписывай ответ ученику, только оцени необходимость доработки:',
@@ -616,6 +677,10 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   private async createBackgroundJsonResponse(options: {
     operation: AiOperationKey;
     specialist: string;
+    userId: string;
+    conversationId?: string;
+    lessonSessionId?: string;
+    lessonType?: LessonType;
     instructions: string;
     inputText: string;
     useRag: boolean;
@@ -625,6 +690,12 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const useFileSearch = options.useRag && vectorStoreIds.length > 0;
     const request: Record<string, unknown> = {
       instructions: options.instructions,
+      usageContext: {
+        userId: options.userId,
+        conversationId: options.conversationId,
+        lessonSessionId: options.lessonSessionId,
+        lessonType: options.lessonType,
+      },
       metadata: {
         background_ai: true,
         background_specialist: options.specialist,
@@ -717,6 +788,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     triggerReason: string;
     observationCount: number;
     dueNow: boolean;
+    lessonSessionId?: string;
   }): void {
     const existing = this.db.get<{ id: string; status: BackgroundAiJobStatus; scheduled_at: string }>(
       `SELECT id, status, scheduled_at
@@ -733,6 +805,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const payload = {
       triggerReason: options.triggerReason,
       observationCount: options.observationCount,
+      lessonSessionId: options.lessonSessionId,
       capturedAt: new Date().toISOString(),
     };
 
@@ -906,14 +979,15 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   ): void {
     this.db.run(
       `INSERT INTO background_learning_observations (
-         id, user_id, conversation_id, source, observation_json, status,
+         id, user_id, conversation_id, lesson_type, source, observation_json, status,
          window_id, created_at, updated_at
        )
-       VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
       [
         randomUUID(),
         input.userId,
         input.conversationId,
+        input.lessonType,
         input.source,
         JSON.stringify(this.sanitizeTeachingObject(payload)),
         now,
@@ -940,7 +1014,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     limit: number,
   ): Array<Record<string, unknown> & { id: string }> {
     const rows = this.db.all<BackgroundLearningObservationRecord>(
-      `SELECT id, user_id, conversation_id, source, observation_json, status,
+      `SELECT id, user_id, conversation_id, lesson_type, source, observation_json, status,
               window_id, created_at, updated_at
        FROM background_learning_observations
        WHERE user_id = ?
@@ -954,6 +1028,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return rows.map((row) => ({
       id: row.id,
       createdAt: row.created_at,
+      lessonType: row.lesson_type,
       source: row.source,
       observation: this.parseJsonObject(row.observation_json) ?? {},
     }));
@@ -1057,6 +1132,227 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private persistSessionSummary(
+    job: BackgroundAiJobRecord,
+    result: Record<string, unknown>,
+    lessonType: LessonType,
+    sourceWindowId?: string,
+  ): void {
+    const summary = this.extractSessionSummaryObject(result);
+    if (Object.keys(summary).length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    this.db.run(
+      `INSERT INTO student_session_summaries (
+         id, user_id, conversation_id, lesson_type, summary_json,
+         evidence_levels_json, source_window_id, source_job_id, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        randomUUID(),
+        job.user_id,
+        job.conversation_id,
+        lessonType,
+        JSON.stringify(this.sanitizeTeachingObject(summary)),
+        JSON.stringify(this.extractEvidenceLevels(result)),
+        sourceWindowId ?? null,
+        job.id,
+        now,
+        now,
+      ],
+    );
+  }
+
+  private persistSkillProgressSignals(
+    job: BackgroundAiJobRecord,
+    result: Record<string, unknown>,
+    lessonType: LessonType,
+    sourceWindowId?: string,
+  ): void {
+    const signals = this.extractSkillProgressSignals(result);
+    if (signals.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    for (const signal of signals) {
+      const topic = this.pickString(signal, ['topic', 'egeTopic', 'ege_topic']) ?? 'unknown';
+      const skill = this.pickString(signal, ['skill', 'subskill', 'ability']) ?? topic;
+      const evidence = this.sanitizeTeachingObject({
+        evidence: this.pickStringArray(signal, ['evidence']),
+        mistakePatterns: this.pickStringArray(signal, ['mistakePatterns', 'mistake_patterns']),
+        recommendedNextAction: this.pickString(signal, [
+          'recommendedNextAction',
+          'recommended_next_action',
+          'nextAction',
+          'next_action',
+        ]),
+      });
+
+      this.db.run(
+        `INSERT INTO student_skill_progress (
+           id, user_id, conversation_id, lesson_type, topic, skill, direction,
+           confidence, support_needed, independence, evidence_json,
+           source_window_id, source_job_id, created_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          randomUUID(),
+          job.user_id,
+          job.conversation_id,
+          lessonType,
+          topic.slice(0, 160),
+          skill.slice(0, 160),
+          this.normalizeProgressDirection(this.pickString(signal, ['direction', 'trend'])),
+          this.normalizeConfidence(this.pickString(signal, ['confidence'])),
+          this.normalizeSupportNeeded(this.pickString(signal, ['supportNeeded', 'support_needed'])),
+          this.normalizeIndependence(this.pickString(signal, ['independence'])),
+          JSON.stringify(evidence),
+          sourceWindowId ?? null,
+          job.id,
+          now,
+        ],
+      );
+    }
+  }
+
+  private extractSessionSummaryText(result: Record<string, unknown>): string | undefined {
+    const sessionSummary = this.pickObject(result, ['sessionSummary', 'session_summary']);
+    return (
+      this.pickString(result, ['summary']) ??
+      this.pickString(sessionSummary, ['summary', 'text'])
+    );
+  }
+
+  private extractSessionSummaryObject(result: Record<string, unknown>): Record<string, unknown> {
+    const sessionSummary = this.pickObject(result, ['sessionSummary', 'session_summary']);
+    const summary = this.extractSessionSummaryText(result);
+    const candidate: Record<string, unknown> = { ...sessionSummary };
+    if (summary && !candidate.summary) {
+      candidate.summary = summary;
+    }
+    for (const [targetKey, sourceKeys] of Object.entries({
+      topicsWorked: ['topicsWorked', 'topics_worked'],
+      successes: ['successes'],
+      mistakes: ['mistakes'],
+      nextSteps: ['nextSteps', 'next_steps'],
+      strategyHints: ['strategyHints', 'strategy_hints', 'teachingStrategyHints'],
+    })) {
+      const values = this.pickArray(result, sourceKeys);
+      if (values.length > 0 && !candidate[targetKey]) {
+        candidate[targetKey] = values;
+      }
+    }
+    return this.sanitizeTeachingObject(candidate);
+  }
+
+  private extractEvidenceLevels(result: Record<string, unknown>): Record<string, unknown> {
+    const explicit = this.pickObject(result, ['evidenceLevels', 'evidence_levels']);
+    if (Object.keys(explicit).length > 0) {
+      return this.sanitizeTeachingObject(explicit);
+    }
+
+    return this.sanitizeTeachingObject({
+      level0RawTurnData: 'stored separately in tutor_turns with limited raw prompt/answer JSON',
+      level1TurnObservations: this.pickArray(result, ['observations']).length,
+      level2SessionSummary: Boolean(this.extractSessionSummaryText(result)),
+      level3LearningSignals: this.pickArray(result, ['signals']).length,
+      level4SkillTrends: this.extractSkillProgressSignals(result).length,
+      level5StrategyUpdateHints: this.pickArray(result, ['teachingStrategyHints', 'strategyHints']).length,
+    });
+  }
+
+  private extractSkillProgressSignals(result: Record<string, unknown>): Record<string, unknown>[] {
+    return this.pickArray(result, [
+      'skillProgressSignals',
+      'skill_progress_signals',
+      'skillProgress',
+      'skill_progress',
+      'progressSignals',
+      'progress_signals',
+    ]).filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)));
+  }
+
+  private pickWindowLessonType(
+    observations: Array<Record<string, unknown> & { id: string }>,
+    payload: Record<string, unknown>,
+  ): LessonType {
+    const fromPayload = this.normalizeLessonType(payload.lessonType);
+    if (fromPayload) {
+      return fromPayload;
+    }
+    for (const observation of observations) {
+      const lessonType = this.normalizeLessonType(observation.lessonType);
+      if (lessonType) {
+        return lessonType;
+      }
+    }
+    return 'tutor';
+  }
+
+  private pickObservationLessonSessionId(
+    observations: Array<Record<string, unknown> & { id: string }>,
+  ): string | undefined {
+    for (const observation of observations) {
+      const payload = this.pickObject(observation, ['observation']);
+      const lessonSessionId = this.pickString(payload, ['lessonSessionId', 'lesson_session_id']);
+      if (lessonSessionId) {
+        return lessonSessionId;
+      }
+    }
+    return undefined;
+  }
+
+  private pickTurnLessonType(turns: Record<string, unknown>[]): LessonType {
+    for (const turn of turns) {
+      const lessonType = this.normalizeLessonType(turn.lessonType);
+      if (lessonType) {
+        return lessonType;
+      }
+    }
+    return 'tutor';
+  }
+
+  private normalizeLessonType(value: unknown): LessonType {
+    return typeof value === 'string' && this.isLessonType(value) ? value : 'tutor';
+  }
+
+  private isLessonType(value: string): value is LessonType {
+    return [
+      'meeting',
+      'tutor',
+      'concept',
+      'practice',
+      'diagnostic',
+      'exam_strategy',
+      'mistake_review',
+      'visual_explanation',
+      'reflection',
+    ].includes(value);
+  }
+
+  private normalizeProgressDirection(value: string | undefined): 'progress' | 'regression' | 'stable' | 'unknown' {
+    return value === 'progress' || value === 'regression' || value === 'stable' ? value : 'unknown';
+  }
+
+  private normalizeConfidence(value: string | undefined): 'low' | 'medium' | 'high' | 'unknown' {
+    return value === 'low' || value === 'medium' || value === 'high' ? value : 'unknown';
+  }
+
+  private normalizeSupportNeeded(
+    value: string | undefined,
+  ): 'none' | 'hint' | 'step_by_step' | 'full_explanation' | 'unknown' {
+    return value === 'none' || value === 'hint' || value === 'step_by_step' || value === 'full_explanation'
+      ? value
+      : 'unknown';
+  }
+
+  private normalizeIndependence(value: string | undefined): 'low' | 'medium' | 'high' | 'unknown' {
+    return value === 'low' || value === 'medium' || value === 'high' ? value : 'unknown';
+  }
+
   private getRecentLearningSignals(userId: string, limit: number): Record<string, unknown>[] {
     const rows = this.db.all<{ signal_type: string; signal_json: string; created_at: string }>(
       `SELECT signal_type, signal_json, created_at
@@ -1076,13 +1372,79 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       }));
   }
 
+  private getRecentSessionSummaries(userId: string, limit: number): Record<string, unknown>[] {
+    const rows = this.db.all<{
+      conversation_id: string | null;
+      lesson_type: LessonType;
+      summary_json: string;
+      evidence_levels_json: string;
+      created_at: string;
+    }>(
+      `SELECT conversation_id, lesson_type, summary_json, evidence_levels_json, created_at
+       FROM student_session_summaries
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, limit],
+    );
+
+    return rows.reverse().map((row) => ({
+      conversationId: row.conversation_id,
+      lessonType: row.lesson_type,
+      summary: this.parseJsonObject(row.summary_json) ?? {},
+      evidenceLevels: this.parseJsonObject(row.evidence_levels_json) ?? {},
+      createdAt: row.created_at,
+    }));
+  }
+
+  private getRecentSkillProgressSignals(userId: string, limit: number): Record<string, unknown>[] {
+    const rows = this.db.all<{
+      conversation_id: string | null;
+      lesson_type: LessonType;
+      topic: string;
+      skill: string;
+      direction: string;
+      confidence: string;
+      support_needed: string;
+      independence: string;
+      evidence_json: string;
+      created_at: string;
+    }>(
+      `SELECT conversation_id, lesson_type, topic, skill, direction, confidence,
+              support_needed, independence, evidence_json, created_at
+       FROM student_skill_progress
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, limit],
+    );
+
+    return rows.reverse().map((row) => ({
+      conversationId: row.conversation_id,
+      lessonType: row.lesson_type,
+      topic: row.topic,
+      skill: row.skill,
+      direction: row.direction,
+      confidence: row.confidence,
+      supportNeeded: row.support_needed,
+      independence: row.independence,
+      evidence: this.parseJsonObject(row.evidence_json) ?? {},
+      createdAt: row.created_at,
+    }));
+  }
+
   private getRecentTutorTurns(
     userId: string,
     conversationId: string | null,
     limit: number,
   ): Record<string, unknown>[] {
-    const rows = this.db.all<{ prompt: string; answer_json: string; created_at: string }>(
-      `SELECT prompt, answer_json, created_at
+    const rows = this.db.all<{
+      prompt: string;
+      answer_json: string;
+      lesson_type: LessonType;
+      created_at: string;
+    }>(
+      `SELECT prompt, answer_json, lesson_type, created_at
        FROM tutor_turns
        WHERE user_id = ?
          AND conversation_id = COALESCE(?, conversation_id)
@@ -1093,15 +1455,31 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
 
     return rows.reverse().map((row) => {
       const answer = this.parseJsonObject(row.answer_json) ?? {};
+      const blocks = Array.isArray(answer.blocks) ? answer.blocks : [];
       return {
         createdAt: row.created_at,
+        lessonType: row.lesson_type,
         prompt: this.sanitizeTeachingString(row.prompt, 1_200),
         answer: this.sanitizeTeachingString(this.pickString(answer, ['answer']), 2_000),
-        tasksCount: Array.isArray(answer.tasks) ? answer.tasks.length : 0,
-        examplesCount: Array.isArray(answer.examples) ? answer.examples.length : 0,
-        needsImage: Boolean(answer.needsImage ?? answer.needs_image),
+        tasksCount: Array.isArray(answer.tasks)
+          ? answer.tasks.length
+          : blocks.filter((block) => this.isResponseBlockType(block, 'task')).length,
+        examplesCount: Array.isArray(answer.examples)
+          ? answer.examples.length
+          : blocks.filter((block) => this.isResponseBlockType(block, 'example')).length,
+        needsImage: Boolean(
+          answer.needsImage ??
+            answer.needs_image ??
+            blocks.some((block) => this.isResponseBlockType(block, 'image')),
+        ),
       };
     });
+  }
+
+  private isResponseBlockType(block: unknown, type: string): boolean {
+    return Boolean(
+      block && typeof block === 'object' && (block as Record<string, unknown>).type === type,
+    );
   }
 
   private countUserTurns(userId: string): number {
@@ -1286,6 +1664,32 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return {};
   }
 
+  private pickArray(source: Record<string, unknown>, keys: string[]): unknown[] {
+    for (const key of keys) {
+      const value = source[key];
+      if (Array.isArray(value)) {
+        return value;
+      }
+    }
+    return [];
+  }
+
+  private pickStringArray(source: Record<string, unknown>, keys: string[]): string[] {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return [value.trim().slice(0, 400)];
+      }
+      if (Array.isArray(value)) {
+        return value
+          .map((item) => this.sanitizeTeachingString(item, 400))
+          .filter((item): item is string => Boolean(item))
+          .slice(0, 10);
+      }
+    }
+    return [];
+  }
+
   private pickString(
     source: Record<string, unknown> | undefined,
     keys: string[],
@@ -1306,10 +1710,11 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return [
       'Ты фоновый анализатор учебных сигналов для AI-репетитора ЕГЭ.',
       'Выделяй только сведения, которые помогают выбирать объяснения, темп, примеры, подсказки, визуализацию и практику.',
+      'Учитывай lessonType из входа. Для practice/diagnostic/mistake_review особенно оцени прогресс, регресс, самостоятельность и поддержку по темам.',
       'Не сохраняй чувствительные личные сведения, диагнозы, семейные подробности, адреса, контакты, религию, политику, здоровье или травматичный опыт.',
       'Если встречаются такие подробности, замени их на нейтральный учебный сигнал или пропусти.',
       'Верни только валидный JSON без Markdown.',
-      'Формат JSON: {"signals":[{"category":"knowledge|preference|confidence|misconception|pace|visual|motivation","value":"...","confidence":"low|medium|high","evidence":["..."]}],"knowledgeDelta":{},"learningPreferenceDelta":{},"teachingStrategyHints":[]}.',
+      'Формат JSON: {"signals":[{"category":"knowledge|preference|confidence|misconception|pace|visual|motivation","value":"...","confidence":"low|medium|high","evidence":["..."]}],"skillProgressSignals":[{"topic":"...","skill":"...","direction":"progress|regression|stable|unknown","confidence":"low|medium|high","evidence":["..."],"mistakePatterns":[],"supportNeeded":"none|hint|step_by_step|full_explanation","independence":"low|medium|high","recommendedNextAction":"..."}],"knowledgeDelta":{},"learningPreferenceDelta":{},"teachingStrategyHints":[]}.',
     ].join(' ');
   }
 
@@ -1318,11 +1723,12 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       'Ты фоновый анализатор окна учебных наблюдений для AI-репетитора ЕГЭ.',
       'Анализируй несколько ходов вместе, чтобы не вызывать модель после каждого сообщения.',
       'Выделяй только сведения, которые помогают выбирать объяснения, темп, примеры, подсказки, визуализацию, диагностику и практику.',
-      'Сделай компактную сводку сессии, но не сохраняй сырые персональные детали.',
+      'Сделай компактную сводку сессии и явно разложи информацию по уровням: L0 сырые ходы только как количество/ссылку на tutor_turns, L1 наблюдения, L2 сводка сессии, L3 учебные сигналы, L4 прогресс/регресс навыков, L5 подсказки для стратегии.',
+      'Для каждого навыка определи direction: progress, regression, stable или unknown. Не делай вывод без evidence и confidence.',
       'Не сохраняй диагнозы, семейные подробности, адреса, контакты, религию, политику, здоровье, травмы или другие неучебные чувствительные сведения.',
       'Если такие сведения встретились, пропусти их или замени на нейтральный учебный сигнал.',
       'Верни только валидный JSON без Markdown.',
-      'Формат JSON: {"summary":"...","signals":[{"category":"knowledge|preference|confidence|misconception|pace|visual|motivation|quality","value":"...","confidence":"low|medium|high","evidence":["..."]}],"knowledgeDelta":{},"learningPreferenceDelta":{},"teachingStrategyHints":[],"qualityReview":{"risk":"none|low|needs_review","issues":[],"repairHints":[],"studentVisibleCorrectionNeeded":false},"profileUpdateRecommended":true}.',
+      'Формат JSON: {"summary":"...","sessionSummary":{"summary":"...","topicsWorked":[],"successes":[],"mistakes":[],"nextSteps":[],"strategyHints":[]},"evidenceLevels":{"L0":"raw tutor turns stored in tutor_turns, not repeated here","L1":[],"L2":"...","L3":[],"L4":[],"L5":[]},"signals":[{"category":"knowledge|preference|confidence|misconception|pace|visual|motivation|quality","value":"...","confidence":"low|medium|high","evidence":["..."]}],"skillProgressSignals":[{"topic":"...","skill":"...","direction":"progress|regression|stable|unknown","confidence":"low|medium|high","evidence":["..."],"mistakePatterns":[],"supportNeeded":"none|hint|step_by_step|full_explanation","independence":"low|medium|high","recommendedNextAction":"..."}],"knowledgeDelta":{},"learningPreferenceDelta":{},"teachingStrategyHints":[],"qualityReview":{"risk":"none|low|needs_review","issues":[],"repairHints":[],"studentVisibleCorrectionNeeded":false},"profileUpdateRecommended":true}.',
     ].join(' ');
   }
 
@@ -1330,16 +1736,17 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return [
       'Ты фоновый суммаризатор учебной сессии AI-репетитора ЕГЭ.',
       'Сделай компактную учебную сводку только для будущей стратегии объяснений.',
+      'Верни уровни информации: L0 как ссылку на tutor_turns/количество ходов, L1 наблюдения, L2 сводка, L3 сигналы, L4 прогресс или регресс, L5 подсказки стратегии.',
       'Не включай сырые персональные детали и не делай клинических выводов.',
       'Верни только валидный JSON без Markdown.',
-      'Формат JSON: {"summary":"...","topicsWorked":[],"successes":[],"mistakes":[],"nextSteps":[],"strategyHints":[]}.',
+      'Формат JSON: {"summary":"...","sessionSummary":{"summary":"...","topicsWorked":[],"successes":[],"mistakes":[],"nextSteps":[],"strategyHints":[]},"evidenceLevels":{"L0":"raw tutor turns stored in tutor_turns, not repeated here","L1":[],"L2":"...","L3":[],"L4":[],"L5":[]},"skillProgressSignals":[{"topic":"...","skill":"...","direction":"progress|regression|stable|unknown","confidence":"low|medium|high","evidence":["..."],"mistakePatterns":[],"supportNeeded":"none|hint|step_by_step|full_explanation","independence":"low|medium|high","recommendedNextAction":"..."}]}.',
     ].join(' ');
   }
 
   private getProfileRefreshInstructions(hasRag: boolean): string {
     return [
       'Ты фоновый обновитель учебного профиля ученика для AI-репетитора ЕГЭ.',
-      'Обновляй только знания, учебные предпочтения и нейтральные психолого-педагогические гипотезы для объяснения.',
+      'Обновляй только знания, учебные предпочтения и нейтральные психолого-педагогические гипотезы для объяснения. Учитывай sessionSummaries и skillProgress: прогресс усиливает самостоятельность, регресс требует смены объяснения или повторения.',
       'Не ставь диагнозы, не сохраняй чувствительные личные сведения и не делай выводы вне учебного контекста.',
       hasRag
         ? 'Используй file_search только для общих педагогических стратегий, рубрик ЕГЭ и безопасных методик объяснения.'
@@ -1352,7 +1759,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   private getStrategyRefreshInstructions(hasRag: boolean): string {
     return [
       'Ты фоновый методист AI-репетитора ЕГЭ. Обнови только практическую стратегию объяснения по новым учебным сигналам.',
-      'Стратегия должна помочь выбрать темп, структуру ответа, подсказки, примеры, визуальную поддержку и практику.',
+      'Стратегия должна помочь выбрать темп, структуру ответа, подсказки, примеры, визуальную поддержку и практику. Учитывай прогресс/регресс по skillProgress и не повышай сложность при слабой самостоятельности.',
       'Не добавляй диагнозы или чувствительные сведения.',
       hasRag
         ? 'Используй file_search только для общих методик объяснения, task strategy и безопасных учебных практик.'
@@ -1365,7 +1772,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   private getProfileStrategyRefreshInstructions(hasRag: boolean): string {
     return [
       'Ты фоновый обновитель учебного профиля и стратегии объяснения для AI-репетитора ЕГЭ.',
-      'Используй агрегированные учебные сигналы, а не сырые диалоги, чтобы обновить только знания, учебные предпочтения, нейтральные психолого-педагогические гипотезы и практическую стратегию объяснения.',
+      'Используй агрегированные учебные сигналы, sessionSummaries и skillProgress, а не сырые диалоги, чтобы обновить только знания, учебные предпочтения, нейтральные психолого-педагогические гипотезы и практическую стратегию объяснения.',
       'Стратегия должна помогать выбирать темп, структуру ответа, подсказки, примеры, визуальную поддержку и практику.',
       'Не ставь диагнозы, не сохраняй чувствительные личные сведения и не делай выводы вне учебного контекста.',
       hasRag
