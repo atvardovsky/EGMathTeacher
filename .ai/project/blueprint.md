@@ -50,10 +50,15 @@ visible next actions.
   observation count, idle timeout, or quality trigger. When batching is
   enabled, profile and strategy refresh use one combined background job where
   logical. `AI_BACKGROUND_BATCHING_ENABLED=false` restores legacy per-turn
-  signal extraction and split profile/strategy refresh jobs.
+  signal extraction and split profile/strategy refresh jobs. Interrupted
+  `queued` observations and stale `running` jobs are recovered by the worker.
 - Background assistant calls use the model-provider facade and can request
-  lower-cost OpenAI Flex processing through `service_tier=flex` when using
-  the OpenAI provider.
+  lower-cost OpenAI Flex processing through operation-level service-tier
+  policy when using the OpenAI provider.
+- Tutor, onboarding, background, quality-review, and image calls resolve
+  model settings through role/operation policy before reaching the provider,
+  so each assistant role can be tuned independently while provider support
+  remains OpenAI-first in the current POC.
 - Admin-only upload of PDF, Markdown, TXT, DOCX, and TeX knowledge files.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
@@ -79,8 +84,8 @@ visible next actions.
   - `OpenAiClientModule`: OpenAI REST client for Responses, images, files,
     and vector stores.
   - `AiModelModule`: OpenAI-first model provider facade used by profile,
-    tutor, image, and knowledge flows; non-OpenAI model providers are stubs
-    until implemented.
+    tutor, image, background, and knowledge flows, plus role/operation model
+    policy; non-OpenAI model providers are stubs until implemented.
   - `HealthModule`: `/health` endpoint.
 - Web client:
   - Mantine UI components.

@@ -4,6 +4,10 @@ import { mkdirSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { DatabaseSync } from 'node:sqlite';
 
+interface MigrationOptions {
+  disableForeignKeys?: boolean;
+}
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
@@ -32,6 +36,23 @@ export class DatabaseService implements OnModuleDestroy {
 
   all<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
     return this.db.prepare(sql).all(...params) as T[];
+  }
+
+  transaction<T>(work: () => T): T {
+    let transactionStarted = false;
+    try {
+      this.db.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const result = work();
+      this.db.exec('COMMIT;');
+      transactionStarted = false;
+      return result;
+    } catch (error) {
+      if (transactionStarted) {
+        this.rollbackTransaction();
+      }
+      throw error;
+    }
   }
 
   private initialize(): void {
@@ -139,8 +160,7 @@ export class DatabaseService implements OnModuleDestroy {
     `);
 
     this.applyMigration('003_background_observation_windows', `
-      PRAGMA foreign_keys = OFF;
-
+      DROP TABLE IF EXISTS background_ai_jobs_next;
       CREATE TABLE IF NOT EXISTS background_ai_jobs_next (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL CHECK (type IN (
@@ -180,8 +200,6 @@ export class DatabaseService implements OnModuleDestroy {
 
       DROP TABLE background_ai_jobs;
       ALTER TABLE background_ai_jobs_next RENAME TO background_ai_jobs;
-
-      PRAGMA foreign_keys = ON;
 
       CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_status_scheduled
         ON background_ai_jobs(status, scheduled_at);
@@ -224,10 +242,14 @@ export class DatabaseService implements OnModuleDestroy {
 
       CREATE INDEX IF NOT EXISTS idx_background_learning_observations_pending
         ON background_learning_observations(user_id, conversation_id, status, created_at);
-    `);
+    `, { disableForeignKeys: true });
   }
 
-  private applyMigration(version: string, sql: string): void {
+  private applyMigration(
+    version: string,
+    sql: string,
+    options: MigrationOptions = {},
+  ): void {
     const existing = this.get<{ version: string }>(
       'SELECT version FROM schema_migrations WHERE version = ?',
       [version],
@@ -236,10 +258,58 @@ export class DatabaseService implements OnModuleDestroy {
       return;
     }
 
-    this.db.exec(sql);
-    this.run('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)', [
-      version,
-      new Date().toISOString(),
-    ]);
+    let transactionStarted = false;
+    try {
+      if (options.disableForeignKeys) {
+        this.db.exec('PRAGMA foreign_keys = OFF;');
+      }
+      this.db.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      this.db.exec(sql);
+      if (options.disableForeignKeys) {
+        this.assertForeignKeyIntegrity(version);
+      }
+      this.run('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)', [
+        version,
+        new Date().toISOString(),
+      ]);
+      this.db.exec('COMMIT;');
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        this.rollbackTransaction();
+      }
+      throw error;
+    } finally {
+      if (options.disableForeignKeys) {
+        this.db.exec('PRAGMA foreign_keys = ON;');
+      }
+    }
+  }
+
+  private assertForeignKeyIntegrity(version: string): void {
+    const violations = this.all<{
+      table: string;
+      rowid: number | null;
+      parent: string;
+      fkid: number;
+    }>('PRAGMA foreign_key_check');
+    if (violations.length === 0) {
+      return;
+    }
+    const first = violations[0];
+    throw new Error(
+      `Migration ${version} left ${violations.length} foreign key violation(s); ` +
+        `first=${first.table}:${first.rowid ?? 'unknown'}->${first.parent}`,
+    );
+  }
+
+  private rollbackTransaction(): void {
+    try {
+      this.db.exec('ROLLBACK;');
+    } catch (rollbackError) {
+      const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      this.logger.error(`SQLite rollback failed: ${message}`);
+    }
   }
 }

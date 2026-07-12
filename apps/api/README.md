@@ -36,6 +36,15 @@ This repository houses a NestJS orchestration service that now handles both sign
   - `AI_MODEL_PROVIDER` – defaults to `openai`; used by tutor, profile,
     image, file, and vector-store operations. Non-OpenAI model providers are
     stubs in this POC.
+  - `AI_OPERATION_*_MODEL` – optional per-role/per-operation model overrides
+    for tutor answers, RAG tutor answers, onboarding specialists, background
+    assistants, quality review, and image generation. Empty values fall back
+    to `OPENAI_RESPONSES_MODEL`, `OPENAI_IMAGE_MODEL`, or the background model
+    defaults.
+  - `AI_OPERATION_*_SERVICE_TIER` – optional per-operation service-tier
+    overrides for Responses API operations. Empty tutor/onboarding values use
+    the standard tier; empty background values fall back to
+    `OPENAI_BACKGROUND_SERVICE_TIER`.
   - `OPENAI_API_KEY`, `OPENAI_REALTIME_MODEL` – credentials/aliases used for session token issuance.
   - `OPENAI_INPUT_TRANSCRIPTION_MODEL` – model used to transcribe caller audio.
   - `AI_BACKGROUND_*`, `OPENAI_BACKGROUND_RESPONSES_MODEL`,
@@ -45,8 +54,10 @@ This repository houses a NestJS orchestration service that now handles both sign
     `AI_BACKGROUND_BATCHING_ENABLED=true` stores sanitized tutor observations
     locally and drains grouped learning windows by count, idle timeout, or
     quality trigger. Set it to `false` to restore legacy per-turn signal
-    extraction and split profile/strategy jobs. `flex` requests lower-cost
-    OpenAI Flex processing when the OpenAI model provider supports it.
+    extraction and split profile/strategy jobs.
+    `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` controls stale running-job and
+    queued-observation recovery. `flex` requests lower-cost OpenAI Flex
+    processing when the OpenAI model provider supports it.
   - `WEBRTC_ICE_SERVERS`, `WEBRTC_MAX_SESSIONS`, `TRANSCRIPT_LOG_DIR` – handshake + operational tuning.
   - `WEBRTC_ENABLE_BARGE_IN`, `WEBRTC_SESSION_IDLE_TIMEOUT_MS`, `WEBRTC_IDLE_SWEEP_INTERVAL_MS` – realtime turn-taking and idle-session behavior.
   - `OPENAI_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`, `OPENAI_CLIENT_SECRET_GRACE_MS` – OpenAI request resiliency tuning.
@@ -101,8 +112,10 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
 - Persona instructions and voice are injected during `/webrtc` session setup; the Node bridge collapses them into a single `instructions` string and `voice` parameter when creating the OpenAI session.
 - File Search ids are accepted but currently ignored because the REST surface does not yet allow attaching them to Realtime sessions.
 - Tutor/profile/image/file/vector-store operations go through the
-  OpenAI-first `AiModelService` facade; only the realtime voice provider uses
-  `AI_PROVIDER`.
+  OpenAI-first `AiModelService` facade. `AiOperationPolicyService` resolves
+  the assistant role, operation name, model, metadata, prompt-cache eligibility,
+  and optional service tier before the provider call. Only the realtime voice
+  provider uses `AI_PROVIDER`.
 - Background profile/signal assistant jobs also go through the `AiModelService`
   facade. In batched mode, sanitized tutor observations are stored in SQLite
   first, then grouped into learning windows before model calls; legacy

@@ -1,3 +1,42 @@
+export type AiAssistantRole =
+  | 'tutor'
+  | 'image_explainer'
+  | 'onboarding_diagnostician'
+  | 'psychopedagogical_profiler'
+  | 'strategy_planner'
+  | 'background_learning_analyst'
+  | 'background_profile_refresher'
+  | 'background_strategy_refresher'
+  | 'quality_reviewer';
+
+export type AiOperationKey =
+  | 'tutorAnswer'
+  | 'tutorAnswerWithRag'
+  | 'tutorImage'
+  | 'onboardingKnowledgeDiagnosis'
+  | 'onboardingPsychopedagogicalProfile'
+  | 'onboardingStrategyPlan'
+  | 'backgroundLearningSignal'
+  | 'backgroundLearningWindow'
+  | 'backgroundSessionSummary'
+  | 'backgroundProfileRefresh'
+  | 'backgroundTeachingStrategyRefresh'
+  | 'backgroundProfileStrategyRefresh'
+  | 'backgroundQualityReview';
+
+export type AiResponseFormat = 'json' | 'text' | 'image';
+
+export interface ResolvedAiOperationPolicy {
+  operationKey: AiOperationKey;
+  operation: string;
+  role: AiAssistantRole;
+  provider: string;
+  model: string;
+  responseFormat: AiResponseFormat;
+  serviceTier?: string;
+  promptCacheKeyEnabled: boolean;
+}
+
 export interface AiModelProvider {
   readonly id: string;
   createResponse(payload: Record<string, unknown>): Promise<Record<string, unknown>>;

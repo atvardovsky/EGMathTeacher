@@ -7,6 +7,7 @@ sequenceDiagram
   participant Knowledge as KnowledgeService
   participant DB as SQLite
   participant AIModel as AiModelService
+  participant Policy as AiOperationPolicyService
   participant OpenAI as OpenAI-backed model provider
 
   Student->>Web: Log in or register
@@ -25,14 +26,20 @@ sequenceDiagram
   Knowledge->>DB: Read knowledge_files when env ids absent
   Knowledge-->>Profile: Vector store ids
   Profile->>AIModel: Math knowledge diagnostician with optional file_search
+  AIModel->>Policy: Resolve onboardingKnowledgeDiagnosis policy
+  Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response
   OpenAI-->>AIModel: knowledgeState with evidence
   AIModel-->>Profile: knowledgeState
   Profile->>AIModel: Psychopedagogical profiler with answers and knowledgeState
+  AIModel->>Policy: Resolve onboardingPsychopedagogicalProfile policy
+  Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response
   OpenAI-->>AIModel: learningPreferences and psychologicalProfile
   AIModel-->>Profile: learningPreferences and safe profile hypotheses
   Profile->>AIModel: Teaching strategy planner with profile sections
+  AIModel->>Policy: Resolve onboardingStrategyPlan policy
+  Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response
   OpenAI-->>AIModel: explanationStrategy and aiSummary
   AIModel-->>Profile: strategy and summary

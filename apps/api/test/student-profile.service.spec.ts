@@ -36,12 +36,12 @@ describe('StudentProfileService', () => {
   };
 
   const aiModel = {
-    createResponse: jest.fn(),
+    createOperationResponse: jest.fn(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    aiModel.createResponse
+    aiModel.createOperationResponse
       .mockResolvedValueOnce({
         output_text: JSON.stringify({
           knowledgeState: {
@@ -113,7 +113,7 @@ describe('StudentProfileService', () => {
       'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
       [admin.id, admin.name, 'hash', admin.role, admin.createdAt],
     );
-    service = new StudentProfileService(db, config, knowledge as any, aiModel as any);
+    service = new StudentProfileService(db, knowledge as any, aiModel as any);
   });
 
   afterEach(() => {
@@ -158,22 +158,30 @@ describe('StudentProfileService', () => {
     expect(status.profile?.psychologicalProfile).not.toHaveProperty('familyDetails');
     expect(status.profile?.explanationStrategy).not.toHaveProperty('parentNotes');
     expect(JSON.stringify(status.profile)).not.toMatch(/СДВГ|ADHD|parents|семье/i);
-    expect(aiModel.createResponse).toHaveBeenCalledTimes(3);
-    expect(aiModel.createResponse).toHaveBeenCalledWith(
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(3);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledWith(
+      'onboardingKnowledgeDiagnosis',
       expect.objectContaining({
-        model: 'gpt-test',
         tools: [expect.objectContaining({ type: 'file_search', vector_store_ids: ['vs_profile'] })],
       }),
     );
-    const specialistNames = (aiModel.createResponse as jest.Mock).mock.calls.map(
-      ([payload]) => payload.metadata.profile_specialist,
+    const operationNames = (aiModel.createOperationResponse as jest.Mock).mock.calls.map(
+      ([operation]) => operation,
+    );
+    expect(operationNames).toEqual([
+      'onboardingKnowledgeDiagnosis',
+      'onboardingPsychopedagogicalProfile',
+      'onboardingStrategyPlan',
+    ]);
+    const specialistNames = (aiModel.createOperationResponse as jest.Mock).mock.calls.map(
+      ([, payload]) => payload.metadata.profile_specialist,
     );
     expect(specialistNames).toEqual([
       'math-knowledge-diagnostician',
       'psychopedagogical-profiler',
       'teaching-strategy-planner',
     ]);
-    const psychopedagogicalPayload = (aiModel.createResponse as jest.Mock).mock.calls[1][0];
+    const psychopedagogicalPayload = (aiModel.createOperationResponse as jest.Mock).mock.calls[1][1];
     expect(psychopedagogicalPayload.instructions).toContain('только учебно полезные сигналы');
     expect(psychopedagogicalPayload.input[0].content[0].text).not.toMatch(/СДВГ|семье/i);
     expect(service.getTutorContext(user.id)).toContain('учебно полезных сигналов');
@@ -195,5 +203,6 @@ describe('StudentProfileService', () => {
         '003_background_observation_windows',
       ]),
     ).toEqual({ version: '003_background_observation_windows' });
+    expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

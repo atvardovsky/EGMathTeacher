@@ -34,16 +34,19 @@ Current covered areas:
   summary behavior, including specialist profile pipeline calls
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
-  storage, and profile/strategy refresh merging
+  storage, profile/strategy refresh merging, failed window observation release,
+  and stale queued/running state recovery
 - tutor structured output and image data URL behavior
-- AI model-provider facade delegation
+- AI model-provider facade delegation and role/operation policy application
+  for response and image requests
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths
 - WebRTC provider event transcript/token accumulation behavior
 - WebRTC provider event debug logging avoids raw transcript text
-- student profile teaching-only storage sanitation and POC migration ledger
-  through background observation-window storage
+- student profile teaching-only storage sanitation, POC migration ledger
+  through background observation-window storage, and SQLite foreign-key
+  integrity after migrations
 
 The `wrtc` library is mocked in `apps/api/test/__mocks__/wrtc.js`.
 

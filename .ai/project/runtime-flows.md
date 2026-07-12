@@ -20,10 +20,12 @@ This file records runtime flows from current source evidence.
 1. `DatabaseService` opens the configured SQLite file and enables WAL plus
    foreign keys.
 2. It creates `schema_migrations` when missing.
-3. It applies migration `001_initial_schema` using idempotent `CREATE TABLE IF
-   NOT EXISTS` statements for current POC tables.
-4. It records the applied migration version and timestamp in
-   `schema_migrations`.
+3. It applies each pending migration inside a local SQLite transaction.
+4. Table-rebuild migrations temporarily disable foreign-key enforcement before
+   the transaction, run `PRAGMA foreign_key_check` before commit, and re-enable
+   foreign keys afterward.
+5. It records the applied migration version and timestamp in
+   `schema_migrations` only after the migration body succeeds.
 
 ## Auth Flow
 
@@ -52,7 +54,8 @@ This file records runtime flows from current source evidence.
 4. The web client submits answers to `PUT /student-profile/me`.
 5. `StudentProfileService` normalizes answers, drops non-teaching sensitive
    details, and reads active vector store ids.
-6. `AiModelService` runs three specialist model calls:
+6. `AiModelService` resolves role/operation policy and runs three specialist
+   model calls:
    - math knowledge diagnostician creates `knowledgeState`
    - tutoring-focused psychopedagogical profiler creates `learningPreferences`
      and `psychologicalProfile`
@@ -85,17 +88,19 @@ This file records runtime flows from current source evidence.
    - optional DB-backed student profile context
    - user prompt
    - optional `file_search` tool
-7. The current OpenAI-backed provider calls Responses API.
-8. API parses model output as structured tutor JSON when possible.
-9. API extracts citations from file-search annotations/results.
-10. API writes the tutor turn to `tutor_turns`.
-11. API enqueues background AI work. In batched mode, it stores a sanitized
+7. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
+   operation policy, including model, metadata, and optional service tier.
+8. The current OpenAI-backed provider calls Responses API.
+9. API parses model output as structured tutor JSON when possible.
+10. API extracts citations from file-search annotations/results.
+11. API writes the tutor turn to `tutor_turns`.
+12. API enqueues background AI work. In batched mode, it stores a sanitized
     tutor-turn observation and schedules or reschedules a grouped
     `learning_window_analysis` job. In legacy mode, it enqueues per-turn
     learning-signal extraction and separate interval jobs for session summary,
     student profile refresh, teaching strategy refresh, or rare quality review.
     Enqueue failures are isolated from the immediate answer path.
-12. Web client renders answer, tasks, examples, citations, and optional image
+13. Web client renders answer, tasks, examples, citations, and optional image
     action.
 
 ## Background AI Flow
@@ -103,31 +108,41 @@ This file records runtime flows from current source evidence.
 1. `BackgroundAiService` stores queued jobs in `background_ai_jobs`.
 2. The in-process worker drains pending jobs on
    `AI_BACKGROUND_DRAIN_INTERVAL_MS`.
-3. When `AI_BACKGROUND_BATCHING_ENABLED=true`, each tutor turn stores a
+3. Before each drain, stale `queued` observations are returned to `pending`;
+   stale `running` jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are
+   either requeued when attempts remain or marked `failed` when attempts are
+   exhausted.
+4. When `AI_BACKGROUND_BATCHING_ENABLED=true`, each tutor turn stores a
    sanitized row in `background_learning_observations`. A grouped
    `learning_window_analysis` job is scheduled after
    `AI_BACKGROUND_OBSERVATION_IDLE_FLUSH_MS`, pulled forward when
    `AI_BACKGROUND_OBSERVATION_WINDOW_SIZE` pending observations are reached,
    or run immediately for a quality trigger.
-4. The grouped learning-window job sends pending observations together,
-   stores `background_analysis_windows`, writes `student_learning_signals`,
-   and can enqueue one `profile_strategy_refresh` job when the configured
-   profile refresh turn interval is reached.
-5. When batching is disabled, legacy background jobs call `AiModelService`
-   with task-specific specialist prompts: `learning-signal-extractor`,
+5. The grouped learning-window job marks selected observations `queued`,
+   sends them together, stores `background_analysis_windows`, writes
+   `student_learning_signals`, and marks the observations `processed` in one
+   local SQLite transaction after the model response succeeds. If the model
+   call fails, claimed observations return to `pending`.
+6. A successful grouped learning-window job can enqueue one
+   `profile_strategy_refresh` job when the configured profile refresh turn
+   interval is reached.
+7. Background jobs call `AiModelService` with role/operation policy and
+   task-specific specialist prompts: `learning-window-analyzer`,
+   `profile-strategy-background-refresher`, `learning-signal-extractor`,
    `session-summarizer`, `student-profile-background-refresher`,
    `teaching-strategy-background-planner`, and
    `tutor-quality-background-reviewer`.
-6. When the OpenAI provider is used, background calls can include
-   `service_tier=flex` through `OPENAI_BACKGROUND_SERVICE_TIER`.
-7. Batched background calls can include a hashed `prompt_cache_key` when
+8. When the OpenAI provider is used, background operation service-tier policy
+   can include `service_tier=flex`; per-operation tier overrides fall back to
+   `OPENAI_BACKGROUND_SERVICE_TIER`.
+9. Batched background calls can include a hashed `prompt_cache_key` when
    `AI_BACKGROUND_PROMPT_CACHE_KEY_ENABLED=true`.
-8. Learning signals, summaries, refresh evidence, and quality reviews are
+10. Learning signals, summaries, refresh evidence, and quality reviews are
    stored in `student_learning_signals`.
-9. Profile refresh jobs merge sanitized patches into `student_profiles`.
-10. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
+11. Profile refresh jobs merge sanitized patches into `student_profiles`.
+12. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
    stay visible in `background_ai_jobs`.
-11. Background work must not store non-teaching sensitive details and must not
+13. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow
@@ -136,9 +151,9 @@ This file records runtime flows from current source evidence.
    service infers a visual prompt for unstructured visual text.
 2. User clicks image generation in the web client.
 3. Web client calls `POST /tutor/image`.
-4. API calls the model-provider image operation. The current implementation
-   delegates to OpenAI image generation using configured model, size, and
-   quality.
+4. API calls the `tutorImage` model-provider operation. The current
+   implementation resolves the image operation model policy, then delegates to
+   OpenAI image generation using configured size and quality.
 5. API returns a PNG data URL.
 6. Web client renders the generated image in the tutor turn.
 

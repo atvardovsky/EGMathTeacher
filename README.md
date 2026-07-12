@@ -54,7 +54,11 @@ Production domain:
   and sends grouped analysis windows by count, idle timeout, or quality
   trigger instead of calling the signal extractor after every turn. Set
   `AI_BACKGROUND_BATCHING_ENABLED=false` to restore legacy per-turn
-  background extraction.
+  background extraction. Stale running jobs and claimed observations are
+  recovered by the worker.
+- Role and operation policy layer for model selection: tutor, onboarding,
+  background, quality-review, and image operations can use separate model and
+  service-tier settings while keeping OpenAI as the first implemented provider.
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.
@@ -65,7 +69,8 @@ Production domain:
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for
   explanation strategy and avoids sensitive personal details.
-- POC SQLite schema migration ledger records applied schema versions.
+- POC SQLite schema migration ledger records applied schema versions after
+  transactional migration application.
 - Admin upload endpoint for PDF/Markdown/TXT/DOCX/TeX knowledge files.
 - Image endpoint for explanatory math diagrams.
 - Browser voice input using speech recognition, submitted to the same RAG tutor endpoint.

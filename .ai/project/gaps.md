@@ -48,7 +48,8 @@ decisions.
 
 - SQLite records applied schema version `001_initial_schema` in
   `schema_migrations`.
-- API tests assert the initial migration ledger entry exists.
+- API tests assert current migration ledger entries and SQLite foreign-key
+  integrity after schema initialization.
 
 ## Remaining Gaps By Logical Set
 

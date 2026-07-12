@@ -13,6 +13,9 @@ EGMathTeacher is a browser-based POC with:
 - OpenAI-first model provider facade for tutor answers, specialist profile
   generation, delayed background assistant work, RAG files/vector stores, and
   image generation
+- Role/operation model policy inside the model facade so tutor, onboarding,
+  background, quality-review, and image assistant roles can use different
+  models and service-tier settings
 - SQLite-backed background AI worker for optional grouped learning observation
   windows, learning signals, session summaries, profile/strategy refreshes,
   and rare quality reviews
@@ -66,7 +69,7 @@ flowchart LR
 | `AuthModule` | `apps/api/src/auth` | Local registration, login, signed cookie sessions, admin/student roles. |
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
-| `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade for profile, tutor, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
+| `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
 | `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, profile/strategy refreshes, and legacy per-turn background jobs. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
@@ -107,9 +110,13 @@ Main UI areas in `apps/web/src/App.tsx`:
 `apps/api/src/ai-model` owns the model-provider facade for profile generation,
 tutor responses, background assistant jobs, explanatory images, file upload,
 and vector-store operations.
-The current implementation delegates to `OpenAiClientService` when
-`AI_MODEL_PROVIDER=openai`. Other model providers intentionally fail as stubs
-until their text/RAG/image/file contracts are implemented.
+`AiOperationPolicyService` resolves the assistant role, operation name, model,
+prompt-cache eligibility, and optional service tier for tutor, onboarding,
+background, quality-review, and image operations before `AiModelService`
+delegates the request. The current implementation delegates to
+`OpenAiClientService` when `AI_MODEL_PROVIDER=openai`. Other model providers
+intentionally fail as stubs until their text/RAG/image/file contracts are
+implemented.
 
 `apps/api/src/background-ai` owns local background orchestration. It persists
 jobs and sanitized tutor-turn observations in SQLite, drains them in-process on

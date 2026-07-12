@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OpenAiClientModule } from '../openai/openai-client.module';
 import { OpenAiClientService } from '../openai/openai-client.service';
 import { AI_MODEL_PROVIDER_TOKEN } from './ai-model.constants';
+import { AiOperationPolicyService } from './ai-operation-policy.service';
 import { AiModelService } from './ai-model.service';
 import { AiModelProvider } from './ai-model.types';
 import { OpenAiModelProvider } from './openai-model.provider';
@@ -31,7 +32,7 @@ function createModelProviderFactory(): Provider {
 @Global()
 @Module({
   imports: [OpenAiClientModule],
-  providers: [createModelProviderFactory(), AiModelService],
-  exports: [AiModelService, AI_MODEL_PROVIDER_TOKEN],
+  providers: [createModelProviderFactory(), AiOperationPolicyService, AiModelService],
+  exports: [AiModelService, AiOperationPolicyService, AI_MODEL_PROVIDER_TOKEN],
 })
 export class AiModelModule {}

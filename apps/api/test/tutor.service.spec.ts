@@ -21,6 +21,8 @@ describe('TutorService', () => {
         const values: Record<string, unknown> = {
           'ai.openai.responsesModel': 'gpt-test',
           'ai.openai.imageModel': 'gpt-image-test',
+          'ai.openai.imageSize': '1024x1024',
+          'ai.openai.imageQuality': 'low',
         };
         return values[key];
       }),
@@ -29,7 +31,7 @@ describe('TutorService', () => {
       getActiveVectorStoreIds: jest.fn(() => ['vs_test']),
     };
     const aiModel = {
-      createResponse: jest.fn(async () =>
+      createOperationResponse: jest.fn(async () =>
         overrides.response ?? {
           output: [
             {
@@ -57,7 +59,7 @@ describe('TutorService', () => {
           ],
         },
       ),
-      generateImage: jest.fn(async () => ({
+      generateOperationImage: jest.fn(async () => ({
         data: [{ b64_json: 'abc123', revised_prompt: 'diagram' }],
       })),
     };
@@ -100,9 +102,9 @@ describe('TutorService', () => {
     expect(result.needsImage).toBe(true);
     expect(result.citations).toEqual([{ fileId: 'file_1', filename: 'ege.pdf', quote: undefined }]);
     expect(db.run).toHaveBeenCalled();
-    expect(aiModel.createResponse).toHaveBeenCalledWith(
+    expect(aiModel.createOperationResponse).toHaveBeenCalledWith(
+      'tutorAnswerWithRag',
       expect.objectContaining({
-        model: 'gpt-test',
         tools: [expect.objectContaining({ type: 'file_search', vector_store_ids: ['vs_test'] })],
       }),
     );
@@ -133,7 +135,7 @@ describe('TutorService', () => {
     });
 
     expect(studentProfile.getTutorContext).toHaveBeenCalledWith(user.id);
-    expect(JSON.stringify((aiModel.createResponse as jest.Mock).mock.calls[0][0])).toContain(
+    expect(JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1])).toContain(
       'нужен спокойный темп',
     );
   });
@@ -147,6 +149,11 @@ describe('TutorService', () => {
     });
 
     expect(result.dataUrl).toBe('data:image/png;base64,abc123');
-    expect(aiModel.generateImage).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-image-test' }));
+    expect(aiModel.generateOperationImage).toHaveBeenCalledWith(
+      'tutorImage',
+      expect.objectContaining({
+        prompt: expect.stringContaining('Парабола y=x^2'),
+      }),
+    );
   });
 });

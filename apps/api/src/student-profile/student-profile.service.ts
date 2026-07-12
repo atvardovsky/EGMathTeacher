@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { AiModelService } from '../ai-model/ai-model.service';
+import { AiOperationKey } from '../ai-model/ai-model.types';
 import { AuthSession } from '../auth/auth.types';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
@@ -22,6 +22,7 @@ interface GeneratedProfile {
 }
 
 interface ProfileSpecialistRequest {
+  operation: AiOperationKey;
   specialist: string;
   instructions: string;
   inputText: string;
@@ -40,7 +41,6 @@ export class StudentProfileService {
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly configService: ConfigService,
     private readonly knowledgeService: KnowledgeService,
     private readonly aiModel: AiModelService,
   ) {}
@@ -137,6 +137,7 @@ export class StudentProfileService {
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
 
     const knowledgeParsed = await this.runProfileSpecialist({
+      operation: 'onboardingKnowledgeDiagnosis',
       specialist: 'math-knowledge-diagnostician',
       instructions: this.getKnowledgeDiagnosticInstructions(vectorStoreIds.length > 0),
       inputText: [
@@ -156,6 +157,7 @@ export class StudentProfileService {
     }
 
     const psychopedagogicalParsed = await this.runProfileSpecialist({
+      operation: 'onboardingPsychopedagogicalProfile',
       specialist: 'psychopedagogical-profiler',
       instructions: this.getPsychopedagogicalInstructions(vectorStoreIds.length > 0),
       inputText: [
@@ -180,6 +182,7 @@ export class StudentProfileService {
     }
 
     const strategyParsed = await this.runProfileSpecialist({
+      operation: 'onboardingStrategyPlan',
       specialist: 'teaching-strategy-planner',
       instructions: this.getTeachingStrategyInstructions(vectorStoreIds.length > 0),
       inputText: [
@@ -223,7 +226,10 @@ export class StudentProfileService {
   private async runProfileSpecialist(
     request: ProfileSpecialistRequest,
   ): Promise<Record<string, unknown>> {
-    const response = await this.aiModel.createResponse(this.buildProfileRequest(request));
+    const response = await this.aiModel.createOperationResponse(
+      request.operation,
+      this.buildProfileRequest(request),
+    );
     const text = this.extractOutputText(response);
     const parsed = this.parseJsonObject(text);
     if (!parsed) {
@@ -235,7 +241,6 @@ export class StudentProfileService {
   private buildProfileRequest(
     request: ProfileSpecialistRequest,
   ): Record<string, unknown> {
-    const model = this.configService.get<string>('ai.openai.responsesModel') ?? 'gpt-5.5';
     const useFileSearch = request.useRag && request.vectorStoreIds.length > 0;
     const tools =
       useFileSearch
@@ -249,7 +254,6 @@ export class StudentProfileService {
         : undefined;
 
     return {
-      model,
       instructions: request.instructions,
       metadata: {
         profile_specialist: request.specialist,

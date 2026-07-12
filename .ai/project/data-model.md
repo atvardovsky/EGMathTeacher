@@ -27,8 +27,10 @@ The current POC records migration `001_initial_schema` after creating the
 initial tables, migration `002_background_ai_jobs` after creating background
 AI job and learning-signal tables, and migration
 `003_background_observation_windows` after adding grouped background
-observation-window storage. This is a lightweight migration ledger, not a full
-production rollback, backfill, or backup system.
+observation-window storage. Migrations are applied inside a local SQLite
+transaction, and table-rebuild migrations must pass `PRAGMA foreign_key_check`
+before the version is recorded. This is a lightweight migration ledger, not a
+full production rollback, backfill, or backup system.
 
 ### `users`
 
@@ -124,6 +126,9 @@ Legacy mode uses per-turn `learning_signal_extraction` plus separate
 `student_profile_refresh` and `teaching_strategy_refresh` jobs. Batched mode
 uses `learning_window_analysis` and `profile_strategy_refresh` to reduce
 model calls while preserving eventually consistent profile updates.
+Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
+before each drain: jobs with retry attempts left return to `pending`, and
+exhausted jobs become `failed`.
 
 ### `background_learning_observations`
 
@@ -144,8 +149,12 @@ Source owner: `apps/api/src/background-ai` and
 
 This table is the store-first mechanism for batched background processing. It
 stores sanitized teaching observations locally so the API does not call the
-background signal extractor after every tutor turn. Observations are marked
-processed only after a grouped learning-window model response succeeds.
+background signal extractor after every tutor turn. Observations start as
+`pending`, move to `queued` only while a grouped learning-window model call is
+in flight, return to `pending` if that call fails, and become `processed` only
+after the grouped result is stored successfully. Stale `queued` observations
+older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are returned to `pending`
+before draining new work.
 
 ### `background_analysis_windows`
 
@@ -275,8 +284,8 @@ Keep these aligned with API response contracts when API shape changes.
 
 ## Data Gaps
 
-- POC schema migration ledger exists, but no production rollback, backfill, or
-  backup workflow is defined.
+- POC schema migration ledger exists with transactional local application, but
+  no production rollback, backfill, or backup workflow is defined.
 - No retention policy is defined for users, tutor turns, uploaded file
   metadata, remote OpenAI files/vector stores, or transcript files.
 - No export/delete account workflow is present.

@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
+import { AiOperationKey } from '../ai-model/ai-model.types';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { StudentProfileService } from '../student-profile/student-profile.service';
@@ -196,6 +197,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     this.draining = true;
     let processed = 0;
     try {
+      this.recoverInterruptedBackgroundState();
       while (processed < limit) {
         const job = this.nextPendingJob();
         if (!job) {
@@ -246,6 +248,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   private async extractLearningSignals(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
     const payload = this.parsePayload(job);
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundLearningSignal',
       specialist: 'learning-signal-extractor',
       instructions: this.getLearningSignalInstructions(),
       inputText: [
@@ -271,58 +274,67 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       return { skipped: 'no_pending_observations' };
     }
 
-    const parsed = await this.createBackgroundJsonResponse({
-      specialist: 'learning-window-analyzer',
-      instructions: this.getLearningWindowInstructions(),
-      inputText: [
-        'Окно последних учебных наблюдений ученика:',
-        JSON.stringify(
-          {
-            triggerReason: this.pickString(payload, ['triggerReason']) ?? 'unknown',
-            observations,
-          },
-          null,
-          2,
+    const observationIds = observations.map((observation) => observation.id);
+    if (this.markObservationsQueued(observationIds) === 0) {
+      return { skipped: 'no_claimed_observations' };
+    }
+
+    try {
+      const parsed = await this.createBackgroundJsonResponse({
+        operation: 'backgroundLearningWindow',
+        specialist: 'learning-window-analyzer',
+        instructions: this.getLearningWindowInstructions(),
+        inputText: [
+          'Окно последних учебных наблюдений ученика:',
+          JSON.stringify(
+            {
+              triggerReason: this.pickString(payload, ['triggerReason']) ?? 'unknown',
+              observations,
+            },
+            null,
+            2,
+          ),
+        ].join('\n'),
+        useRag: false,
+        promptCacheKey: this.buildPromptCacheKey(
+          job.user_id,
+          job.conversation_id,
+          'learning-window',
         ),
-      ].join('\n'),
-      useRag: false,
-      model: this.getWindowModel(),
-      promptCacheKey: this.buildPromptCacheKey(
-        job.user_id,
-        job.conversation_id,
-        'learning-window',
-      ),
-    });
-
-    this.persistLearningSignal(job, 'learning_window', parsed);
-    const summary = this.pickString(parsed, ['summary', 'sessionSummary', 'session_summary']);
-    if (summary) {
-      this.persistLearningSignal(job, 'session_summary', {
-        summary,
-        source: 'learning_window_analysis',
       });
-    }
-    const windowId = this.persistAnalysisWindow(job, payload, observations, parsed);
-    this.markObservationsProcessed(
-      observations.map((observation) => observation.id),
-      windowId,
-    );
 
-    if (this.shouldRefreshProfileStrategy(job.user_id)) {
-      this.enqueueJob({
-        type: 'profile_strategy_refresh',
-        userId: job.user_id,
-        conversationId: job.conversation_id ?? undefined,
-        payload: {
-          reason: this.pickString(payload, ['triggerReason']) ?? 'learning_window_analysis',
-          sourceJobId: job.id,
-          capturedAt: new Date().toISOString(),
-        },
-        dedupePending: true,
+      this.db.transaction(() => {
+        this.persistLearningSignal(job, 'learning_window', parsed);
+        const summary = this.pickString(parsed, ['summary', 'sessionSummary', 'session_summary']);
+        if (summary) {
+          this.persistLearningSignal(job, 'session_summary', {
+            summary,
+            source: 'learning_window_analysis',
+          });
+        }
+        const windowId = this.persistAnalysisWindow(job, payload, observations, parsed);
+        this.markObservationsProcessed(observationIds, windowId);
+
+        if (this.shouldRefreshProfileStrategy(job.user_id)) {
+          this.enqueueJob({
+            type: 'profile_strategy_refresh',
+            userId: job.user_id,
+            conversationId: job.conversation_id ?? undefined,
+            payload: {
+              reason: this.pickString(payload, ['triggerReason']) ?? 'learning_window_analysis',
+              sourceJobId: job.id,
+              capturedAt: new Date().toISOString(),
+            },
+            dedupePending: true,
+          });
+        }
       });
-    }
 
-    return parsed;
+      return parsed;
+    } catch (error) {
+      this.releaseQueuedObservations(observationIds);
+      throw error;
+    }
   }
 
   private async createSessionSummary(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
@@ -332,6 +344,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundSessionSummary',
       specialist: 'session-summarizer',
       instructions: this.getSessionSummaryInstructions(),
       inputText: [
@@ -356,6 +369,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundProfileRefresh',
       specialist: 'student-profile-background-refresher',
       instructions: this.getProfileRefreshInstructions(this.hasVectorStores()),
       inputText: [
@@ -435,6 +449,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundTeachingStrategyRefresh',
       specialist: 'teaching-strategy-background-planner',
       instructions: this.getStrategyRefreshInstructions(this.hasVectorStores()),
       inputText: [
@@ -497,6 +512,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     }
 
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundProfileStrategyRefresh',
       specialist: 'profile-strategy-background-refresher',
       instructions: this.getProfileStrategyRefreshInstructions(this.hasVectorStores()),
       inputText: [
@@ -512,7 +528,6 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
         JSON.stringify(signals, null, 2),
       ].join('\n'),
       useRag: true,
-      model: this.getRefreshModel(),
       promptCacheKey: this.buildPromptCacheKey(
         job.user_id,
         job.conversation_id,
@@ -585,6 +600,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   private async reviewTutorQuality(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
     const payload = this.parsePayload(job);
     const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundQualityReview',
       specialist: 'tutor-quality-background-reviewer',
       instructions: this.getQualityReviewInstructions(),
       inputText: [
@@ -598,17 +614,16 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async createBackgroundJsonResponse(options: {
+    operation: AiOperationKey;
     specialist: string;
     instructions: string;
     inputText: string;
     useRag: boolean;
-    model?: string;
     promptCacheKey?: string;
   }): Promise<Record<string, unknown>> {
     const vectorStoreIds = options.useRag ? this.knowledgeService.getActiveVectorStoreIds() : [];
     const useFileSearch = options.useRag && vectorStoreIds.length > 0;
     const request: Record<string, unknown> = {
-      model: options.model ?? this.getBackgroundModel(),
       instructions: options.instructions,
       metadata: {
         background_ai: true,
@@ -637,15 +652,11 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       include: useFileSearch ? ['file_search_call.results'] : undefined,
     };
 
-    const serviceTier = this.getServiceTier();
-    if (serviceTier) {
-      request.service_tier = serviceTier;
-    }
     if (this.isPromptCacheKeyEnabled() && options.promptCacheKey) {
       request.prompt_cache_key = options.promptCacheKey;
     }
 
-    const response = await this.aiModel.createResponse(request);
+    const response = await this.aiModel.createOperationResponse(options.operation, request);
     const text = this.extractOutputText(response);
     const parsed = this.parseJsonObject(text);
     if (!parsed) {
@@ -827,6 +838,67 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private recoverInterruptedBackgroundState(): void {
+    const timeoutMs = this.getRunningJobTimeoutMs();
+    const cutoff = new Date(Date.now() - timeoutMs).toISOString();
+    const now = new Date().toISOString();
+    const maxAttempts = this.getMaxAttempts();
+
+    const observations = this.db.run(
+      `UPDATE background_learning_observations
+       SET status = 'pending',
+           window_id = NULL,
+           updated_at = ?
+       WHERE status = 'queued'
+         AND updated_at <= ?`,
+      [now, cutoff],
+    ).changes;
+
+    const failedJobs = this.db.run(
+      `UPDATE background_ai_jobs
+       SET status = 'failed',
+           error_message = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE status = 'running'
+         AND COALESCE(started_at, updated_at) <= ?
+         AND attempts >= ?`,
+      [
+        'Background job timed out while running',
+        now,
+        now,
+        cutoff,
+        maxAttempts,
+      ],
+    ).changes;
+
+    const requeuedJobs = this.db.run(
+      `UPDATE background_ai_jobs
+       SET status = 'pending',
+           error_message = ?,
+           scheduled_at = ?,
+           started_at = NULL,
+           completed_at = NULL,
+           updated_at = ?
+       WHERE status = 'running'
+         AND COALESCE(started_at, updated_at) <= ?
+         AND attempts < ?`,
+      [
+        'Recovered stale running background job',
+        now,
+        now,
+        cutoff,
+        maxAttempts,
+      ],
+    ).changes;
+
+    if (observations > 0 || failedJobs > 0 || requeuedJobs > 0) {
+      this.logger.warn(
+        `Recovered background AI state: observations=${observations}, requeuedJobs=${requeuedJobs}, failedJobs=${failedJobs}`,
+      );
+    }
+  }
+
   private persistLearningObservation(
     input: TutorTurnBackgroundInput,
     payload: Record<string, unknown>,
@@ -929,6 +1001,37 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
            updated_at = ?
        WHERE id IN (${placeholders})`,
       [windowId, new Date().toISOString(), ...observationIds],
+    );
+  }
+
+  private markObservationsQueued(observationIds: string[]): number {
+    if (observationIds.length === 0) {
+      return 0;
+    }
+    const placeholders = observationIds.map(() => '?').join(', ');
+    return this.db.run(
+      `UPDATE background_learning_observations
+       SET status = 'queued',
+           updated_at = ?
+       WHERE id IN (${placeholders})
+         AND status = 'pending'`,
+      [new Date().toISOString(), ...observationIds],
+    ).changes;
+  }
+
+  private releaseQueuedObservations(observationIds: string[]): void {
+    if (observationIds.length === 0) {
+      return;
+    }
+    const placeholders = observationIds.map(() => '?').join(', ');
+    this.db.run(
+      `UPDATE background_learning_observations
+       SET status = 'pending',
+           window_id = NULL,
+           updated_at = ?
+       WHERE id IN (${placeholders})
+         AND status = 'queued'`,
+      [new Date().toISOString(), ...observationIds],
     );
   }
 
@@ -1295,30 +1398,6 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.configService.get<boolean>('ai.background.promptCacheKeyEnabled') ?? true;
   }
 
-  private getBackgroundModel(): string {
-    return (
-      this.configService.get<string>('ai.background.responsesModel') ||
-      this.configService.get<string>('ai.openai.responsesModel') ||
-      'gpt-5.5'
-    );
-  }
-
-  private getWindowModel(): string {
-    return this.configService.get<string>('ai.background.windowResponsesModel') || this.getBackgroundModel();
-  }
-
-  private getRefreshModel(): string {
-    return this.configService.get<string>('ai.background.refreshResponsesModel') || this.getBackgroundModel();
-  }
-
-  private getServiceTier(): string | undefined {
-    const configured = this.configService.get<string>('ai.background.serviceTier') ?? 'flex';
-    const normalized = configured.trim().toLowerCase();
-    return normalized && normalized !== 'standard' && normalized !== 'none'
-      ? normalized
-      : undefined;
-  }
-
   private getDrainIntervalMs(): number {
     return this.positiveNumber(this.configService.get<number>('ai.background.drainIntervalMs'), 2_000);
   }
@@ -1349,6 +1428,13 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.positiveNumber(
       this.configService.get<number>('ai.background.observationIdleFlushMs'),
       900_000,
+    );
+  }
+
+  private getRunningJobTimeoutMs(): number {
+    return this.positiveNumber(
+      this.configService.get<number>('ai.background.runningJobTimeoutMs'),
+      600_000,
     );
   }
 

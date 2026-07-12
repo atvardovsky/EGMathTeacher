@@ -23,6 +23,7 @@ function createConfig(sqlitePath: string, overrides: Record<string, unknown> = {
     'ai.background.observationWindowSize': 1,
     'ai.background.observationMaxWindowSize': 12,
     'ai.background.observationIdleFlushMs': 900_000,
+    'ai.background.runningJobTimeoutMs': 600_000,
     'ai.background.profileRefreshTurnInterval': 2,
     'ai.background.sessionSummaryTurnInterval': 2,
     ...overrides,
@@ -35,7 +36,7 @@ function createConfig(sqlitePath: string, overrides: Record<string, unknown> = {
 describe('BackgroundAiService', () => {
   let db: DatabaseService;
   let service: BackgroundAiService;
-  let aiModel: { createResponse: jest.Mock };
+  let aiModel: { createOperationResponse: jest.Mock };
   let knowledge: { getActiveVectorStoreIds: jest.Mock };
   let studentProfile: StudentProfileService;
 
@@ -112,9 +113,9 @@ describe('BackgroundAiService', () => {
     );
 
     aiModel = {
-      createResponse: jest.fn(),
+      createOperationResponse: jest.fn(),
     };
-    aiModel.createResponse
+    aiModel.createOperationResponse
       .mockResolvedValueOnce({
         output_text: JSON.stringify({
           summary: 'Ученик разбирает производную через смысл скорости изменения.',
@@ -150,9 +151,8 @@ describe('BackgroundAiService', () => {
     };
     studentProfile = new StudentProfileService(
       db,
-      config,
       knowledge as any,
-      { createResponse: jest.fn() } as any,
+      { createOperationResponse: jest.fn() } as any,
     );
     service = new BackgroundAiService(
       db,
@@ -200,12 +200,11 @@ describe('BackgroundAiService', () => {
       succeeded: 2,
       failed: 0,
     });
-    expect(aiModel.createResponse).toHaveBeenCalledTimes(2);
-    expect(aiModel.createResponse).toHaveBeenNthCalledWith(
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(2);
+    expect(aiModel.createOperationResponse).toHaveBeenNthCalledWith(
       1,
+      'backgroundLearningWindow',
       expect.objectContaining({
-        model: 'gpt-window',
-        service_tier: 'flex',
         prompt_cache_key: expect.stringMatching(/^egmt:learningwind:[a-f0-9]{32}$/),
         metadata: expect.objectContaining({
           background_ai: true,
@@ -213,11 +212,10 @@ describe('BackgroundAiService', () => {
         }),
       }),
     );
-    expect(aiModel.createResponse).toHaveBeenNthCalledWith(
+    expect(aiModel.createOperationResponse).toHaveBeenNthCalledWith(
       2,
+      'backgroundProfileStrategyRefresh',
       expect.objectContaining({
-        model: 'gpt-refresh',
-        service_tier: 'flex',
         prompt_cache_key: expect.stringMatching(/^egmt:profilestrat:[a-f0-9]{32}$/),
         metadata: expect.objectContaining({
           background_ai: true,
@@ -259,8 +257,8 @@ describe('BackgroundAiService', () => {
   });
 
   it('keeps the legacy per-turn background job mode when batching is disabled', async () => {
-    aiModel.createResponse.mockReset();
-    aiModel.createResponse
+    aiModel.createOperationResponse.mockReset();
+    aiModel.createOperationResponse
       .mockResolvedValueOnce({
         output_text: JSON.stringify({
           signals: [{ category: 'knowledge', value: 'legacy turn signal' }],
@@ -310,7 +308,13 @@ describe('BackgroundAiService', () => {
 
     expect(legacyService.getStatus().pending).toBe(4);
     await expect(legacyService.drainPending()).resolves.toBe(4);
-    expect(aiModel.createResponse).toHaveBeenCalledTimes(4);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect((aiModel.createOperationResponse as jest.Mock).mock.calls.map(([operation]) => operation)).toEqual([
+      'backgroundLearningSignal',
+      'backgroundSessionSummary',
+      'backgroundProfileRefresh',
+      'backgroundTeachingStrategyRefresh',
+    ]);
 
     const jobTypes = db.all<{ type: string }>(
       'SELECT type FROM background_ai_jobs ORDER BY created_at ASC',
@@ -363,6 +367,113 @@ describe('BackgroundAiService', () => {
       running: 0,
       succeeded: 0,
       failed: 0,
+    });
+  });
+
+  it('releases claimed learning observations when window analysis fails', async () => {
+    aiModel.createOperationResponse.mockReset();
+    aiModel.createOperationResponse.mockRejectedValueOnce(new Error('model unavailable'));
+
+    service.enqueueTutorTurnWork({
+      userId: 'student-1',
+      userName: 'Маша',
+      conversationId: 'conv-1',
+      source: 'text',
+      prompt: 'Я не понимаю производную',
+      answer: {
+        answer:
+          'Производная показывает скорость изменения функции, поэтому сначала смотрим на смысл, затем на формулу и простой пример.',
+        tasksCount: 0,
+        examplesCount: 0,
+        citationsCount: 0,
+        needsImage: false,
+      },
+    });
+
+    await expect(service.drainPending()).resolves.toBe(1);
+
+    expect(service.getStatus()).toEqual({
+      pending: 0,
+      running: 0,
+      succeeded: 0,
+      failed: 1,
+    });
+    expect(
+      db.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_learning_observations WHERE status = 'pending' AND window_id IS NULL",
+      )?.count,
+    ).toBe(1);
+    expect(
+      db.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM background_learning_observations WHERE status = 'queued'",
+      )?.count,
+    ).toBe(0);
+    expect(
+      db.get<{ count: number }>('SELECT COUNT(*) AS count FROM background_analysis_windows')
+        ?.count,
+    ).toBe(0);
+  });
+
+  it('recovers stale queued observations and terminal running jobs before draining', async () => {
+    const oldTime = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
+    db.run(
+      `INSERT INTO background_learning_observations (
+         id, user_id, conversation_id, source, observation_json, status,
+         window_id, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, ?)`,
+      [
+        'observation-stale',
+        'student-1',
+        'conv-stale',
+        'text',
+        JSON.stringify({ prompt: 'stale' }),
+        oldTime,
+        oldTime,
+      ],
+    );
+    db.run(
+      `INSERT INTO background_ai_jobs (
+         id, type, status, user_id, conversation_id, attempts, payload_json,
+         scheduled_at, started_at, created_at, updated_at
+       )
+       VALUES (?, 'learning_window_analysis', 'running', ?, ?, 1, ?, ?, ?, ?, ?)`,
+      [
+        'job-stale-terminal',
+        'student-1',
+        'conv-stale',
+        JSON.stringify({ triggerReason: 'test' }),
+        oldTime,
+        oldTime,
+        oldTime,
+        oldTime,
+      ],
+    );
+
+    const recoveryService = new BackgroundAiService(
+      db,
+      createConfig(':memory:', { 'ai.background.runningJobTimeoutMs': 1 }),
+      knowledge as any,
+      aiModel as any,
+      studentProfile,
+    );
+
+    await expect(recoveryService.drainPending()).resolves.toBe(0);
+
+    expect(
+      db.get<{ status: string }>(
+        'SELECT status FROM background_learning_observations WHERE id = ?',
+        ['observation-stale'],
+      ),
+    ).toEqual({ status: 'pending' });
+    expect(
+      db.get<{ status: string; error_message: string }>(
+        'SELECT status, error_message FROM background_ai_jobs WHERE id = ?',
+        ['job-stale-terminal'],
+      ),
+    ).toEqual({
+      status: 'failed',
+      error_message: 'Background job timed out while running',
     });
   });
 });

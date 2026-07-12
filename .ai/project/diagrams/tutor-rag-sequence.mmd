@@ -9,6 +9,7 @@ sequenceDiagram
   participant Knowledge as KnowledgeService
   participant DB as SQLite
   participant AIModel as AiModelService
+  participant Policy as AiOperationPolicyService
   participant OpenAI as OpenAI-backed model provider
 
   Student->>Web: Type prompt or use speech recognition
@@ -23,7 +24,9 @@ sequenceDiagram
   Tutor->>Knowledge: getActiveVectorStoreIds()
   Knowledge->>DB: Read knowledge_files when env ids absent
   Knowledge-->>Tutor: Vector store ids
-  Tutor->>AIModel: Create response with profile context and optional file_search
+  Tutor->>AIModel: Create tutor operation response with profile context and optional file_search
+  AIModel->>Policy: Resolve tutorAnswer or tutorAnswerWithRag policy
+  Policy-->>AIModel: Role, model, metadata, optional service tier
   AIModel->>OpenAI: Responses API request
   OpenAI-->>AIModel: Structured tutor JSON and citations
   AIModel-->>Tutor: Provider response
@@ -38,14 +41,23 @@ sequenceDiagram
   Tutor-->>API: TutorAnswer
   API-->>Web: Answer, tasks, examples, citations, image prompt
   Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, or quality trigger
+  Background->>DB: Recover stale queued observations and running jobs
   Background->>DB: Read pending observations and job queue
-  Background->>AIModel: Window analysis with optional flex tier and prompt cache key
+  Background->>DB: Mark selected observations queued
+  Background->>AIModel: Learning-window operation with optional prompt cache key
+  AIModel->>Policy: Resolve backgroundLearningWindow policy
+  Policy-->>AIModel: Background role, model, optional service tier
   AIModel->>OpenAI: Responses API request
   OpenAI-->>AIModel: Learning-window JSON
   AIModel-->>Background: Parsed model response
-  Background->>DB: Store analysis window and student_learning_signals
+  Background->>DB: Store analysis window, signals, and processed observation state
+  alt Window analysis fails
+    Background->>DB: Return claimed observations to pending
+  end
   opt Profile refresh interval reached
-    Background->>AIModel: Combined profile/strategy refresh
+    Background->>AIModel: Combined profile/strategy refresh operation
+    AIModel->>Policy: Resolve backgroundProfileStrategyRefresh policy
+    Policy-->>AIModel: Background role, model, optional service tier
     AIModel->>OpenAI: Responses API request
     OpenAI-->>AIModel: Profile and strategy patch JSON
     AIModel-->>Background: Parsed model response
@@ -55,7 +67,9 @@ sequenceDiagram
     Student->>Web: Request diagram
     Web->>API: POST /tutor/image
     API->>Tutor: generateImage(prompt, context)
-    Tutor->>AIModel: Generate explanatory PNG
+    Tutor->>AIModel: Generate tutorImage operation PNG
+    AIModel->>Policy: Resolve tutorImage policy
+    Policy-->>AIModel: Image role and model
     AIModel->>OpenAI: Images API request
     OpenAI-->>AIModel: Base64 image
     AIModel-->>Tutor: Image response

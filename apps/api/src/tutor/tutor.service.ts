@@ -37,7 +37,8 @@ export class TutorService {
     const conversationId = options.conversationId?.trim() || `conv_${randomUUID()}`;
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
     const studentProfileContext = this.studentProfileService.getTutorContext(options.user.id);
-    const response = await this.aiModel.createResponse(
+    const response = await this.aiModel.createOperationResponse(
+      vectorStoreIds.length > 0 ? 'tutorAnswerWithRag' : 'tutorAnswer',
       this.buildTutorRequest(
         message,
         options.user,
@@ -61,12 +62,10 @@ export class TutorService {
     revisedPrompt?: string;
   }> {
     const prompt = this.normalizeImagePrompt(options.prompt, options.context);
-    const model = this.configService.get<string>('ai.openai.imageModel') ?? 'gpt-image-2';
-    const response = await this.aiModel.generateImage({
-      model,
+    const response = await this.aiModel.generateOperationImage('tutorImage', {
       prompt,
-      size: process.env.OPENAI_IMAGE_SIZE ?? '1024x1024',
-      quality: process.env.OPENAI_IMAGE_QUALITY ?? 'low',
+      size: this.configService.get<string>('ai.openai.imageSize') ?? '1024x1024',
+      quality: this.configService.get<string>('ai.openai.imageQuality') ?? 'low',
     });
     const data = Array.isArray(response.data) ? (response.data[0] as Record<string, unknown>) : undefined;
     const imageBase64 = this.pickString(data, ['b64_json']);
@@ -89,7 +88,6 @@ export class TutorService {
     source: 'text' | 'voice',
     studentProfileContext: string | undefined,
   ): Record<string, unknown> {
-    const model = this.configService.get<string>('ai.openai.responsesModel') ?? 'gpt-5.5';
     const tools =
       vectorStoreIds.length > 0
         ? [
@@ -102,7 +100,6 @@ export class TutorService {
         : undefined;
 
     return {
-      model,
       instructions: this.getTutorInstructions(vectorStoreIds.length > 0),
       input: [
         {

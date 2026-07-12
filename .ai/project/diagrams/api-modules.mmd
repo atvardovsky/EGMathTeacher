@@ -34,6 +34,7 @@ flowchart TB
   Knowledge --> DatabaseService
   Knowledge --> ModelService
 
+  ModelProvider --> ModelPolicy[AiOperationPolicyService]
   ModelProvider --> OpenAIClient[OpenAiClientService]
 
   WebRTC --> Conversation
