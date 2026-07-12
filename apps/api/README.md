@@ -92,14 +92,27 @@ locally:
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
+npm run knowledge:sync -- --recover-rag --wait-ready
 ```
 
 `--import-db` loads structured curriculum, task-bank, misconception, and
-lesson-plan JSON/JSONL into SQLite. `--sync-rag` uploads only selected
-student-facing Markdown files to the active OpenAI vector store. RAG sync is
-content-hash based: unchanged files are skipped, changed synced files are
-uploaded and the old vector-store file is detached. `--dry-run` performs no
-OpenAI create/upload/attach/delete calls.
+lesson-plan JSON/JSONL into SQLite. Strict mode is the default and requires
+all canonical structured files; `--partial` permits missing files and records
+warnings. Imports validate required fields, enum-like verifier kinds, JSONL
+line parsing, and core cross-references before writing runtime tables.
+
+`--sync-rag` uploads only selected student-facing Markdown files to the active
+OpenAI vector store. RAG sync is content-hash based: unchanged files are
+skipped, changed files are uploaded, superseded files are detached, and
+Markdown paths removed from the local pack are detached during reconciliation.
+`--wait-ready` polls vector-store file status until terminal readiness;
+`--dry-run` performs no OpenAI create/upload/attach/delete calls.
+`--recover-rag` retries failed sync jobs that recorded a recoverable OpenAI
+file id.
+
+The lesson runtime now reads active curriculum rows from SQLite and selects
+linear-equation verifier tasks from imported `task_bank_tasks` when available;
+the old hardcoded task remains only as an empty-DB fallback for the POC.
 
 ## WebRTC Flow (Browser ↔ NestJS ↔ OpenAI)
 

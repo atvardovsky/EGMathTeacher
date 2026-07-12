@@ -46,6 +46,7 @@ source_of_truth:
     - ".ai/project/architecture.md"
     - ".ai/project/runtime-flows.md"
     - ".ai/project/data-model.md"
+    - ".ai/project/knowledge-pack-runtime-repair-plan.md"
     - ".ai/project/lesson-agent-tools.md"
     - ".ai/project/validation.md"
     - ".ai/project/gaps.md"

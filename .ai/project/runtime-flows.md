@@ -84,7 +84,9 @@ This file records runtime flows from current source evidence.
    prompt. When `requestId` already has a stored tutor turn for the signed-in
    user, the API returns that stored answer instead of calling the models again.
 4. `CurriculumService` resolves a canonical topic, skill, task type, and
-   verifier kind. The current verified vertical is
+   verifier kind from active SQLite `curriculum_skills` rows. Unknown or
+   unmatched topics remain `unknown`; they do not fall back to the
+   linear-equation context. The current verified vertical is
    `algebra.linear.solve_one_variable` /
    `ege.base.linear_equation_numeric`; unsupported skills remain routing
    context but cannot produce verified mastery.
@@ -152,8 +154,10 @@ This file records runtime flows from current source evidence.
    model can report policy-accepted goal completion or blockage.
 18. API extracts citations from file-search annotations/results.
 19. If the lesson needs an independent attempt and the resolved curriculum
-    vertical is supported, `MathVerifierService` appends and stores a
-    backend-generated verifiable task without exposing the expected answer.
+    vertical is supported, `MathVerifierService` asks `TaskBankService` for an
+    active imported `task_bank_tasks` row, appends and stores the selected
+    verifiable task without exposing the expected answer, and only uses the
+    hardcoded linear-equation task as a POC empty-DB fallback.
 20. `LessonService` completes the turn, stores a lesson effectiveness signal,
     and accepts goal completion only when backend policy accepted a
     `propose_goal_completion` action. Otherwise `goalStatus=reached` remains a
@@ -304,16 +308,21 @@ Local knowledge-pack import/sync:
 1. Operator runs `npm run knowledge:sync -- --pack <zip>` or `--root <dir>`.
    If neither mode is provided, the command defaults to `--import-db`.
 2. The CLI extracts zip input to a temporary directory or uses the extracted
-   root directly. The knowledge-pack zip itself is a local artifact and should
-   not be committed.
+   root directly after archive size, file-count, total unpacked size,
+   single-file size, depth, extension, and path-traversal guardrails. The
+   knowledge-pack zip itself is a local artifact and should not be committed.
 3. With `--import-db`, `KnowledgePackService` reads structured JSON/JSONL
    files for curriculum topics, task types, skills, prerequisites, mastery
    criteria, misconceptions, task bank tasks, error classification, and lesson
-   type plans.
+   type plans. Strict mode is the default and requires all canonical
+   structured files; `--partial` allows missing files and records warnings.
+   Validation checks required fields, enum-like verifier kinds, JSONL line
+   parsing, and core cross-reference ids before writes.
 4. The importer computes each source file's SHA-256 hash and checks
    `knowledge_source_files`. Unchanged structured files are skipped unless
    `--force` is used. Changed files are upserted into the corresponding
-   SQLite tables inside the local migration-backed schema.
+   SQLite tables inside the local migration-backed schema. Removed structured
+   source ids are soft-retired with `sync_status='retired'`.
 5. With `--sync-rag`, only selected student-facing Markdown files are eligible
    for OpenAI RAG upload: exam framework, curriculum overview, theory,
    misconception guides, teaching methods, teen communication, lesson types,
@@ -322,13 +331,21 @@ Local knowledge-pack import/sync:
    unchanged, upload is skipped. If content changed, the new file is uploaded
    and attached to the active vector store, then the superseded vector-store
    file is detached through the model provider and marked `superseded`
-   locally.
+   locally. Deleted or renamed source paths are reconciled against active
+   vector-store attachments and detached when absent from the current pack.
 7. `--dry-run` plans RAG changes without creating vector stores, uploading
    files, attaching files, or deleting vector-store file attachments.
 8. The active vector store id is stored in `project_ai_resources` when
    `OPENAI_VECTOR_STORE_IDS` is empty. Tutor/profile/background RAG then uses
    that locally stored vector store id automatically through
    `KnowledgeService.getActiveVectorStoreIds()`.
+9. Remote OpenAI operations and SQLite writes are coordinated by local
+   `knowledge_pack_sync_jobs` claims for upload/attach paths. Failed imports
+   are recorded in `knowledge_pack_imports`; `--wait-ready` can poll
+   vector-store indexing readiness; `--recover-rag` retries failed jobs that
+   recorded recoverable OpenAI file ids.
+10. Non-dry-run RAG sync remains a protected live OpenAI side effect even
+    though local idempotency and recovery metadata exist.
 
 ## WebRTC Flow
 

@@ -9,12 +9,13 @@ import {
   statSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { basename, join, relative, resolve, sep } from 'path';
+import { basename, extname, join, relative, resolve, sep } from 'path';
 import { spawnSync } from 'child_process';
 import { DatabaseService } from '../database/database.service';
 import { KnowledgeService, SyncRagSourceFileResult } from './knowledge.service';
 
 type JsonObject = Record<string, unknown>;
+type KnowledgePackImportMode = 'strict' | 'partial';
 
 interface PackFile {
   absolutePath: string;
@@ -42,6 +43,7 @@ export interface KnowledgePackImportSummary {
   structuredFiles: number;
   importedRows: number;
   skippedFiles: number;
+  warnings: string[];
 }
 
 export interface KnowledgePackRagSyncSummary {
@@ -51,6 +53,7 @@ export interface KnowledgePackRagSyncSummary {
   uploadedFiles: number;
   replacedFiles: number;
   skippedFiles: number;
+  retiredFiles: number;
   dryRun: boolean;
   results: SyncRagSourceFileResult[];
 }
@@ -61,6 +64,8 @@ export interface KnowledgePackSyncOptions {
   syncRag?: boolean;
   dryRun?: boolean;
   force?: boolean;
+  importMode?: KnowledgePackImportMode;
+  waitUntilIndexed?: boolean;
 }
 
 export interface KnowledgePackSyncSummary {
@@ -68,6 +73,32 @@ export interface KnowledgePackSyncSummary {
   rootPath: string;
   structured?: KnowledgePackImportSummary;
   rag?: KnowledgePackRagSyncSummary;
+}
+
+interface PackMetadata {
+  packVersion: string;
+  schemaVersion?: string;
+  contentRelease?: string;
+  generatedAt?: string;
+  packContentHash: string;
+}
+
+interface StructuredValidationResult {
+  warnings: string[];
+  presentPaths: Set<string>;
+  activeKeys: StructuredActiveKeys;
+}
+
+interface StructuredActiveKeys {
+  topics: Set<string>;
+  taskTypes: Set<string>;
+  skills: Set<string>;
+  prerequisiteEdges: Set<string>;
+  masteryCriteria: Set<string>;
+  misconceptions: Set<string>;
+  errorClassificationEntries: Set<string>;
+  lessonTypePlans: Set<string>;
+  taskBankTasks: Set<string>;
 }
 
 const STRUCTURED_FILE_PATHS = [
@@ -87,6 +118,17 @@ const STRUCTURED_FILE_PATHS = [
   'learning-plans/lesson-type-plan.json',
 ];
 
+const PACK_LIMITS = {
+  maxArchiveBytes: 100 * 1024 * 1024,
+  maxTotalBytes: 250 * 1024 * 1024,
+  maxFileBytes: 15 * 1024 * 1024,
+  maxFiles: 2_500,
+  maxDepth: 12,
+};
+
+const ALLOWED_PACK_EXTENSIONS = new Set(['.json', '.jsonl', '.md']);
+const RUNTIME_VERIFIER_KINDS = new Set(['linear_equation_numeric', 'unsupported']);
+
 @Injectable()
 export class KnowledgePackService {
   constructor(
@@ -101,11 +143,19 @@ export class KnowledgePackService {
     }
     const stat = statSync(absolute);
     if (stat.isDirectory()) {
-      return { rootPath: this.normalizePackRoot(absolute) };
+      const rootPath = this.normalizePackRoot(absolute);
+      this.assertPackTreeWithinLimits(rootPath);
+      return { rootPath };
     }
     if (!absolute.toLowerCase().endsWith('.zip')) {
       throw new BadRequestException('Knowledge pack must be an extracted directory or .zip file');
     }
+    if (stat.size > PACK_LIMITS.maxArchiveBytes) {
+      throw new BadRequestException(
+        `Knowledge pack archive is too large: ${stat.size} bytes`,
+      );
+    }
+    this.assertZipListingSafe(absolute);
 
     const target = mkdtempSync(join(tmpdir(), 'egmathteacher-knowledge-pack-'));
     const result = spawnSync('unzip', ['-q', absolute, '-d', target], {
@@ -118,61 +168,93 @@ export class KnowledgePackService {
       );
     }
 
+    const rootPath = this.normalizePackRoot(target);
+    this.assertPackTreeWithinLimits(rootPath);
     return {
-      rootPath: this.normalizePackRoot(target),
+      rootPath,
       cleanup: () => rmSync(target, { recursive: true, force: true }),
     };
   }
 
   async syncKnowledgePack(options: KnowledgePackSyncOptions): Promise<KnowledgePackSyncSummary> {
     const rootPath = this.normalizePackRoot(options.rootPath);
-    const packVersion = this.detectPackVersion(rootPath);
+    this.assertPackTreeWithinLimits(rootPath);
+    const metadata = this.detectPackMetadata(rootPath);
+    const packVersion = metadata.packVersion;
     const summary: KnowledgePackSyncSummary = { packVersion, rootPath };
+    const importKind = this.resolveImportKind(options);
+    const importMode = options.importMode ?? 'strict';
 
-    if (options.importDb) {
-      summary.structured = this.importStructured({
+    try {
+      if (options.importDb) {
+        summary.structured = this.importStructured({
+          rootPath,
+          packVersion,
+          metadata,
+          force: options.force ?? false,
+          importMode,
+        });
+      }
+
+      if (options.syncRag) {
+        summary.rag = await this.syncStudentRag({
+          rootPath,
+          packVersion,
+          metadata,
+          dryRun: options.dryRun ?? false,
+          waitUntilIndexed: options.waitUntilIndexed ?? false,
+        });
+      }
+
+      this.insertImportLedger({
+        metadata,
         rootPath,
-        packVersion,
-        force: options.force ?? false,
+        importKind,
+        importMode,
+        structuredFileCount: summary.structured?.structuredFiles ?? 0,
+        ragFileCount: summary.rag?.ragFiles ?? 0,
+        importedRowCount: summary.structured?.importedRows ?? 0,
+        uploadedFileCount: summary.rag?.uploadedFiles ?? 0,
+        skippedFileCount:
+          (summary.structured?.skippedFiles ?? 0) + (summary.rag?.skippedFiles ?? 0),
+        warnings: summary.structured?.warnings ?? [],
+        status: 'completed',
       });
-    }
 
-    if (options.syncRag) {
-      summary.rag = await this.syncStudentRag({
+      return summary;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.insertImportLedger({
+        metadata,
         rootPath,
-        packVersion,
-        dryRun: options.dryRun ?? false,
+        importKind,
+        importMode,
+        structuredFileCount: summary.structured?.structuredFiles ?? 0,
+        ragFileCount: summary.rag?.ragFiles ?? 0,
+        importedRowCount: summary.structured?.importedRows ?? 0,
+        uploadedFileCount: summary.rag?.uploadedFiles ?? 0,
+        skippedFileCount:
+          (summary.structured?.skippedFiles ?? 0) + (summary.rag?.skippedFiles ?? 0),
+        warnings: summary.structured?.warnings ?? [],
+        status: 'failed',
+        errorMessage: message,
       });
+      throw error;
     }
-
-    this.insertImportLedger({
-      packVersion,
-      rootPath,
-      importKind:
-        options.importDb && options.syncRag
-          ? 'structured_and_rag'
-          : options.syncRag
-            ? 'rag'
-            : 'structured',
-      structuredFileCount: summary.structured?.structuredFiles ?? 0,
-      ragFileCount: summary.rag?.ragFiles ?? 0,
-      importedRowCount: summary.structured?.importedRows ?? 0,
-      uploadedFileCount: summary.rag?.uploadedFiles ?? 0,
-      skippedFileCount:
-        (summary.structured?.skippedFiles ?? 0) + (summary.rag?.skippedFiles ?? 0),
-      status: 'completed',
-    });
-
-    return summary;
   }
 
   importStructured(input: {
     rootPath: string;
     packVersion?: string;
+    metadata?: PackMetadata;
     force?: boolean;
+    importMode?: KnowledgePackImportMode;
   }): KnowledgePackImportSummary {
     const rootPath = this.normalizePackRoot(input.rootPath);
-    const packVersion = input.packVersion ?? this.detectPackVersion(rootPath);
+    this.assertPackTreeWithinLimits(rootPath);
+    const metadata = input.metadata ?? this.detectPackMetadata(rootPath);
+    const packVersion = input.packVersion ?? metadata.packVersion;
+    const validation = this.validateStructuredPack(rootPath, input.importMode ?? 'strict');
     let structuredFiles = 0;
     let importedRows = 0;
     let skippedFiles = 0;
@@ -181,6 +263,7 @@ export class KnowledgePackService {
       for (const relativePath of STRUCTURED_FILE_PATHS) {
         const file = this.readPackFile(rootPath, relativePath);
         if (!file) {
+          skippedFiles += 1;
           continue;
         }
 
@@ -210,6 +293,8 @@ export class KnowledgePackService {
           metadata: { importedAt: new Date().toISOString() },
         });
       }
+
+      this.retireMissingStructuredRows(validation);
     });
 
     return {
@@ -218,16 +303,21 @@ export class KnowledgePackService {
       structuredFiles,
       importedRows,
       skippedFiles,
+      warnings: validation.warnings,
     };
   }
 
   async syncStudentRag(input: {
     rootPath: string;
     packVersion?: string;
+    metadata?: PackMetadata;
     dryRun?: boolean;
+    waitUntilIndexed?: boolean;
   }): Promise<KnowledgePackRagSyncSummary> {
     const rootPath = this.normalizePackRoot(input.rootPath);
-    const packVersion = input.packVersion ?? this.detectPackVersion(rootPath);
+    this.assertPackTreeWithinLimits(rootPath);
+    const metadata = input.metadata ?? this.detectPackMetadata(rootPath);
+    const packVersion = input.packVersion ?? metadata.packVersion;
     const files = this.scanPackFiles(rootPath).filter((file) => this.isStudentRagFile(file));
     const results: SyncRagSourceFileResult[] = [];
 
@@ -239,6 +329,7 @@ export class KnowledgePackService {
         sourcePackVersion: packVersion,
         contentHash: file.contentHash,
         dryRun: input.dryRun ?? false,
+        waitUntilIndexed: input.waitUntilIndexed ?? false,
       });
       results.push(result);
 
@@ -259,6 +350,12 @@ export class KnowledgePackService {
         });
       }
     }
+    const reconcileResults = await this.knowledgeService.reconcileMissingRagSourceFiles({
+      activeRelativePaths: files.map((file) => file.relativePath),
+      sourcePackVersion: packVersion,
+      dryRun: input.dryRun ?? false,
+    });
+    results.push(...reconcileResults);
 
     return {
       packVersion,
@@ -267,9 +364,324 @@ export class KnowledgePackService {
       uploadedFiles: results.filter((result) => result.action === 'uploaded').length,
       replacedFiles: results.filter((result) => result.action === 'replaced').length,
       skippedFiles: results.filter((result) => result.action.startsWith('skipped')).length,
+      retiredFiles: results.filter((result) => result.action === 'retired').length,
       dryRun: input.dryRun ?? false,
       results,
     };
+  }
+
+  private validateStructuredPack(
+    rootPath: string,
+    importMode: KnowledgePackImportMode,
+  ): StructuredValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const presentPaths = new Set<string>();
+    const activeKeys = this.emptyStructuredActiveKeys();
+
+    const fileByPath = new Map<string, PackFile>();
+    for (const relativePath of STRUCTURED_FILE_PATHS) {
+      const file = this.readPackFile(rootPath, relativePath);
+      if (!file) {
+        const message = `Missing structured knowledge-pack file: ${relativePath}`;
+        if (importMode === 'strict') {
+          errors.push(message);
+        } else {
+          warnings.push(message);
+        }
+        continue;
+      }
+      presentPaths.add(relativePath);
+      fileByPath.set(relativePath, file);
+    }
+
+    const topicItems = this.validateItemsFile(
+      fileByPath.get('rag-corpus/02-curriculum/curriculum-topics.json'),
+      errors,
+      'topic_id',
+      ['title', 'exam_track', 'status'],
+      ['prerequisite_topic_ids', 'skill_ids'],
+    );
+    for (const item of topicItems) {
+      activeKeys.topics.add(this.stringValue(item.topic_id));
+    }
+
+    const taskTypeItems = this.validateItemsFile(
+      fileByPath.get('rag-corpus/02-curriculum/curriculum-task-types.json'),
+      errors,
+      'task_type_id',
+      ['title', 'exam_track', 'response_kind', 'runtime_verifier_kind', 'planned_verifier_kind'],
+      [],
+    );
+    for (const item of taskTypeItems) {
+      activeKeys.taskTypes.add(this.stringValue(item.task_type_id));
+      const verifierKind = this.stringValue(item.runtime_verifier_kind);
+      if (!RUNTIME_VERIFIER_KINDS.has(verifierKind)) {
+        errors.push(
+          `${item.task_type_id}.runtime_verifier_kind has unsupported value: ${verifierKind}`,
+        );
+      }
+    }
+
+    const skillItems = this.validateItemsFile(
+      fileByPath.get('rag-corpus/02-curriculum/curriculum-skills.json'),
+      errors,
+      'skill_id',
+      ['title', 'topic_id'],
+      ['prerequisites', 'task_type_ids', 'typical_misconceptions', 'explanation_methods'],
+    );
+    for (const item of skillItems) {
+      const skillId = this.stringValue(item.skill_id);
+      activeKeys.skills.add(skillId);
+      const topicId = this.stringValue(item.topic_id);
+      if (activeKeys.topics.size > 0 && !activeKeys.topics.has(topicId)) {
+        errors.push(`${skillId}.topic_id references unknown topic: ${topicId}`);
+      }
+      const taskTypeIds = this.arrayValue(item.task_type_ids).map((value) => String(value));
+      if (taskTypeIds.length === 0) {
+        errors.push(`${skillId}.task_type_ids must contain at least one task type`);
+      }
+      for (const taskTypeId of taskTypeIds) {
+        if (activeKeys.taskTypes.size > 0 && !activeKeys.taskTypes.has(taskTypeId)) {
+          errors.push(`${skillId}.task_type_ids references unknown task type: ${taskTypeId}`);
+        }
+      }
+    }
+
+    const prerequisitesFile = fileByPath.get('rag-corpus/02-curriculum/curriculum-prerequisites.json');
+    if (prerequisitesFile) {
+      const parsed = this.readJsonForValidation(prerequisitesFile, errors);
+      for (const edge of this.arrayObjects(parsed.topic_edges)) {
+        const fromId = this.stringValue(edge.from_topic_id);
+        const toId = this.stringValue(edge.to_topic_id);
+        const relation = this.stringValue(edge.relation);
+        this.requireStringForValidation(edge, 'from_topic_id', prerequisitesFile.relativePath, errors);
+        this.requireStringForValidation(edge, 'to_topic_id', prerequisitesFile.relativePath, errors);
+        this.requireStringForValidation(edge, 'relation', prerequisitesFile.relativePath, errors);
+        if (fromId && activeKeys.topics.size > 0 && !activeKeys.topics.has(fromId)) {
+          errors.push(`topic prerequisite references unknown from_topic_id: ${fromId}`);
+        }
+        if (toId && activeKeys.topics.size > 0 && !activeKeys.topics.has(toId)) {
+          errors.push(`topic prerequisite references unknown to_topic_id: ${toId}`);
+        }
+        activeKeys.prerequisiteEdges.add(`topic:${fromId}:${toId}:${relation}`);
+      }
+      for (const edge of this.arrayObjects(parsed.skill_edges)) {
+        const fromId = this.stringValue(edge.from_skill_id);
+        const toId = this.stringValue(edge.to_skill_id);
+        const relation = this.stringValue(edge.relation);
+        this.requireStringForValidation(edge, 'from_skill_id', prerequisitesFile.relativePath, errors);
+        this.requireStringForValidation(edge, 'to_skill_id', prerequisitesFile.relativePath, errors);
+        this.requireStringForValidation(edge, 'relation', prerequisitesFile.relativePath, errors);
+        if (fromId && activeKeys.skills.size > 0 && !activeKeys.skills.has(fromId)) {
+          errors.push(`skill prerequisite references unknown from_skill_id: ${fromId}`);
+        }
+        if (toId && activeKeys.skills.size > 0 && !activeKeys.skills.has(toId)) {
+          errors.push(`skill prerequisite references unknown to_skill_id: ${toId}`);
+        }
+        activeKeys.prerequisiteEdges.add(`skill:${fromId}:${toId}:${relation}`);
+      }
+    }
+
+    const masteryItems = this.validateItemsFile(
+      fileByPath.get('rag-corpus/02-curriculum/curriculum-mastery-criteria.json'),
+      errors,
+      'skill_id',
+      ['minimum_criterion', 'regression_trigger'],
+      ['required_evidence_sequence', 'recommended_recheck_days'],
+    );
+    for (const item of masteryItems) {
+      const skillId = this.stringValue(item.skill_id);
+      activeKeys.masteryCriteria.add(skillId);
+      if (activeKeys.skills.size > 0 && !activeKeys.skills.has(skillId)) {
+        errors.push(`mastery criteria references unknown skill_id: ${skillId}`);
+      }
+      this.requireBooleanForValidation(
+        item,
+        'self_report_can_complete',
+        'curriculum-mastery-criteria.json',
+        errors,
+      );
+      this.requireBooleanForValidation(
+        item,
+        'single_success_can_complete',
+        'curriculum-mastery-criteria.json',
+        errors,
+      );
+    }
+
+    const misconceptionItems = this.validateItemsFile(
+      fileByPath.get('rag-corpus/02-curriculum/curriculum-misconceptions.json'),
+      errors,
+      'misconception_id',
+      [
+        'title',
+        'domain',
+        'observable_sign',
+        'random_vs_systematic',
+        'first_question',
+        'first_hint',
+        'second_hint',
+        'retry_task_rule',
+        'forbidden_inference',
+      ],
+      ['possible_causes'],
+    );
+    for (const item of misconceptionItems) {
+      activeKeys.misconceptions.add(this.stringValue(item.misconception_id));
+    }
+
+    const indexFile = fileByPath.get('rag-corpus/04-task-bank/task-bank-index.json');
+    if (indexFile) {
+      const parsed = this.readJsonForValidation(indexFile, errors);
+      if (!Array.isArray(parsed.files)) {
+        errors.push(`${indexFile.relativePath}.files must be an array`);
+      }
+    }
+
+    for (const relativePath of STRUCTURED_FILE_PATHS.filter((path) => path.endsWith('.jsonl'))) {
+      const file = fileByPath.get(relativePath);
+      if (!file) {
+        continue;
+      }
+      const rows = this.readJsonLinesForValidation(file, errors);
+      for (const item of rows) {
+        const taskId = this.requireStringForValidation(item, 'task_id', file.relativePath, errors);
+        const topicId = this.requireStringForValidation(item, 'topic_id', file.relativePath, errors);
+        const skillId = this.requireStringForValidation(item, 'skill_id', file.relativePath, errors);
+        const taskTypeId = this.requireStringForValidation(
+          item,
+          'task_type_id',
+          file.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(item, 'difficulty', file.relativePath, errors);
+        this.requireStringForValidation(item, 'prompt', file.relativePath, errors);
+        this.requireStringForValidation(item, 'expected_answer', file.relativePath, errors);
+        this.requireArrayForValidation(item, 'solution_steps', file.relativePath, errors);
+        this.requireArrayForValidation(item, 'common_errors', file.relativePath, errors);
+        this.requireArrayForValidation(item, 'hint_ladder', file.relativePath, errors);
+        const verifierKind = this.requireStringForValidation(
+          item,
+          'verifier_kind',
+          file.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(item, 'source_type', file.relativePath, errors);
+        this.requireObjectForValidation(item, 'verification', file.relativePath, errors);
+        if (taskId) {
+          activeKeys.taskBankTasks.add(taskId);
+        }
+        if (topicId && activeKeys.topics.size > 0 && !activeKeys.topics.has(topicId)) {
+          errors.push(`${taskId}.topic_id references unknown topic: ${topicId}`);
+        }
+        if (skillId && activeKeys.skills.size > 0 && !activeKeys.skills.has(skillId)) {
+          errors.push(`${taskId}.skill_id references unknown skill: ${skillId}`);
+        }
+        if (taskTypeId && activeKeys.taskTypes.size > 0 && !activeKeys.taskTypes.has(taskTypeId)) {
+          errors.push(`${taskId}.task_type_id references unknown task type: ${taskTypeId}`);
+        }
+        if (verifierKind && !RUNTIME_VERIFIER_KINDS.has(verifierKind)) {
+          errors.push(`${taskId}.verifier_kind has unsupported value: ${verifierKind}`);
+        }
+      }
+    }
+
+    const errorFile = fileByPath.get('rag-corpus/05-misconceptions/error-classification.json');
+    if (errorFile) {
+      const parsed = this.readJsonForValidation(errorFile, errors);
+      this.requireArrayForValidation(parsed, 'error_kinds', errorFile.relativePath, errors);
+      this.requireArrayForValidation(parsed, 'classification_levels', errorFile.relativePath, errors);
+      this.requireArrayForValidation(parsed, 'misconception_ids', errorFile.relativePath, errors);
+      this.requireObjectForValidation(parsed, 'global_constraints', errorFile.relativePath, errors);
+      for (const errorKind of this.arrayValue(parsed.error_kinds)) {
+        activeKeys.errorClassificationEntries.add(`error_kind:${String(errorKind)}`);
+      }
+      for (const level of this.arrayObjects(parsed.classification_levels)) {
+        const key = this.requireStringForValidation(
+          level,
+          'level',
+          errorFile.relativePath,
+          errors,
+        );
+        if (key) {
+          activeKeys.errorClassificationEntries.add(`classification_level:${key}`);
+        }
+      }
+      for (const misconceptionId of this.arrayValue(parsed.misconception_ids)) {
+        activeKeys.errorClassificationEntries.add(`misconception_id:${String(misconceptionId)}`);
+      }
+      for (const key of Object.keys(this.objectValue(parsed.global_constraints))) {
+        activeKeys.errorClassificationEntries.add(`global_constraint:${key}`);
+      }
+    }
+
+    const lessonPlanFile = fileByPath.get('learning-plans/lesson-type-plan.json');
+    if (lessonPlanFile) {
+      const parsed = this.readJsonForValidation(lessonPlanFile, errors);
+      for (const phase of this.arrayObjects(parsed.phases)) {
+        const phaseId = this.requireStringForValidation(
+          phase,
+          'phase',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(phase, 'goal', lessonPlanFile.relativePath, errors);
+        this.requireObjectForValidation(
+          phase,
+          'recommended_lesson_mix',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireArrayForValidation(
+          phase,
+          'transition_criteria',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(
+          phase,
+          'minimum_evidence',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(
+          phase,
+          'reflection_frequency',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(
+          phase,
+          'review_frequency',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(
+          phase,
+          'mock_exam_place',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        this.requireStringForValidation(
+          phase,
+          'prerequisite_return_rule',
+          lessonPlanFile.relativePath,
+          errors,
+        );
+        if (phaseId) {
+          activeKeys.lessonTypePlans.add(phaseId);
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      const shown = errors.slice(0, 25).join('\n');
+      const suffix = errors.length > 25 ? `\n...and ${errors.length - 25} more errors` : '';
+      throw new BadRequestException(`Knowledge pack validation failed:\n${shown}${suffix}`);
+    }
+
+    return { warnings, presentPaths, activeKeys };
   }
 
   private importStructuredFile(packVersion: string, file: PackFile): number {
@@ -322,6 +734,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.topic_id),
@@ -363,6 +777,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.task_type_id),
@@ -432,6 +848,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.skill_id),
@@ -504,6 +922,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.skill_id),
@@ -551,6 +971,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.misconception_id),
@@ -625,6 +1047,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(item.task_id),
@@ -717,6 +1141,8 @@ export class KnowledgePackService {
            source_pack_version = excluded.source_pack_version,
            source_path = excluded.source_path,
            content_hash = excluded.content_hash,
+           sync_status = 'active',
+           retired_at = NULL,
            updated_at = excluded.updated_at`,
         [
           this.stringValue(phase.phase),
@@ -762,6 +1188,8 @@ export class KnowledgePackService {
          source_pack_version = excluded.source_pack_version,
          source_path = excluded.source_path,
          content_hash = excluded.content_hash,
+         sync_status = 'active',
+         retired_at = NULL,
          updated_at = excluded.updated_at`,
       [
         randomUUID(),
@@ -797,6 +1225,8 @@ export class KnowledgePackService {
          source_pack_version = excluded.source_pack_version,
          source_path = excluded.source_path,
          content_hash = excluded.content_hash,
+         sync_status = 'active',
+         retired_at = NULL,
          updated_at = excluded.updated_at`,
       [
         randomUUID(),
@@ -809,6 +1239,76 @@ export class KnowledgePackService {
         now,
         now,
       ],
+    );
+  }
+
+  private retireMissingStructuredRows(validation: StructuredValidationResult): void {
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-topics.json')) {
+      this.retireRows('curriculum_topics', 'topic_id', validation.activeKeys.topics);
+    }
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-task-types.json')) {
+      this.retireRows('curriculum_task_types', 'task_type_id', validation.activeKeys.taskTypes);
+    }
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-skills.json')) {
+      this.retireRows('curriculum_skills', 'skill_id', validation.activeKeys.skills);
+    }
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-prerequisites.json')) {
+      this.retireRows(
+        'curriculum_prerequisite_edges',
+        "edge_type || ':' || from_id || ':' || to_id || ':' || relation",
+        validation.activeKeys.prerequisiteEdges,
+      );
+    }
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-mastery-criteria.json')) {
+      this.retireRows(
+        'curriculum_mastery_criteria',
+        'skill_id',
+        validation.activeKeys.masteryCriteria,
+      );
+    }
+    if (validation.presentPaths.has('rag-corpus/02-curriculum/curriculum-misconceptions.json')) {
+      this.retireRows(
+        'curriculum_misconceptions',
+        'misconception_id',
+        validation.activeKeys.misconceptions,
+      );
+    }
+    if (validation.presentPaths.has('rag-corpus/05-misconceptions/error-classification.json')) {
+      this.retireRows(
+        'error_classification_entries',
+        "entry_type || ':' || entry_key",
+        validation.activeKeys.errorClassificationEntries,
+      );
+    }
+    if (validation.presentPaths.has('learning-plans/lesson-type-plan.json')) {
+      this.retireRows('lesson_type_plans', 'phase', validation.activeKeys.lessonTypePlans);
+    }
+    const hasTaskRows = STRUCTURED_FILE_PATHS.some(
+      (path) => path.endsWith('.jsonl') && validation.presentPaths.has(path),
+    );
+    if (hasTaskRows) {
+      this.retireRows('task_bank_tasks', 'task_id', validation.activeKeys.taskBankTasks);
+    }
+  }
+
+  private retireRows(tableName: string, keyExpression: string, activeKeys: Set<string>): void {
+    const now = new Date().toISOString();
+    const keys = Array.from(activeKeys).filter(Boolean);
+    const params: unknown[] = [now, now];
+    let predicate = '';
+    if (keys.length > 0) {
+      predicate = ` AND ${keyExpression} NOT IN (${keys.map(() => '?').join(', ')})`;
+      params.push(...keys);
+    }
+    this.db.run(
+      `UPDATE ${tableName}
+       SET sync_status = 'retired',
+           retired_at = ?,
+           updated_at = ?
+       WHERE source_pack_version IS NOT NULL
+         AND COALESCE(sync_status, 'active') = 'active'
+         ${predicate}`,
+      params,
     );
   }
 
@@ -847,36 +1347,46 @@ export class KnowledgePackService {
   }
 
   private insertImportLedger(input: {
-    packVersion: string;
+    metadata: PackMetadata;
     rootPath: string;
     importKind: 'structured' | 'rag' | 'structured_and_rag';
+    importMode: KnowledgePackImportMode;
     status: 'completed' | 'failed';
     structuredFileCount: number;
     ragFileCount: number;
     importedRowCount: number;
     uploadedFileCount: number;
     skippedFileCount: number;
+    warnings: string[];
     errorMessage?: string;
   }): void {
     const now = new Date().toISOString();
     this.db.run(
       `INSERT INTO knowledge_pack_imports (
-         id, pack_version, root_path, import_kind, status, structured_file_count,
-         rag_file_count, imported_row_count, uploaded_file_count, skipped_file_count,
-         error_message, started_at, completed_at
+         id, pack_version, schema_version, content_release, generated_at,
+         pack_content_hash, root_path, import_kind, import_mode, status,
+         structured_file_count, rag_file_count, imported_row_count,
+         uploaded_file_count, skipped_file_count, warnings_json, error_message,
+         started_at, completed_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         randomUUID(),
-        input.packVersion,
+        input.metadata.packVersion,
+        input.metadata.schemaVersion ?? null,
+        input.metadata.contentRelease ?? null,
+        input.metadata.generatedAt ?? null,
+        input.metadata.packContentHash,
         input.rootPath,
         input.importKind,
+        input.importMode,
         input.status,
         input.structuredFileCount,
         input.ragFileCount,
         input.importedRowCount,
         input.uploadedFileCount,
         input.skippedFileCount,
+        JSON.stringify(input.warnings),
         input.errorMessage ?? null,
         now,
         now,
@@ -896,14 +1406,132 @@ export class KnowledgePackService {
     return existing?.content_hash === file.contentHash && existing.status === 'imported';
   }
 
+  private resolveImportKind(
+    options: KnowledgePackSyncOptions,
+  ): 'structured' | 'rag' | 'structured_and_rag' {
+    if (options.importDb && options.syncRag) {
+      return 'structured_and_rag';
+    }
+    if (options.syncRag) {
+      return 'rag';
+    }
+    return 'structured';
+  }
+
   private detectPackVersion(rootPath: string): string {
+    return this.detectPackMetadata(rootPath).packVersion;
+  }
+
+  private detectPackMetadata(rootPath: string): PackMetadata {
     const manifest = this.readPackFile(rootPath, 'rag-corpus/rag-manifest.json');
+    const packContentHash = this.hashPackContent(rootPath);
     if (!manifest) {
-      return 'unknown';
+      return { packVersion: `content-${packContentHash.slice(0, 12)}`, packContentHash };
     }
     const parsed = this.readJson(manifest);
     const schemaVersion = this.optionalString(parsed.schema_version);
-    return schemaVersion ? `v${schemaVersion}` : 'unknown';
+    const contentRelease =
+      this.optionalString(parsed.content_release) ??
+      this.optionalString(parsed.release) ??
+      this.optionalString(parsed.version);
+    const explicitPackVersion = this.optionalString(parsed.pack_version);
+    return {
+      packVersion: explicitPackVersion ?? contentRelease ?? `content-${packContentHash.slice(0, 12)}`,
+      schemaVersion: schemaVersion ?? undefined,
+      contentRelease: contentRelease ?? undefined,
+      generatedAt: this.optionalString(parsed.generated_at) ?? undefined,
+      packContentHash,
+    };
+  }
+
+  private hashPackContent(rootPath: string): string {
+    const hash = createHash('sha256');
+    for (const file of this.scanPackFiles(rootPath)) {
+      hash.update(file.relativePath);
+      hash.update('\0');
+      hash.update(file.contentHash);
+      hash.update('\0');
+    }
+    return hash.digest('hex');
+  }
+
+  private assertZipListingSafe(zipPath: string): void {
+    const result = spawnSync('unzip', ['-Z', '-1', zipPath], { encoding: 'utf8' });
+    if (result.status !== 0) {
+      throw new BadRequestException(
+        `Could not inspect knowledge pack archive: ${(result.stderr || result.stdout).trim()}`,
+      );
+    }
+    const entries = result.stdout
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (entries.length > PACK_LIMITS.maxFiles) {
+      throw new BadRequestException(`Knowledge pack archive has too many files: ${entries.length}`);
+    }
+    for (const entry of entries) {
+      this.assertSafeRelativePath(entry);
+    }
+  }
+
+  private assertPackTreeWithinLimits(rootPath: string): void {
+    let totalBytes = 0;
+    let fileCount = 0;
+    const walk = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const absolutePath = join(directory, entry.name);
+        const relativePath = this.toRelativePath(rootPath, absolutePath);
+        this.assertSafeRelativePath(relativePath);
+        if (entry.isDirectory()) {
+          walk(absolutePath);
+          continue;
+        }
+        if (!entry.isFile()) {
+          continue;
+        }
+        const stat = statSync(absolutePath);
+        fileCount += 1;
+        totalBytes += stat.size;
+        if (fileCount > PACK_LIMITS.maxFiles) {
+          throw new BadRequestException(`Knowledge pack has too many files: ${fileCount}`);
+        }
+        if (stat.size > PACK_LIMITS.maxFileBytes) {
+          throw new BadRequestException(
+            `Knowledge pack file is too large: ${relativePath} (${stat.size} bytes)`,
+          );
+        }
+        if (totalBytes > PACK_LIMITS.maxTotalBytes) {
+          throw new BadRequestException(
+            `Knowledge pack unpacked content is too large: ${totalBytes} bytes`,
+          );
+        }
+      }
+    };
+    walk(rootPath);
+  }
+
+  private assertSafeRelativePath(relativePath: string): void {
+    const normalized = relativePath.split('\\').join('/');
+    if (
+      normalized.startsWith('/') ||
+      normalized.includes('../') ||
+      normalized === '..' ||
+      normalized.includes('/../') ||
+      normalized.endsWith('/..')
+    ) {
+      throw new BadRequestException(`Unsafe knowledge pack path: ${relativePath}`);
+    }
+    const depth = normalized.split('/').filter(Boolean).length;
+    if (depth > PACK_LIMITS.maxDepth) {
+      throw new BadRequestException(`Knowledge pack path is too deep: ${relativePath}`);
+    }
+    if (normalized.endsWith('/')) {
+      return;
+    }
+    const extension = extname(normalized).toLowerCase();
+    if (extension && !ALLOWED_PACK_EXTENSIONS.has(extension)) {
+      throw new BadRequestException(`Unsupported knowledge pack file type: ${relativePath}`);
+    }
   }
 
   private normalizePackRoot(path: string): string {
@@ -999,6 +1627,136 @@ export class KnowledgePackService {
       file.relativePath === 'learning-plans/student-plan-generation-rules.md' ||
       file.relativePath === 'learning-plans/student-plan-update-rules.md'
     );
+  }
+
+  private emptyStructuredActiveKeys(): StructuredActiveKeys {
+    return {
+      topics: new Set<string>(),
+      taskTypes: new Set<string>(),
+      skills: new Set<string>(),
+      prerequisiteEdges: new Set<string>(),
+      masteryCriteria: new Set<string>(),
+      misconceptions: new Set<string>(),
+      errorClassificationEntries: new Set<string>(),
+      lessonTypePlans: new Set<string>(),
+      taskBankTasks: new Set<string>(),
+    };
+  }
+
+  private validateItemsFile(
+    file: PackFile | undefined,
+    errors: string[],
+    idField: string,
+    requiredStringFields: string[],
+    requiredArrayFields: string[],
+  ): JsonObject[] {
+    if (!file) {
+      return [];
+    }
+    const parsed = this.readJsonForValidation(file, errors);
+    if (!Array.isArray(parsed.items)) {
+      errors.push(`${file.relativePath}.items must be an array`);
+      return [];
+    }
+    const items = this.arrayObjects(parsed.items);
+    if (items.length !== parsed.items.length) {
+      errors.push(`${file.relativePath}.items must contain only objects`);
+    }
+    for (const item of items) {
+      this.requireStringForValidation(item, idField, file.relativePath, errors);
+      for (const field of requiredStringFields) {
+        this.requireStringForValidation(item, field, file.relativePath, errors);
+      }
+      for (const field of requiredArrayFields) {
+        this.requireArrayForValidation(item, field, file.relativePath, errors);
+      }
+    }
+    return items;
+  }
+
+  private readJsonForValidation(file: PackFile, errors: string[]): JsonObject {
+    try {
+      const parsed = JSON.parse(file.buffer.toString('utf8')) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        errors.push(`${file.relativePath} must contain a JSON object`);
+        return {};
+      }
+      return parsed as JsonObject;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${file.relativePath} is not valid JSON: ${message}`);
+      return {};
+    }
+  }
+
+  private readJsonLinesForValidation(file: PackFile, errors: string[]): JsonObject[] {
+    const rows: JsonObject[] = [];
+    const lines = file.buffer.toString('utf8').split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          errors.push(`${file.relativePath}:${index + 1} must contain a JSON object`);
+          return;
+        }
+        rows.push(parsed as JsonObject);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${file.relativePath}:${index + 1} is not valid JSON: ${message}`);
+      }
+    });
+    return rows;
+  }
+
+  private requireStringForValidation(
+    item: JsonObject,
+    field: string,
+    path: string,
+    errors: string[],
+  ): string {
+    const value = this.stringValue(item[field]);
+    if (!value) {
+      errors.push(`${path}.${field} is required`);
+    }
+    return value;
+  }
+
+  private requireArrayForValidation(
+    item: JsonObject,
+    field: string,
+    path: string,
+    errors: string[],
+  ): void {
+    if (!Array.isArray(item[field])) {
+      errors.push(`${path}.${field} must be an array`);
+    }
+  }
+
+  private requireObjectForValidation(
+    item: JsonObject,
+    field: string,
+    path: string,
+    errors: string[],
+  ): void {
+    const value = item[field];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`${path}.${field} must be an object`);
+    }
+  }
+
+  private requireBooleanForValidation(
+    item: JsonObject,
+    field: string,
+    path: string,
+    errors: string[],
+  ): void {
+    if (typeof item[field] !== 'boolean') {
+      errors.push(`${path}.${field} must be a boolean`);
+    }
   }
 
   private readJson(file: PackFile): JsonObject {

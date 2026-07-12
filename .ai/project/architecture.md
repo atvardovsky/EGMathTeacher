@@ -15,7 +15,9 @@ EGMathTeacher is a browser-based POC with:
   image generation
 - Local knowledge-pack ingestion and RAG sync tooling that imports structured
   JSON/JSONL into SQLite and optionally syncs selected Markdown files to
-  OpenAI vector stores by content hash
+  OpenAI vector stores by content hash. Active imported curriculum/task-bank
+  rows are used by the lesson runtime for curriculum resolution and supported
+  task selection.
 - Role/operation model policy inside the model facade so tutor, onboarding,
   lesson-decision, background, quality-review, and image assistant roles can
   use different models and service-tier settings
@@ -23,9 +25,10 @@ EGMathTeacher is a browser-based POC with:
   windows, learning signals, session summaries, skill progress/regression,
   profile/strategy refreshes, and rare quality reviews
 - SQLite-backed lesson lifecycle, Lesson Decision Agent observability,
-  curriculum/verifier V1, and usage ledger for lesson goals, time-limit
-  heuristics, backend policy decisions, effectiveness signals, verified
-  learning outcomes, and user-visible cost estimates
+  DB-backed curriculum/task-bank runtime lookups, deterministic verifier V1,
+  and usage ledger for lesson goals,
+  time-limit heuristics, backend policy decisions, effectiveness signals,
+  verified learning outcomes, and user-visible cost estimates
 - OpenAI Realtime for inherited realtime voice
 - optional production reverse proxy references under `deploy/`
 
@@ -44,6 +47,7 @@ Primary diagram sources:
 - `.ai/project/diagrams/onboarding-profile-sequence.mmd`
 - `.ai/project/diagrams/tutor-rag-sequence.mmd`
 - `.ai/project/diagrams/knowledge-upload-sequence.mmd`
+- `.ai/project/diagrams/knowledge-pack-runtime-repair.mmd`
 - `.ai/project/diagrams/webrtc-realtime-sequence.mmd`
 - `.ai/project/diagrams/data-model.mmd`
 - `.ai/project/diagrams/assistant-governance.mmd`
@@ -78,12 +82,12 @@ flowchart LR
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
 | `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, and legacy per-turn background jobs. |
-| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, curriculum resolution, deterministic verifier V1, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
+| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
 | `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, and verified outcome counts. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
-| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, idempotent Markdown RAG sync, vector store status, and local project vector-store id persistence. |
+| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, deleted-path reconciliation, sync-job recovery, optional vector-store wait-ready, archive guardrails, vector store status, and local project vector-store id persistence. |
 | `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
@@ -143,8 +147,9 @@ policy. The decision agent proposes allowed teaching actions, but the backend
 policy decides whether goal completion, goal blockage, profile deltas, or other
 durable changes are accepted. Action-level observability is stored in
 `lesson_decisions`. The same module owns the first deterministic verifier
-vertical for linear equations, including backend-generated lesson tasks,
-student attempts, and mastery evidence.
+vertical for linear equations, including task-bank-backed lesson tasks,
+student attempts, and mastery evidence. A hardcoded linear task remains only
+as a POC fallback when no imported task-bank row is available.
 
 `apps/api/src/background-ai` owns local background orchestration. It persists
 jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
@@ -176,7 +181,7 @@ Local operator command:
 
 | Command | Responsibility |
 | --- | --- |
-| `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]` | Import structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. |
+| `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--partial] [--wait-ready]` | Import validated structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. Non-dry-run sync remains a trusted local operator workflow and live OpenAI side effect. |
 
 ## Deployment Shape
 
@@ -203,6 +208,8 @@ explicitly asks for that deployment task.
 - No packaged desktop runtime.
 - POC SQLite migration ledger exists, but no production rollback, backfill, or
   backup architecture.
+- Knowledge-pack import/RAG sync is locally guarded and recoverable, but has
+  not been validated against a live OpenAI account in this workspace.
 - CI exists under `.github/workflows/ci.yml`, but no remote run was observed
   from this local workspace.
 - Editable Mermaid diagram sources, rendered SVG artifacts, render command,

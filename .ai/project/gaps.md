@@ -144,6 +144,19 @@ Requires RAG/product workflow decisions:
 - source-material quality gates
 - non-OpenAI provider contracts
 
+Knowledge-pack runtime and sync review gaps are repaired in
+`.ai/project/knowledge-pack-runtime-repair-plan.md`. Remaining risks:
+
+- non-dry-run OpenAI RAG sync has not been validated with live credentials in
+  this workspace
+- recovery covers failed jobs that recorded recoverable OpenAI file ids; fully
+  arbitrary remote/local divergence may still need operator cleanup
+- archive guardrails bound local trusted-operator packs, but this is not a
+  public web-upload workflow
+- parallel sync claims protect upload/attach paths for the same
+  pack/vector-store/source/hash tuple; global distributed locking is not
+  implemented
+
 ### Pedagogical Mastery Engine
 
 Remaining teaching-engine gaps:
@@ -152,7 +165,10 @@ Remaining teaching-engine gaps:
   numeric-answer vertical
 - richer closed loop from verified error classification to adaptive hint,
   retry ladder, repeated success, and mastery decay/review
-- full curriculum/prerequisite map for topic-aware progression
-- native curriculum IDs still need broader coverage beyond the current
-  minimal resolver
+- runtime-connected full curriculum/prerequisite map for topic-aware
+  progression
+- richer DB-backed curriculum ID resolver beyond the current text-scored
+  active-skill lookup
+- task-bank-backed practice task selection beyond imported supported verifier
+  kinds
 - conversational first meeting still needs to replace the form-first fallback

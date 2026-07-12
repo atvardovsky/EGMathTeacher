@@ -31,7 +31,10 @@ function createPackRoot(): string {
   const root = join(tmpdir(), `egmathteacher-knowledge-pack-${randomUUID()}`);
   mkdirSync(root, { recursive: true });
   writeJson(root, 'rag-corpus/rag-manifest.json', {
+    pack_version: 'v1.0',
     schema_version: '1.0',
+    content_release: 'fixture-release',
+    generated_at: '2026-01-01T00:00:00.000Z',
     project: 'EGMathTeacher',
   });
   return root;
@@ -150,6 +153,47 @@ describe('KnowledgePackService', () => {
         ['file_2'],
       ),
     ).toEqual({ sync_status: 'active' });
+
+    rmSync(join(root, 'rag-corpus/03-theory/linear-equations.md'));
+    const fourth = await packService.syncStudentRag({ rootPath: root });
+
+    expect(fourth.retiredFiles).toBe(1);
+    expect(aiModel.removeFileFromVectorStore).toHaveBeenCalledWith('vs_1', 'file_2');
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_2'],
+      ),
+    ).toEqual({ sync_status: 'superseded' });
+  });
+
+  it('fails strict imports for incomplete packs and records failed sync attempts', async () => {
+    await expect(
+      packService.syncKnowledgePack({ rootPath: root, importDb: true }),
+    ).rejects.toThrow('Knowledge pack validation failed');
+
+    expect(
+      db.get<{ status: string; error_message: string }>(
+        'SELECT status, error_message FROM knowledge_pack_imports ORDER BY started_at DESC LIMIT 1',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error_message: expect.stringContaining('Knowledge pack validation failed'),
+      }),
+    );
+
+    const partial = await packService.syncKnowledgePack({
+      rootPath: root,
+      importDb: true,
+      importMode: 'partial',
+    });
+    expect(partial.structured?.warnings.length).toBeGreaterThan(0);
+    expect(
+      db.get<{ status: string }>(
+        'SELECT status FROM knowledge_pack_imports ORDER BY started_at DESC LIMIT 1',
+      ),
+    ).toEqual({ status: 'completed' });
   });
 });
 
@@ -202,13 +246,7 @@ function writeStructuredFixture(root: string): void {
   });
   writeJson(root, 'rag-corpus/02-curriculum/curriculum-prerequisites.json', {
     topic_edges: [],
-    skill_edges: [
-      {
-        from_skill_id: 'arithmetic.numbers.operations',
-        to_skill_id: 'algebra.linear.solve_one_variable',
-        relation: 'prerequisite',
-      },
-    ],
+    skill_edges: [],
   });
   writeJson(root, 'rag-corpus/02-curriculum/curriculum-mastery-criteria.json', {
     items: [
@@ -264,6 +302,9 @@ function writeStructuredFixture(root: string): void {
       verification: { status: 'checked' },
     })}\n`,
   );
+  for (const taskFile of ['tasks-diagnostic.jsonl', 'tasks-profile.jsonl', 'tasks-retry.jsonl', 'tasks-review.jsonl']) {
+    writeText(root, `rag-corpus/04-task-bank/${taskFile}`, '');
+  }
   writeJson(root, 'rag-corpus/05-misconceptions/error-classification.json', {
     error_kinds: ['calculation_slip'],
     classification_levels: [

@@ -60,11 +60,12 @@ visible next actions.
   long new topic.
 - A first deterministic verified learning loop exists for one vertical:
   `algebra.linear.solve_one_variable` /
-  `ege.base.linear_equation_numeric`. The backend can generate a linear
-  equation task, verify a submitted numeric answer, store a student attempt,
-  store mastery evidence for correct answers, and allow backend policy to
-  complete practice/mistake-review goals from that proof. Other curriculum
-  skills remain routing context until their verifier contracts are implemented.
+  `ege.base.linear_equation_numeric`. The backend resolves curriculum from
+  active SQLite rows, selects imported task-bank tasks for the supported
+  verifier kind when available, verifies submitted numeric answers, stores
+  attempts, stores mastery evidence for correct answers, and allows backend
+  policy to complete practice/mistake-review goals from that proof. Unknown
+  topics remain `unknown` instead of falling back to linear equations.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
@@ -130,8 +131,13 @@ visible next actions.
   Student-facing Markdown files can be synced to OpenAI vector stores with
   source-path/content-hash idempotency: unchanged files are skipped, changed
   synced files are uploaded and the superseded vector-store attachment is
-  detached. Dry-run RAG sync performs no OpenAI create/upload/attach/delete
-  calls.
+  detached, and removed source paths are reconciled. Strict mode validates
+  canonical structured files before writes; partial mode records warnings.
+  Failed imports are ledgered, pack schema/release/content-hash metadata is
+  separated, structured rows can be soft-retired, sync jobs are recoverable,
+  `--wait-ready` can poll vector-store indexing, and archive guardrails bound
+  local pack processing. Dry-run RAG sync performs no OpenAI
+  create/upload/attach/delete calls.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
 - Image generation remains asynchronous and explicit; generated images render
@@ -212,9 +218,9 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   `curriculum_prerequisite_edges`, `curriculum_mastery_criteria`,
   `curriculum_misconceptions`, `error_classification_entries`,
   `lesson_type_plans`, and `task_bank_tasks`: imported structured
-  knowledge-pack curriculum/task metadata for future lesson planning and
-  verifier expansion. Runtime verified mastery is still implemented only for
-  the existing linear-equation numeric vertical.
+  knowledge-pack curriculum/task metadata used by the active lesson resolver
+  and supported task selection. Runtime verified mastery is still implemented
+  only for the existing linear-equation numeric vertical.
 - `lesson_tasks`: backend-generated or imported tasks tied to a lesson
   session and curriculum skill.
 - `student_attempts`: submitted answers and deterministic verifier results.

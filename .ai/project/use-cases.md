@@ -91,10 +91,12 @@ Rules from current implementation:
   completion.
 - Attempt-based completion requires a backend-observed attempt. Practice and
   mistake-review completion require backend verifier evidence.
-- For the first supported vertical, the backend can generate a linear-equation
-  task, verify a numeric answer, write `student_attempts`, write
-  `mastery_evidence` for correct answers, and allow policy to complete the
-  goal from that proof.
+- For the first supported vertical, the backend resolves curriculum from
+  active SQLite rows, selects an imported task-bank task when available,
+  verifies a numeric answer, writes `student_attempts`, writes
+  `mastery_evidence` for correct answers, and allows policy to complete the
+  goal from that proof. Unknown topics remain `unknown` instead of falling
+  back to linear equations.
 - Accepted completion sets `goalStatusEvidence=backend_observed`; unaccepted
   model-only or policy-rejected completion keeps the lesson in progress with
   `goalStatusEvidence=model_suggested_pending`.
@@ -264,6 +266,13 @@ Rules from current implementation:
 - Unchanged synced Markdown files are skipped. Changed synced Markdown files
   are uploaded and the superseded vector-store file attachment is detached.
 - `--dry-run` must not perform live OpenAI create/upload/attach/delete calls.
+- Strict pack validation is default; `--partial` records warnings. Failed
+  imports are ledgered, pack schema/release/content hashes are separated,
+  removed structured rows are soft-retired, deleted/renamed RAG paths are
+  reconciled, sync jobs are locally claimed, `--recover-rag` retries
+  recoverable failed jobs, `--wait-ready` can wait for vector-store indexing,
+  and archive guardrails bound local pack processing.
+- Non-dry-run `--sync-rag` is a protected live OpenAI side effect.
 
 ### Use WebRTC Voice Assistant
 
@@ -284,7 +293,8 @@ Rules from current implementation:
 These were not found in the repository:
 
 - packaged desktop runtime
-- formal ЕГЭ curriculum map
+- runtime-connected full ЕГЭ curriculum map
+- task-bank-backed lesson task selection
 - student progress dashboard
 - parent/teacher accounts
 - payments or subscriptions

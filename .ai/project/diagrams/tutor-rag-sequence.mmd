@@ -30,6 +30,7 @@ sequenceDiagram
     API-->>Web: Cached response
   else New request
   Tutor->>Curriculum: resolve(message)
+  Curriculum->>DB: Read active curriculum_skills
   Curriculum-->>Tutor: topicId, skillId, taskTypeId, verifierKind
   Tutor->>Lesson: beginTurn(userId, conversationId, lessonType, topicId)
   Lesson->>DB: Upsert lesson_sessions scoped by conversation and lesson type, compute limits
@@ -73,7 +74,12 @@ sequenceDiagram
   Usage->>DB: Insert ai_usage_ledger
   AIModel-->>Tutor: Provider response
   Tutor->>Verifier: ensureBackendTask(answer, curriculum)
-  Verifier->>DB: Insert lesson_tasks for supported verified vertical
+  Verifier->>DB: Select active task_bank_tasks for supported vertical
+  alt Imported task-bank task found
+    Verifier->>DB: Insert lesson_tasks from imported task
+  else Empty-DB POC fallback
+    Verifier->>DB: Insert generated linear-equation lesson_tasks row
+  end
   Verifier-->>Tutor: Pending backend task evidence
   Tutor->>Lesson: completeTurn(model goal suggestion, decision policy, answer shape)
   Lesson->>DB: Accept goal only through backend policy, update lesson_sessions and insert lesson_effectiveness_signals

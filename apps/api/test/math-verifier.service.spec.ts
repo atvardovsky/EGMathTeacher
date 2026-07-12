@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { DatabaseService } from '../src/database/database.service';
 import { MathVerifierService } from '../src/lesson/math-verifier.service';
+import { TaskBankService } from '../src/lesson/task-bank.service';
 
 function createConfig(sqlitePath: string): ConfigService {
   return {
@@ -21,7 +22,7 @@ describe('MathVerifierService', () => {
   beforeEach(() => {
     const sqlitePath = join(tmpdir(), `egmathteacher-verifier-${randomUUID()}.sqlite`);
     db = new DatabaseService(createConfig(sqlitePath));
-    service = new MathVerifierService(db);
+    service = new MathVerifierService(db, new TaskBankService(db));
     const now = new Date().toISOString();
     db.run(
       'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -125,5 +126,77 @@ describe('MathVerifierService', () => {
       ['task-1'],
     );
     expect(mastery?.count).toBe(0);
+  });
+
+  it('creates pending lesson tasks from the imported task bank', () => {
+    db.run('DELETE FROM lesson_tasks');
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO task_bank_tasks (
+         task_id, topic_id, skill_id, task_type_id, difficulty, prompt,
+         expected_answer, solution_steps_json, common_errors_json, hint_ladder_json,
+         verifier_kind, source_type, verification_json, task_bank_file,
+         source_pack_version, source_path, content_hash, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'bank-task-1',
+        'algebra.linear_equations',
+        'algebra.linear.solve_one_variable',
+        'ege.base.linear_equation_numeric',
+        'foundation',
+        'Реши уравнение: 5x - 4 = 11.',
+        '3',
+        JSON.stringify(['5x=15', 'x=3']),
+        JSON.stringify(['sign_error']),
+        JSON.stringify(['Перенеси -4.', 'Раздели на 5.']),
+        'linear_equation_numeric',
+        'fixture',
+        JSON.stringify({ status: 'checked' }),
+        'tasks-base.jsonl',
+        'v1.0',
+        'rag-corpus/04-task-bank/tasks-base.jsonl',
+        'hash',
+        now,
+        now,
+      ],
+    );
+
+    const answer = {
+      tasks: [],
+      blocks: [],
+      lessonLifecycle: {
+        shouldStop: false,
+        goalStatus: 'in_progress',
+      },
+      debug: {
+        verifier: { masteryUpdateAllowed: false },
+        decision: { recommendedNextAction: 'request_student_attempt' },
+      },
+    } as any;
+
+    const evidence = service.ensureBackendTask({
+      userId: 'student-1',
+      lessonSessionId: 'lesson-1',
+      conversationId: 'conv-1',
+      lessonType: 'practice',
+      curriculum: {
+        topicId: 'algebra.linear_equations',
+        topicTitle: 'Линейные уравнения',
+        skillId: 'algebra.linear.solve_one_variable',
+        skillTitle: 'Решение линейного уравнения',
+        taskTypeId: 'ege.base.linear_equation_numeric',
+        taskTypeTitle: 'Линейное уравнение',
+        verifierKind: 'linear_equation_numeric',
+        confidence: 'high',
+      },
+      answer,
+    });
+
+    expect(evidence?.prompt).toBe('Реши уравнение: 5x - 4 = 11.');
+    expect(answer.tasks[0].prompt).toBe('Реши уравнение: 5x - 4 = 11.');
+    expect(
+      db.get<{ expected_answer: string }>('SELECT expected_answer FROM lesson_tasks LIMIT 1'),
+    ).toEqual({ expected_answer: '3' });
   });
 });

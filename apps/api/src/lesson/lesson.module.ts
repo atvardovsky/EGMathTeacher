@@ -4,6 +4,7 @@ import { LessonDecisionService } from './lesson-decision.service';
 import { LessonPolicyService } from './lesson-policy.service';
 import { LessonService } from './lesson.service';
 import { MathVerifierService } from './math-verifier.service';
+import { TaskBankService } from './task-bank.service';
 
 @Global()
 @Module({
@@ -12,6 +13,7 @@ import { MathVerifierService } from './math-verifier.service';
     LessonPolicyService,
     LessonDecisionService,
     CurriculumService,
+    TaskBankService,
     MathVerifierService,
   ],
   exports: [
@@ -19,6 +21,7 @@ import { MathVerifierService } from './math-verifier.service';
     LessonPolicyService,
     LessonDecisionService,
     CurriculumService,
+    TaskBankService,
     MathVerifierService,
   ],
 })

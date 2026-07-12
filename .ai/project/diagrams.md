@@ -12,6 +12,7 @@ Current editable architecture diagram sources:
 - `.ai/project/diagrams/onboarding-profile-sequence.mmd`
 - `.ai/project/diagrams/tutor-rag-sequence.mmd`
 - `.ai/project/diagrams/knowledge-upload-sequence.mmd`
+- `.ai/project/diagrams/knowledge-pack-runtime-repair.mmd`
 - `.ai/project/diagrams/webrtc-realtime-sequence.mmd`
 - `.ai/project/diagrams/data-model.mmd`
 - `.ai/project/diagrams/assistant-governance.mmd`
@@ -55,6 +56,8 @@ Update the source diagram when changes affect:
 - external service boundaries
 - persistence ownership
 - knowledge-pack import/sync ownership
+- knowledge-pack runtime connection, strict import, RAG reconciliation, or
+  sync recovery behavior
 - lesson decision/tool-policy flow
 - WebRTC/media flow ownership
 - deployment shape

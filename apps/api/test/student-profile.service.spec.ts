@@ -213,6 +213,26 @@ describe('StudentProfileService', () => {
         '005_lesson_lifecycle_usage',
       ]),
     ).toEqual({ version: '005_lesson_lifecycle_usage' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '006_lesson_decision_agent',
+      ]),
+    ).toEqual({ version: '006_lesson_decision_agent' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '007_verified_learning_loop',
+      ]),
+    ).toEqual({ version: '007_verified_learning_loop' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '008_knowledge_pack_ingestion',
+      ]),
+    ).toEqual({ version: '008_knowledge_pack_ingestion' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '009_knowledge_pack_runtime_repair',
+      ]),
+    ).toEqual({ version: '009_knowledge_pack_runtime_repair' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

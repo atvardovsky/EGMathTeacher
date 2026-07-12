@@ -8,6 +8,7 @@ import {
   LessonVerifierEvidence,
   LessonVerifierResult,
 } from './lesson.types';
+import { TaskBankService } from './task-bank.service';
 
 interface LessonTaskRecord {
   id: string;
@@ -51,7 +52,10 @@ const EMPTY_VERIFIER_EVIDENCE: LessonVerifierEvidence = {
 
 @Injectable()
 export class MathVerifierService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly taskBankService: TaskBankService,
+  ) {}
 
   verifyPendingTaskAttempt(input: VerifyInput): LessonVerifierEvidence {
     const task = this.getLatestPendingTask(input.userId, input.lessonSessionId);
@@ -153,7 +157,12 @@ export class MathVerifierService {
       return this.toTaskEvidence(existing);
     }
 
-    const generated = this.generateTask(input.curriculum);
+    const selectedTask = this.taskBankService.selectTask({
+      userId: input.userId,
+      lessonType: input.lessonType,
+      curriculum: input.curriculum,
+    });
+    const generated = selectedTask ?? this.generateTask(input.curriculum);
     const taskId = `task_${randomUUID()}`;
     const now = new Date().toISOString();
     this.db.run(
@@ -175,7 +184,7 @@ export class MathVerifierService {
         generated.prompt,
         generated.expectedAnswer,
         input.curriculum.verifierKind,
-        'backend_generated',
+        selectedTask ? 'model_imported' : 'backend_generated',
         now,
         now,
       ],

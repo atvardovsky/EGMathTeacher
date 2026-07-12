@@ -91,6 +91,12 @@ citation display, and explicit image rendering.
 - No visual regression test command was found.
 - No production migration rollback/backfill validation exists.
 - No live OpenAI smoke-test policy exists.
+- Focused API tests cover strict/partial knowledge-pack import behavior,
+  failed import ledger rows, RAG deleted-path reconciliation, migration ledger
+  presence, and imported `task_bank_tasks` driving lesson task selection.
+- Remaining validation gaps: no live OpenAI non-dry-run RAG sync smoke test,
+  no dedicated archive-guardrail fixture suite, no wait-ready timeout/failure
+  fixture suite, and no parallel-process concurrency stress test.
 
 ## When To Run
 
@@ -113,6 +119,16 @@ citation display, and explicit image rendering.
 - Knowledge-pack RAG sync changes: validate with mocked unit tests by default.
   `--dry-run` may be used for local planning; do not run non-dry-run
   `--sync-rag` without explicit live OpenAI credential/spend approval.
+- Knowledge-pack runtime repair changes: add or update focused API tests for
+  DB-backed curriculum routing, unknown-topic behavior, task-bank selection,
+  verifier task persistence, strict/partial import modes, failed import
+  ledger rows, structured record retirement, RAG source-path reconciliation,
+  sync recovery, wait-ready states, archive limits, and concurrent sync
+  claims. Use a temporary SQLite database and mocked OpenAI/vector-store
+  client by default.
+- Real-pack validation after the repair should include a temporary-SQLite
+  structured import smoke and a `--sync-rag --dry-run` plan against the local
+  pack. Live non-dry-run RAG sync remains approval-gated.
 
 ## Final Evidence Format
 

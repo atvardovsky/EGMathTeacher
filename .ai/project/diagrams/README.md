@@ -19,6 +19,9 @@ are generated into `rendered/`.
   optional batched background observation windows, legacy background enqueue,
   profile/strategy refresh, and optional image flow.
 - `knowledge-upload-sequence.mmd`: admin document upload and vector store flow.
+- `knowledge-pack-runtime-repair.mmd`: implemented repair path for DB-backed
+  curriculum routing, task-bank task selection, strict import, RAG
+  reconciliation, sync recovery, and archive/concurrency guardrails.
 - `webrtc-realtime-sequence.mmd`: WebRTC session, token, SDP, media bridge,
   provider events, and transcript close flow.
 - `data-model.mmd`: local SQLite tables, background AI jobs, observation
@@ -37,6 +40,8 @@ Update the matching diagram when project facts change across:
 - module ownership
 - endpoint routing
 - persistence or data ownership
+- knowledge-pack runtime connection, strict import, RAG reconciliation, or
+  sync recovery facts
 - first-login profile or tutor personalization flow
 - WebRTC/media behavior
 - assistant governance/gate behavior

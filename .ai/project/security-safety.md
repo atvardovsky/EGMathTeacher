@@ -79,6 +79,19 @@ OpenAI vector stores, upload files, attach files, and detach superseded
 vector-store file attachments. `--dry-run` must not perform live OpenAI
 create/upload/attach/delete calls.
 
+Current knowledge-pack sync safety posture:
+
+- zip extraction and pack scanning are bounded by archive size, total unpacked
+  size, file count, single-file size, directory depth, extension, and
+  path-traversal guardrails, but remain trusted local operator workflows
+- non-dry-run RAG sync records durable local sync jobs and can recover failed
+  jobs that captured recoverable OpenAI file ids
+- parallel upload/attach paths are locally claimed by sync job key, but there
+  is no distributed lock beyond the SQLite process boundary
+- vector-store indexing readiness is awaited when `--wait-ready` is used; the
+  service-level default remains non-waiting for testability and short local
+  runs
+
 Other configured providers are stubs unless implemented later.
 
 Assistants must not trigger live external calls unless the task explicitly

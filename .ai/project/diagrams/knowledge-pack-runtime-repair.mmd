@@ -1,0 +1,40 @@
+flowchart LR
+  Pack[Knowledge pack zip or root] --> Preflight[Archive preflight guardrails]
+  Preflight --> Validate[Strict or partial schema validation]
+  Validate --> CrossRefs[Cross-reference validation]
+  CrossRefs --> Import[Structured SQLite import]
+
+  subgraph RuntimeConnection[Runtime connection repair]
+    Import --> CurriculumTables[(curriculum topics skills task types)]
+    Import --> TaskBank[(task_bank_tasks)]
+    CurriculumTables --> Resolver[DB-backed CurriculumService]
+    Resolver --> Unknown[unknown or clarify when confidence is low]
+    Resolver --> Context[topic skill task type verifier kind]
+    TaskBank --> SelectTask[TaskBankService.selectTask]
+    Context --> SelectTask
+    SelectTask --> LessonTasks[(lesson_tasks)]
+    LessonTasks --> Verifier[MathVerifierService]
+    Verifier --> Attempts[(student_attempts)]
+    Attempts --> Mastery[(mastery_evidence)]
+  end
+
+  subgraph RagSync[RAG sync hardening]
+    Pack --> RagPaths[Current pack Markdown paths]
+    RagPaths --> Reconcile[Reconcile active source paths]
+    Reconcile --> Upload[Upload or skip changed files]
+    Upload --> Attach[Attach to vector store]
+    Attach --> WaitReady[Wait for indexing ready when enabled]
+    WaitReady --> Cleanup[Detach retired or superseded files]
+    Cleanup --> KnowledgeFiles[(knowledge_files)]
+  end
+
+  subgraph Recovery[Ledger and recovery]
+    Validate --> Ledger[(knowledge_pack_imports)]
+    Reconcile --> Jobs[(knowledge_pack_sync_jobs)]
+    Jobs --> Recover[Retry and recovery command]
+    Recover --> Ledger
+    Recover --> KnowledgeFiles
+  end
+
+  Mastery --> Policy[LessonPolicy goal completion]
+  Policy --> Tutor[Structured tutor response]

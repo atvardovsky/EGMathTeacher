@@ -43,6 +43,12 @@ migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
 rollback, backfill, or backup system.
 
+Planned knowledge-pack repair migrations are tracked in
+`.ai/project/knowledge-pack-runtime-repair-plan.md`. They are expected to add
+or derive pack identity metadata, import mode/warnings, failed-import evidence,
+active/retired source state, and durable sync-job/claim state before the
+knowledge-pack workflow is treated as production-like.
+
 ### `users`
 
 | Column | Type | Rule |
@@ -82,7 +88,9 @@ Manual admin uploads use `source_kind=manual_upload`. Knowledge-pack RAG sync
 uses `source_kind=knowledge_pack_student_rag`, stores the source path and hash,
 skips unchanged files, and marks older synced rows `superseded` after the
 remote vector-store attachment has been detached. If remote cleanup fails, the
-row is kept visible as `cleanup_failed`.
+row is kept visible as `cleanup_failed`. Deleted or renamed knowledge-pack
+Markdown paths are reconciled against active RAG rows and detached when absent
+from the current pack.
 
 ### `project_ai_resources`
 
@@ -123,25 +131,67 @@ Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 This is the local idempotency ledger for knowledge-pack source files.
 
+Structured import now validates required files, required fields, enum-like
+verifier kinds, JSONL line parsing, and core cross-reference integrity before
+writing runtime tables. Removed structured ids are soft-retired in their owning
+runtime tables.
+
 ### `knowledge_pack_imports`
 
 | Column | Type | Rule |
 | --- | --- | --- |
 | `id` | `TEXT` | primary key |
 | `pack_version` | `TEXT` | required knowledge-pack version |
+| `schema_version` | `TEXT` | optional manifest schema version |
+| `content_release` | `TEXT` | optional content release/version identity |
+| `generated_at` | `TEXT` | optional pack generation timestamp |
+| `pack_content_hash` | `TEXT` | optional whole-pack content hash |
 | `root_path` | `TEXT` | required local root processed by the CLI |
 | `import_kind` | `TEXT` | required; `structured`, `rag`, or `structured_and_rag` |
+| `import_mode` | `TEXT` | required; `strict` or `partial` |
 | `status` | `TEXT` | required; `completed` or `failed` |
 | `structured_file_count` | `INTEGER` | required count |
 | `rag_file_count` | `INTEGER` | required count |
 | `imported_row_count` | `INTEGER` | required count |
 | `uploaded_file_count` | `INTEGER` | required count |
 | `skipped_file_count` | `INTEGER` | required count |
+| `warnings_json` | `TEXT` | required serialized warning list |
 | `error_message` | `TEXT` | optional failure reason |
 | `started_at` | `TEXT` | required ISO timestamp |
 | `completed_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+The ledger records completed and failed sync attempts. `pack_version`,
+`schema_version`, `content_release`, `generated_at`, and
+`pack_content_hash` are stored separately so schema version is not confused
+with content release identity.
+
+### `knowledge_pack_sync_jobs`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `job_key` | `TEXT` | required unique claim key |
+| `source_pack_version` | `TEXT` | required pack version |
+| `vector_store_id` | `TEXT` | required OpenAI vector-store id or target id |
+| `source_path` | `TEXT` | optional pack source path |
+| `content_hash` | `TEXT` | optional source content hash |
+| `job_kind` | `TEXT` | required; `student_rag_file` or `student_rag_reconcile` |
+| `status` | `TEXT` | required; `planned`, `running`, `uploaded`, `attached`, `indexed`, `cleanup_pending`, `completed`, or `failed` |
+| `attempts` | `INTEGER` | required retry count |
+| `metadata_json` | `TEXT` | required remote/local sync metadata |
+| `error_message` | `TEXT` | optional failure reason |
+| `claimed_at` | `TEXT` | optional ISO timestamp |
+| `completed_at` | `TEXT` | optional ISO timestamp |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge.service.ts`.
+
+This table locally claims RAG upload/attach jobs before remote side effects,
+tracks state transitions, and supports `--recover-rag` for failed jobs that
+recorded a recoverable OpenAI file id.
 
 ### `student_profiles`
 
@@ -463,6 +513,8 @@ teaching flow quality and cost-per-outcome analysis, not grades.
 | `source_pack_version` | `TEXT` | optional knowledge-pack version |
 | `source_path` | `TEXT` | optional source-relative path |
 | `content_hash` | `TEXT` | optional source file SHA-256 |
+| `sync_status` | `TEXT` | required; `active` or `retired` |
+| `retired_at` | `TEXT` | optional ISO timestamp for soft-retired imported rows |
 | `updated_at` | `TEXT` | optional update timestamp |
 
 Source owner: `apps/api/src/lesson/curriculum.service.ts` and
@@ -472,8 +524,10 @@ The current POC seeds a minimal curriculum registry. Only
 `algebra.linear.solve_one_variable` has a deterministic verifier. Other seeded
 skills are routing context and remain unsupported for verified mastery. The
 knowledge-pack importer can upsert the broader curriculum skill registry into
-this table while preserving the runtime rule that only implemented verifier
-contracts can produce verified mastery.
+this table and soft-retire removed imported rows. `CurriculumService` reads
+active rows from this table while preserving the runtime rule that only
+implemented verifier contracts can produce verified mastery. Unknown topics
+remain `unknown` instead of falling back to a hardcoded skill.
 
 ### `curriculum_topics`
 
@@ -494,6 +548,10 @@ contracts can produce verified mastery.
 
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
+Knowledge-pack runtime tables include `sync_status` (`active`/`retired`) and
+`retired_at` where imported rows can be soft-retired when a later pack omits
+their ids.
+
 ### `curriculum_task_types`
 
 | Column | Type | Rule |
@@ -513,6 +571,9 @@ Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
+Task types are reactivated on import and soft-retired when missing from a
+later validated pack.
+
 ### `curriculum_prerequisite_edges`
 
 | Column | Type | Rule |
@@ -529,6 +590,9 @@ Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 | `updated_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+Prerequisite edges are reactivated on import and soft-retired when missing
+from a later validated pack.
 
 ### `curriculum_mastery_criteria`
 
@@ -584,6 +648,9 @@ mock-exam placement, and prerequisite-return rule. Source owner:
 
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
+`MathVerifierService.ensureBackendTask()` selects active task-bank rows for
+supported verifier kinds before falling back to the POC generated task.
+
 ### `lesson_tasks`
 
 | Column | Type | Rule |
@@ -607,8 +674,10 @@ Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
 `apps/api/src/database/database.service.ts`.
 
-Backend-generated tasks are the first proof surface for deterministic practice.
-The current vertical generates a linear equation with a numeric answer.
+Lesson tasks are the first proof surface for deterministic practice. For the
+current verified vertical, the service selects imported `task_bank_tasks` rows
+when available and records them as `model_imported`; the hardcoded linear
+equation remains only as a POC empty-DB fallback with `backend_generated`.
 
 ### `student_attempts`
 

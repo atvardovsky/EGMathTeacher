@@ -14,6 +14,9 @@ Derived surfaces:
 - `.ai/project/runtime-flows.md`
 - relevant API/web source files
 - relevant tests
+- `.ai/project/knowledge-pack-runtime-repair-plan.md` when behavior concerns
+  imported curriculum/task-bank runtime connection or knowledge-pack/RAG sync
+  repair
 
 Sync direction: source docs describe accepted behavior; implementation and
 tests must match when a behavior is accepted.
@@ -37,6 +40,7 @@ Derived surfaces:
 - `README.md`
 - `.ai/project/runtime-flows.md`
 - `.ai/project/data-model.md`
+- `.ai/project/knowledge-pack-runtime-repair-plan.md`
 - `.ai/project/lesson-agent-tools.md`
 - tutor/profile prompts in code
 - tests under `apps/api/test`
@@ -65,6 +69,7 @@ Derived surfaces:
 - `.ai/project/data-model.md`
 - `.ai/project/architecture.md`
 - `.ai/project/diagrams/*.mmd`
+- `.ai/project/knowledge-pack-runtime-repair-plan.md`
 - `apps/api/src/ai-model`
 - `apps/api/src/tutor`
 - `apps/api/src/lesson/curriculum.service.ts`
@@ -127,6 +132,8 @@ Derived surfaces:
 
 - `.ai/project/diagrams/*.mmd`
 - `.ai/project/diagrams.md`
+- `.ai/project/knowledge-pack-runtime-repair-plan.md` for knowledge-pack
+  runtime/sync repair implementation facts and residual risks
 - `README.md`
 - deployment reference docs under `deploy/`
 
@@ -151,6 +158,8 @@ Derived surfaces:
 - `.ai/project/runtime-flows.md`
 - `.ai/project/architecture.md`
 - `.ai/project/diagrams/data-model.mmd`
+- `.ai/project/knowledge-pack-runtime-repair-plan.md` when the data-model
+  change belongs to knowledge-pack import/sync repair
 - `apps/web/src/types.ts`
 - tests under `apps/api/test`
 

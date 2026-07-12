@@ -66,8 +66,16 @@ Production domain:
 - Local knowledge-pack ingestion command for `EGMathTeacher-knowledge-pack-v1.0.zip`:
   structured curriculum/task JSON and JSONL can be imported into SQLite, and
   selected Markdown teaching files can be synced to OpenAI vector stores by
-  content hash. Unchanged files are skipped; changed synced files are uploaded
-  and the superseded vector-store file is detached.
+  content hash. Imports now validate required structured files in strict mode,
+  support partial mode with warnings, record failed ledgers, soft-retire
+  removed structured rows, and store pack schema/release/content-hash
+  metadata separately. RAG sync skips unchanged files, uploads changed files,
+  detaches superseded or removed source paths, records durable sync jobs, can
+  wait for vector-store indexing, and includes a recovery command for failed
+  jobs with recoverable OpenAI file ids.
+- Lesson runtime reads active `curriculum_skills` rows from SQLite and selects
+  supported verifier tasks from imported `task_bank_tasks`; unknown topics stay
+  `unknown` instead of silently falling back to the linear-equation context.
 - Lesson type support for tutor sessions: the API supports meeting, tutor,
   concept, practice, diagnostic, exam strategy, mistake review, visual
   explanation, and reflection modes; the POC web UI exposes tutor, practice,
@@ -127,7 +135,12 @@ are intended:
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
+npm run knowledge:sync -- --recover-rag --wait-ready
 ```
+
+Knowledge-pack sync remains a trusted local operator workflow. Non-dry-run
+`--sync-rag` can create, upload, attach, and detach OpenAI files/vector-store
+attachments, so run it only with explicit intent and configured credentials.
 
 GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs install,
 build, tests, lint, mocked browser E2E, diagram drift checks, and Alatyr

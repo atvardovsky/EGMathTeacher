@@ -11,6 +11,7 @@ import { AiModelModule } from '../ai-model/ai-model.module';
 import { OpenAiClientModule } from '../openai/openai-client.module';
 import { KnowledgeModule } from './knowledge.module';
 import { KnowledgePackService } from './knowledge-pack.service';
+import { KnowledgeService } from './knowledge.service';
 
 interface CliOptions {
   path?: string;
@@ -18,6 +19,9 @@ interface CliOptions {
   syncRag: boolean;
   dryRun: boolean;
   force: boolean;
+  importMode: 'strict' | 'partial';
+  waitUntilIndexed?: boolean;
+  recoverRag: boolean;
   help: boolean;
 }
 
@@ -38,16 +42,29 @@ class KnowledgePackCliModule {}
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.help || !options.path) {
+  if (options.help || (!options.path && !options.recoverRag)) {
     printUsage();
-    process.exit(options.path ? 0 : 1);
+    process.exit(options.path || options.recoverRag ? 0 : 1);
   }
 
   const app = await NestFactory.createApplicationContext(KnowledgePackCliModule, {
     logger: ['error', 'warn', 'log'],
   });
+  if (options.recoverRag) {
+    try {
+      const knowledgeService = app.get(KnowledgeService);
+      const summary = await knowledgeService.recoverFailedRagSyncJobs(
+        options.waitUntilIndexed ?? false,
+      );
+      console.log(JSON.stringify(summary, null, 2));
+    } finally {
+      await app.close();
+    }
+    return;
+  }
+
   const service = app.get(KnowledgePackService);
-  const resolved = service.resolvePackRoot(options.path);
+  const resolved = service.resolvePackRoot(options.path as string);
 
   try {
     const summary = await service.syncKnowledgePack({
@@ -56,6 +73,8 @@ async function main(): Promise<void> {
       syncRag: options.syncRag,
       dryRun: options.dryRun,
       force: options.force,
+      importMode: options.importMode,
+      waitUntilIndexed: options.waitUntilIndexed ?? (options.syncRag && !options.dryRun),
     });
     console.log(JSON.stringify(summary, null, 2));
   } finally {
@@ -70,6 +89,9 @@ function parseArgs(args: string[]): CliOptions {
     syncRag: false,
     dryRun: false,
     force: false,
+    importMode: 'strict',
+    waitUntilIndexed: undefined,
+    recoverRag: false,
     help: false,
   };
 
@@ -93,6 +115,21 @@ function parseArgs(args: string[]): CliOptions {
       case '--force':
         options.force = true;
         break;
+      case '--partial':
+        options.importMode = 'partial';
+        break;
+      case '--strict':
+        options.importMode = 'strict';
+        break;
+      case '--wait-ready':
+        options.waitUntilIndexed = true;
+        break;
+      case '--no-wait-ready':
+        options.waitUntilIndexed = false;
+        break;
+      case '--recover-rag':
+        options.recoverRag = true;
+        break;
       case '--help':
       case '-h':
         options.help = true;
@@ -102,7 +139,7 @@ function parseArgs(args: string[]): CliOptions {
     }
   }
 
-  if (!options.importDb && !options.syncRag) {
+  if (!options.recoverRag && !options.importDb && !options.syncRag) {
     options.importDb = true;
   }
   return options;
@@ -114,6 +151,7 @@ Usage:
   npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
   npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
   npm run knowledge:sync -- --root ./EGMathTeacher-knowledge-pack-v1.0 --sync-rag --dry-run
+  npm run knowledge:sync -- --recover-rag --wait-ready
 
 Options:
   --pack <zip>    Extract and process a knowledge-pack zip.
@@ -122,6 +160,11 @@ Options:
   --sync-rag      Upload/sync selected Markdown files to the active OpenAI vector store.
   --dry-run       Plan RAG sync without OpenAI upload/attach/delete calls.
   --force         Re-import structured files even when their content hash is unchanged.
+  --strict        Require all canonical structured files. Default.
+  --partial       Allow missing structured files and report warnings.
+  --wait-ready    Wait until attached vector-store files are indexed.
+  --no-wait-ready Do not wait for vector-store indexing.
+  --recover-rag   Retry failed RAG sync jobs that have recoverable remote file ids.
 `);
 }
 

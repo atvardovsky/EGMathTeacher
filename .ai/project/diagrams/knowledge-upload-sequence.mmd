@@ -51,9 +51,11 @@ sequenceDiagram
 
   rect rgb(245,245,245)
   Note over Operator,Vectors: Local knowledge-pack import and optional RAG sync
-  Operator->>CLI: npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]
+  Operator->>CLI: npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--wait-ready]
   CLI->>Pack: Resolve zip or extracted root
+  Pack->>Pack: Enforce archive/path/size/depth guardrails
   opt Import structured DB files
+    Pack->>Pack: Validate strict or partial structured pack
     Pack->>DB: Read knowledge_source_files hashes
     alt Structured source unchanged
       Pack->>DB: Mark source file skipped
@@ -61,6 +63,7 @@ sequenceDiagram
       Pack->>DB: Upsert curriculum, task bank, misconceptions, lesson plans
       Pack->>DB: Record source path, hash, and import ledger
     end
+    Pack->>DB: Soft-retire removed structured rows
   end
   opt Sync student-facing Markdown to RAG
     Pack->>Knowledge: syncRagSourceFile(relativePath, sha256)
@@ -69,12 +72,19 @@ sequenceDiagram
     else Same hash already active
       Knowledge->>DB: Record skipped source state
     else New or changed Markdown
+      Knowledge->>DB: Claim knowledge_pack_sync_jobs row
       Knowledge->>AIModel: Upload file
       AIModel->>Files: OpenAI file upload
       Files-->>AIModel: openai_file_id
+      Knowledge->>DB: Mark job uploaded
       Knowledge->>AIModel: Attach new file to vector store
       AIModel->>Vectors: OpenAI vector attachment
       Vectors-->>AIModel: status
+      opt wait-ready enabled
+        Knowledge->>AIModel: Poll vector store file status
+        AIModel->>Vectors: List vector store files
+        Vectors-->>AIModel: indexed status
+      end
       Knowledge->>DB: Insert active knowledge_files row and project_ai_resources id
       opt Older synced file exists
         Knowledge->>AIModel: Remove old file from vector store
@@ -82,7 +92,11 @@ sequenceDiagram
         Vectors-->>AIModel: deletion status
         Knowledge->>DB: Mark old knowledge_files row superseded
       end
+      Knowledge->>DB: Mark job completed or failed
     end
+    Pack->>Knowledge: reconcileMissingRagSourceFiles(current paths)
+    Knowledge->>DB: Supersede detached paths removed from pack
   end
   Pack->>DB: Insert knowledge_pack_imports summary
+  Note over Pack,DB: Failed import attempts are ledgered and recovery mode retries failed jobs with remote file ids
   end

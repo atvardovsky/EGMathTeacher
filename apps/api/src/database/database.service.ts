@@ -955,6 +955,129 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_task_bank_tasks_topic
         ON task_bank_tasks(topic_id, task_type_id);
     `);
+
+    this.applyMigration('009_knowledge_pack_runtime_repair', `
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN schema_version TEXT;
+
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN content_release TEXT;
+
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN generated_at TEXT;
+
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN pack_content_hash TEXT;
+
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN import_mode TEXT NOT NULL DEFAULT 'strict'
+          CHECK (import_mode IN ('strict', 'partial'));
+
+      ALTER TABLE knowledge_pack_imports
+        ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';
+
+      ALTER TABLE curriculum_topics
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_topics
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE curriculum_task_types
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_task_types
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE curriculum_prerequisite_edges
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_prerequisite_edges
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE curriculum_mastery_criteria
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_mastery_criteria
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE curriculum_misconceptions
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE curriculum_misconceptions
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE error_classification_entries
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE error_classification_entries
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE lesson_type_plans
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE lesson_type_plans
+        ADD COLUMN retired_at TEXT;
+
+      ALTER TABLE task_bank_tasks
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'retired'));
+
+      ALTER TABLE task_bank_tasks
+        ADD COLUMN retired_at TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_curriculum_skills_runtime
+        ON curriculum_skills(sync_status, skill_id, task_type_id);
+
+      CREATE INDEX IF NOT EXISTS idx_task_bank_tasks_runtime
+        ON task_bank_tasks(sync_status, skill_id, task_type_id, verifier_kind, difficulty);
+
+      CREATE TABLE IF NOT EXISTS knowledge_pack_sync_jobs (
+        id TEXT PRIMARY KEY,
+        job_key TEXT NOT NULL UNIQUE,
+        source_pack_version TEXT NOT NULL,
+        vector_store_id TEXT NOT NULL,
+        source_path TEXT,
+        content_hash TEXT,
+        job_kind TEXT NOT NULL CHECK (job_kind IN ('student_rag_file', 'student_rag_reconcile')),
+        status TEXT NOT NULL CHECK (status IN (
+          'planned',
+          'running',
+          'uploaded',
+          'attached',
+          'indexed',
+          'cleanup_pending',
+          'completed',
+          'failed'
+        )),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL,
+        error_message TEXT,
+        claimed_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_pack_sync_jobs_status
+        ON knowledge_pack_sync_jobs(status, updated_at);
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_pack_sync_jobs_source
+        ON knowledge_pack_sync_jobs(source_pack_version, source_path, status);
+    `);
   }
 
   private applyMigration(
