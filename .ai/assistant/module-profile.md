@@ -6,7 +6,7 @@ blocked, or not applicable for EGMathTeacher.
 ## Required Core Profile
 
 Core profile state: complete with documented gaps
-Last reviewed: 2026-07-11
+Last reviewed: 2026-07-12
 Reviewed by: Codex using Alatyr update approval from the programmer
 
 Core item: `contours`
@@ -74,6 +74,23 @@ Approval needs: required before weakening mandatory context or approval
 requirements.
 Residual risk: context selection remains assistant-enforced, not
 machine-enforced.
+
+Core item: `context-router`
+State: enabled
+Owner or file: `.ai/assistant/context-router.json`
+Required files:
+
+- `.ai/assistant/context-router.json`
+- `.ai/assistant/context-profiles.md`
+
+Evidence: machine-readable routing exists for canonical task profiles and
+points to EGMathTeacher bootstrap context, required context, validation,
+approval gates, and final evidence fields.
+Validation or review: `npm run alatyr:check` and manual router/profile review.
+Approval needs: required before weakening mandatory context, approval
+requirements, validation expectations, or final evidence.
+Residual risk: the router is a deterministic aid; human profile rationale and
+logical integrity review still govern conflicts and boundary expansion.
 
 Core item: `source-of-truth-registry`
 State: enabled

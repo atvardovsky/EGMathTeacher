@@ -50,10 +50,12 @@ If those sources disagree, use `.ai/framework/logical-integrity.md` and
 
 ## Context Profiles
 
-Use `.ai/assistant/context-profiles.md` to choose the smallest sufficient
-context for each task after bootstrap. Expand only when a task crosses
-architecture, business, data, security, assistant-infrastructure, lifecycle,
-or governance boundaries, or when evidence conflicts.
+Use `.ai/assistant/context-router.json` to choose the smallest sufficient
+context profile after bootstrap. Use `.ai/assistant/context-profiles.md` for
+human-readable rationale, conflicts, or missing router entries. Expand only
+when a task crosses architecture, business, data, security,
+assistant-infrastructure, lifecycle, or governance boundaries, or when evidence
+conflicts.
 
 ## Installed Operation Help
 

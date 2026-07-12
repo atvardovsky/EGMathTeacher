@@ -35,6 +35,7 @@ required_files=(
   "playwright.config.ts"
   ".ai/alatyr.yaml"
   ".ai/README.md"
+  ".ai/framework/context-router.md"
   ".ai/project/README.md"
   ".ai/project/blueprint.md"
   ".ai/project/contour.md"
@@ -43,6 +44,7 @@ required_files=(
   ".ai/project/validation.md"
   ".ai/project/security-safety.md"
   ".ai/project/diagrams.md"
+  ".ai/assistant/context-router.json"
   ".ai/assistant/context-profiles.md"
   ".ai/assistant/module-profile.md"
   ".ai/assistant/contour.md"
@@ -109,6 +111,86 @@ fi
 
 if ! grep -q 'npm run e2e' AGENTS.md; then
   fail "AGENTS.md does not mention npm run e2e"
+fi
+
+node <<'NODE'
+const fs = require('fs');
+const routerPath = '.ai/assistant/context-router.json';
+const profilesPath = '.ai/assistant/context-profiles.md';
+const router = JSON.parse(fs.readFileSync(routerPath, 'utf8'));
+const requiredBootstrap = [
+  'AGENTS.md',
+  '.ai/alatyr.yaml',
+  '.ai/README.md',
+  '.ai/assistant/context-router.json',
+  '.ai/assistant/context-profiles.md',
+  '.ai/assistant/module-profile.md',
+  '.ai/project/contour.md',
+  '.ai/project/source-of-truth-registry.md',
+  '.ai/assistant/contour.md',
+  '.ai/project/blueprint.md',
+];
+const profiles = [
+  'docs-local',
+  'code-local',
+  'business-change',
+  'architecture-change',
+  'data-change',
+  'security-sensitive',
+  'ai-infrastructure',
+  'framework-upgrade',
+];
+const fields = [
+  'use_when',
+  'required_context',
+  'expand_when',
+  'approval_gates',
+  'validation',
+  'final_evidence',
+];
+const failures = [];
+if (router.schema_version !== 1) {
+  failures.push('context-router schema_version must be 1');
+}
+if (router.router_kind !== 'target-context-router') {
+  failures.push('context-router router_kind must be target-context-router');
+}
+if (router.human_reference !== profilesPath) {
+  failures.push('context-router human_reference must point to context-profiles.md');
+}
+for (const path of requiredBootstrap) {
+  if (!router.bootstrap_context?.includes(path)) {
+    failures.push(`context-router bootstrap_context missing ${path}`);
+  }
+}
+if (JSON.stringify(router.routing_order) !== JSON.stringify(profiles)) {
+  failures.push('context-router routing_order must match canonical profile order');
+}
+const markdown = fs.readFileSync(profilesPath, 'utf8');
+for (const profile of profiles) {
+  if (!markdown.includes(`## Profile: \`${profile}\``)) {
+    failures.push(`context-profiles.md missing profile ${profile}`);
+  }
+  const entry = router.profiles?.[profile];
+  if (!entry || typeof entry !== 'object') {
+    failures.push(`context-router missing profile ${profile}`);
+    continue;
+  }
+  for (const field of fields) {
+    if (!Array.isArray(entry[field]) || entry[field].length === 0) {
+      failures.push(`context-router profile ${profile} missing non-empty ${field}`);
+    }
+  }
+}
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`Alatyr check failed: ${failure}`);
+  }
+  process.exit(1);
+}
+NODE
+if [ "$?" -ne 0 ]; then
+  failures=$((failures + 1))
 fi
 
 current_manifest="$(mktemp)"

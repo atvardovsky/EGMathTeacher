@@ -188,6 +188,8 @@ Integration mode: canonical integration
   `npm run e2e`, `npm run diagrams:render`, `npm run diagrams:check`,
   `npm run smoke:dev` against a running dev stack, `npm run alatyr:check`,
   and manual adapter review when docs-only.
+- Context routing: `.ai/assistant/context-router.json` is the
+  machine-readable companion to `.ai/assistant/context-profiles.md`.
 - Approval constraints: `.ai/assistant/gates/checklist.md` and focused gate
   files under `.ai/assistant/gates`.
 - AI infrastructure source access policy:

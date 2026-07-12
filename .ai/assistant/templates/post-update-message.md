@@ -7,8 +7,10 @@ Recommended next action:
 1. Run `alatyr-recheck` with allowed actions `adapter-only` when a follow-up
    audit is needed.
 2. Compare `.ai/alatyr.yaml`, framework baseline, module profile, context
-   profiles, bridge capability matrix, and local adapter references.
+   router, context profiles, bridge capability matrix, and local adapter
+   references.
 3. Check root bridge files still point to `.ai/alatyr.yaml`, `.ai/README.md`,
+   `.ai/assistant/context-router.json`,
    `.ai/assistant/context-profiles.md`, `.ai/assistant/help.md`,
    `.ai/assistant/help-reference.md`,
    `.ai/assistant/flows/operation-routing.flow.md`, and

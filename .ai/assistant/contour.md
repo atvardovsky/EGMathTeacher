@@ -10,6 +10,8 @@ The assistant adapter owns:
 - Mandatory context loading for future assistant sessions.
 - Adapter manifest facts under `.ai/alatyr.yaml`.
 - Context profiles under `.ai/assistant/context-profiles.md`.
+- Machine-readable context router under
+  `.ai/assistant/context-router.json`.
 - Required-core and optional module state under
   `.ai/assistant/module-profile.md`.
 - Task-specific maturity under `.ai/assistant/maturity-profile.md`.

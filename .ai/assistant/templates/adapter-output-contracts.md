@@ -25,6 +25,7 @@ Use after the initial Alatyr Core installation or a scoped adapter expansion.
 - Existing files overwritten with approval, if any
 - Required core profile result
 - Optional module profile result
+- Context router result
 - Context profiles result
 - Source-of-truth registry result
 - Task-specific maturity result
@@ -66,6 +67,7 @@ Core baseline.
 - Approval records used or why not required
 - Required core profile result
 - Optional module profile result
+- Context router result
 - Context profiles result
 - Source-of-truth registry result
 - Task-specific maturity result
@@ -98,6 +100,7 @@ adapter.
 - Existing files preserved
 - Required core profile result
 - Optional module profile result
+- Context router result
 - Context profiles result
 - Source-of-truth registry result
 - Task-specific maturity result

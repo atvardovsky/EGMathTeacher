@@ -17,3 +17,6 @@ Final evidence expected:
 Accepted aliases include `alatyr-recheck`, `alatyr-blueprint`,
 `alatyr-integrity`, `alatyr-change`, `alatyr-ai-inventory`,
 `alatyr-adaptation <source>`, and `alatyr-add-ai <source>`.
+
+Bootstrap context includes `.ai/assistant/context-router.json` as the
+machine-readable companion to `.ai/assistant/context-profiles.md`.

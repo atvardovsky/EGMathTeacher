@@ -7,12 +7,13 @@ Framework source:
 - Git URL: `https://github.com/atvardovsky/AlatyrCore`
 - Local checkout inspected: `/home/atvardovsky/projects/AlatyrCore`
 - Initial baseline commit: `17cf62e Route future sessions through installed adapter state`
-- Current baseline commit: `f66f857 Add conformance and effectiveness evidence`
+- Previous baseline commit: `f66f857 Add conformance and effectiveness evidence`
+- Current baseline commit: `6a6bef1 Add machine-readable context routing`
 - Framework version: `0.1.0-alpha.0`
 - Adapter schema version: `1`
 - Template version: `1`
 - Installed date: 2026-07-09
-- Updated date: 2026-07-11
+- Updated date: 2026-07-12
 
 ## Installed Surfaces
 
@@ -28,6 +29,7 @@ Framework source:
   `.ai/project/diagrams.md`, `.ai/project/source-of-truth-registry.md`
 - Assistant adapter: `.ai/assistant`
 - Context profiles: `.ai/assistant/context-profiles.md`
+- Context router: `.ai/assistant/context-router.json`
 - Module profile: `.ai/assistant/module-profile.md`
 - Maturity profile: `.ai/assistant/maturity-profile.md`
 - Bridge capability matrix: `.ai/assistant/bridge-capability-matrix.md`
@@ -59,8 +61,11 @@ Mocked browser E2E exists through Playwright and headless Chromium.
 Initial installation was a fresh adapter-only installation. The 2026-07-11
 framework update overwrote existing `.ai/framework`, `.ai/assistant`,
 `AGENTS.md`, and `AI_ASSISTANTS.md` instruction surfaces only after explicit
-programmer approval. It did not change runtime code, runtime config, system web
-server config, live services, or accepted product behavior.
+programmer approval. The 2026-07-12 framework update added context-router
+support and updated `.ai/framework`, `.ai/assistant`, `AGENTS.md`,
+`AI_ASSISTANTS.md`, and `scripts/check-alatyr.sh` after the programmer asked to
+update Alatyr. These updates did not change runtime code, runtime config,
+system web server config, live services, or accepted product behavior.
 
 ## Current Gaps
 
@@ -82,6 +87,7 @@ server config, live services, or accepted product behavior.
 ## Future Sessions
 
 At the start of an Alatyr operation, read `.ai/alatyr.yaml`, this file,
-`.ai/README.md`, `.ai/assistant/context-profiles.md`,
+`.ai/README.md`, `.ai/assistant/context-router.json`,
+`.ai/assistant/context-profiles.md`,
 `.ai/assistant/module-profile.md`, `.ai/assistant/help.md`, and the matching
 flow under `.ai/assistant/flows`.

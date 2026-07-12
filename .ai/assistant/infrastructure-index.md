@@ -1,6 +1,6 @@
 # EGMathTeacher Assistant Infrastructure Index
 
-Current as of: 2026-07-11
+Current as of: 2026-07-12
 
 This file is the current index for repository-owned assistant infrastructure,
 including the installed Alatyr adapter. Historical inventory reports remain
@@ -54,7 +54,7 @@ Supported bridge behavior is recorded in
 ## Alatyr Framework Files
 
 Portable framework rules copied from AlatyrCore baseline
-`f66f857ae9992501d055c662c0c963bb9de7578d`.
+`6a6bef16d6966264b0686534c813cdbda210194a`.
 
 - `.ai/framework/README.md`
 - `.ai/framework/adapter-maturity.md`
@@ -64,6 +64,7 @@ Portable framework rules copied from AlatyrCore baseline
 - `.ai/framework/change-risk-model.md`
 - `.ai/framework/context-discovery.md`
 - `.ai/framework/context-profiles.md`
+- `.ai/framework/context-router.md`
 - `.ai/framework/contour.md`
 - `.ai/framework/diagram-guidance.md`
 - `.ai/framework/effectiveness-metrics.md`
@@ -174,6 +175,7 @@ validation commands, CI, CODEOWNERS, or Alatyr-owned scripts.
 Core adapter:
 
 - `.ai/assistant/bridge-capability-matrix.md`
+- `.ai/assistant/context-router.json`
 - `.ai/assistant/context-profiles.md`
 - `.ai/assistant/contour.md`
 - `.ai/assistant/help-reference.md`
@@ -184,6 +186,7 @@ Core adapter:
 
 Approvals and checklists:
 
+- `.ai/assistant/approvals/ALATYR-20260711-background-assistant-work.md`
 - `.ai/assistant/approvals/ALATYR-20260711-framework-update.md`
 - `.ai/assistant/approvals/ALATYR-20260711-dev-domain-reachability.md`
 - `.ai/assistant/approvals/ALATYR-20260711-gap-cleanup.md`
@@ -192,6 +195,9 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260711-settings-view.md`
 - `.ai/assistant/approvals/ALATYR-20260711-specialist-profile-pipeline.md`
 - `.ai/assistant/approvals/ALATYR-20260711-ui-system.md`
+- `.ai/assistant/approvals/ALATYR-20260712-background-batching.md`
+- `.ai/assistant/approvals/ALATYR-20260712-framework-context-router-update.md`
+- `.ai/assistant/approvals/ALATYR-20260712-role-operation-model-policy.md`
 - `.ai/assistant/approvals/approval-template.md`
 - `.ai/assistant/checklists/change-impact.md`
 
@@ -250,6 +256,7 @@ Reports:
 - `.ai/assistant/reports/ALATYR-20260710-first-login-student-profile.md`
 - `.ai/assistant/reports/ALATYR-20260710-assistant-infrastructure-reindex.md`
 - `.ai/assistant/reports/ALATYR-20260711-framework-update.md`
+- `.ai/assistant/reports/ALATYR-20260712-framework-update-context-router.md`
 
 Action: keep adapter files aligned with current project commands, gates, and
 operation routing. Reports are historical evidence unless a newer report says

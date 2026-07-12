@@ -2,18 +2,18 @@ schema_version: 1
 framework:
   name: "Alatyr Core"
   version: "0.1.0-alpha.0"
-  source: "https://github.com/atvardovsky/AlatyrCore at f66f857ae9992501d055c662c0c963bb9de7578d"
+  source: "https://github.com/atvardovsky/AlatyrCore at 6a6bef16d6966264b0686534c813cdbda210194a"
   template_version: 1
   rule_registry: ".ai/framework/rule-registry.json"
 installation:
   id: "ALATYR-20260709-egmathteacher"
   date: "2026-07-09"
-  mode: "upgrade-applied-2026-07-11"
+  mode: "upgrade-applied-2026-07-12"
 owner:
   responsible_team: "project maintainer"
   technical_owner: "atvardovsky"
   backup_owner: "not defined"
-  last_review_date: "2026-07-11"
+  last_review_date: "2026-07-12"
   review_cadence: "after framework updates or broad assistant-governance changes"
   codeowners: ".github/CODEOWNERS"
   review_triggers:
@@ -33,6 +33,7 @@ source_of_truth:
   project_contour: ".ai/project/contour.md"
   registry: ".ai/project/source-of-truth-registry.md"
   assistant_contour: ".ai/assistant/contour.md"
+  context_router: ".ai/assistant/context-router.json"
   context_profiles: ".ai/assistant/context-profiles.md"
   module_profile: ".ai/assistant/module-profile.md"
   project_sources:
@@ -59,6 +60,7 @@ modules:
   core_profile: "complete with documented gaps"
   enabled:
     - "context-profiles"
+    - "context-router"
     - "source-of-truth-registry"
     - "risk-approval-integrity"
     - "validation-and-final-evidence"

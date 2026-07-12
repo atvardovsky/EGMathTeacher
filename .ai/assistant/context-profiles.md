@@ -7,6 +7,7 @@ Bootstrap context for every Alatyr-guided task:
 - `AGENTS.md`
 - `.ai/alatyr.yaml`
 - `.ai/README.md`
+- `.ai/assistant/context-router.json`
 - `.ai/assistant/context-profiles.md`
 - `.ai/assistant/module-profile.md`
 - `.ai/project/contour.md`
@@ -14,10 +15,12 @@ Bootstrap context for every Alatyr-guided task:
 - `.ai/assistant/contour.md`
 - `.ai/project/blueprint.md`
 
-After bootstrap, choose one profile and read its required context before
-editing files. Expand only when the task crosses architecture, business, data,
-security, assistant-infrastructure, lifecycle, or governance boundaries, or
-when evidence conflicts.
+After bootstrap, choose one profile from
+`.ai/assistant/context-router.json`, then use this file for human-readable
+rationale, conflicts, or missing router entries. Read the selected profile's
+required context before editing files. Expand only when the task crosses
+architecture, business, data, security, assistant-infrastructure, lifecycle,
+or governance boundaries, or when evidence conflicts.
 
 ## Profile: `docs-local`
 
@@ -210,8 +213,20 @@ Required context:
 - `.ai/framework/portability.md`
 - `.ai/framework/module-profile.md`
 - `.ai/framework/scaffolding.md`
+- `.ai/framework/context-router.md`
 - `.ai/framework/context-profiles.md`
+- `.ai/framework/context-discovery.md`
 - `.ai/framework/source-of-truth-registry.md`
+- `.ai/framework/change-risk-model.md`
+- `.ai/framework/logical-integrity.md`
+- `.ai/framework/blueprint-driven-change.md`
+- `.ai/framework/security-safety-guidance.md`
+- `.ai/framework/prompt-injection.md`
+- `.ai/framework/approval-records.md`
+- `.ai/framework/diagram-guidance.md`
+- `.ai/framework/testing-guidance.md`
+- `.ai/framework/skill-adaptation.md`
+- `.ai/framework/adapter-maturity.md`
 - `.ai/framework/bridge-capability-matrix.md`
 - `.ai/framework/migration-diff.md`
 - `.ai/framework/effectiveness-metrics.md`

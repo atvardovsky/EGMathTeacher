@@ -177,6 +177,7 @@ notes, bridge recheck, and manual validation.
 Required context:
 
 - `.ai/alatyr.yaml`
+- `.ai/assistant/context-router.json`
 - `.ai/assistant/context-profiles.md`
 - `.ai/assistant/module-profile.md`
 - `.ai/assistant/bridge-capability-matrix.md`
@@ -207,8 +208,8 @@ prompt-injection policy, provenance, permissions, and approval rules are
 checked.
 
 Framework upgrade work is blocked unless `.ai/alatyr.yaml`, installation note,
-context profiles, module profile, bridge files, operation help, and
-adapter-recheck flow are discoverable.
+context router, context profiles, module profile, bridge files, operation
+help, and adapter-recheck flow are discoverable.
 
 ## Evidence
 
