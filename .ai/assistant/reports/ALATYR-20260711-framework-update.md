@@ -12,7 +12,7 @@ Prepared at: 2026-07-11
 - Framework version: `0.1.0-alpha.0`
 - Adapter schema version: `1`
 - Template version: `1`
-- Source: `/home/atvardovsky/projects/AlatyrCore`
+- Source: `https://github.com/atvardovsky/AlatyrCore`
 
 ## Changed Facts
 
@@ -151,7 +151,7 @@ Safety:
 
 Run:
 
-- `diff -qr .ai/framework /home/atvardovsky/projects/AlatyrCore/framework`
+- `diff -qr .ai/framework <ALATYR_SOURCE_CHECKOUT>/framework`
   returned no differences.
 - `python3 -m json.tool .ai/framework/rule-registry.json` passed.
 - Required adapter file existence check passed.

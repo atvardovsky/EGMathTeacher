@@ -16,8 +16,12 @@ For detailed gate rules, read the matching focused file in this directory:
 ## Context
 
 - Read `AGENTS.md`, `.ai/alatyr.yaml`, `.ai/README.md`, and
-  `.ai/assistant/context-profiles.md`.
-- Select the matching context profile and read its required framework,
+  `.ai/assistant/context-router.json` first.
+- Use `.ai/assistant/context-router.json` as the canonical machine-readable
+  routing source to select the matching context profile. Use
+  `.ai/assistant/context-profiles.md` only for human-readable rationale,
+  conflicts, or missing router entries.
+- After the router selects a profile, read that profile's required framework,
   project, assistant, flow, gate, policy, and validation files.
 - Check `.ai/assistant/module-profile.md` before relying on optional Alatyr
   capabilities.

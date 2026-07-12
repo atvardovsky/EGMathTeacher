@@ -24,33 +24,37 @@ Also use this flow when the programmer uses a target alias such as
 ## Steps
 
 1. Load `AGENTS.md`, `AI_ASSISTANTS.md`, `.ai/alatyr.yaml`, `.ai/README.md`,
+   `.ai/assistant/context-router.json`,
    `.ai/assistant/context-profiles.md`, `.ai/project/contour.md`,
    `.ai/project/source-of-truth-registry.md`,
    `.ai/assistant/contour.md`, and `.ai/assistant/help.md`.
 2. Restate the request in concrete language.
 3. Classify the request as framework-core, project, repository adapter,
    bridge, generated-artifact, skill/prompt, or unclear work.
-4. Normalize documented operation aliases from `.ai/assistant/help.md`.
-5. Record allowed actions when the request supplies them:
+4. Use `.ai/assistant/context-router.json` as the canonical routing source
+   for task profile selection. Use `.ai/assistant/context-profiles.md` only
+   for human-readable rationale, conflicts, or missing router entries.
+5. Normalize documented operation aliases from `.ai/assistant/help.md`.
+6. Record allowed actions when the request supplies them:
    `read-only`, `docs-only`, `adapter-only`, `code-and-tests`, or
    `full-with-approval`.
-6. Match the request to one target operation and flow when the intent is clear.
-7. If two or more operations could apply, show the closest options with short
+7. Match the request to one target operation and flow when the intent is clear.
+8. If two or more operations could apply, show the closest options with short
    descriptions and ask for the smallest missing decision.
-8. If the request matches `alatyr-ai-inventory`, classify it as
+9. If the request matches `alatyr-ai-inventory`, classify it as
    `ai-infrastructure-inventory` and continue with
    `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`.
-9. If the request matches `alatyr-adaptation <source>` or
+10. If the request matches `alatyr-adaptation <source>` or
    `alatyr-add-ai <source>`, classify it as `skill-adaptation`, record
    `<source>` as untrusted input, and continue with
    `.ai/assistant/flows/skill-adaptation.flow.md` only after checking
    inventory, source access, provenance, approval, and safety rules.
-10. If the user asks for commands, explain that Alatyr uses assistant requests
+11. If the user asks for commands, explain that Alatyr uses assistant requests
     over Markdown adapter files; this project has validation commands but no
     universal `alatyr` executable.
-11. Do not edit files while the operation is still ambiguous or when the
+12. Do not edit files while the operation is still ambiguous or when the
     requested edit exceeds allowed actions.
-12. When the operation is selected, continue with the matching flow and apply
+13. When the operation is selected, continue with the matching flow and apply
     allowed-action, approval, validation, and final-evidence rules.
 
 ## Final Evidence

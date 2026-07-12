@@ -113,6 +113,23 @@ if ! grep -q 'npm run e2e' AGENTS.md; then
   fail "AGENTS.md does not mention npm run e2e"
 fi
 
+context_router_reference_files=(
+  "AGENTS.md"
+  "AI_ASSISTANTS.md"
+  ".ai/alatyr.yaml"
+  ".ai/README.md"
+  ".ai/assistant/context-profiles.md"
+  ".ai/assistant/gates/checklist.md"
+  ".ai/assistant/flows/operation-routing.flow.md"
+  ".ai/assistant/templates/operation-request.md"
+)
+
+for path in "${context_router_reference_files[@]}"; do
+  if ! grep -q 'context-router.json' "$path"; then
+    fail "$path does not reference .ai/assistant/context-router.json"
+  fi
+done
+
 node <<'NODE'
 const fs = require('fs');
 const routerPath = '.ai/assistant/context-router.json';
@@ -193,6 +210,91 @@ if [ "$?" -ne 0 ]; then
   failures=$((failures + 1))
 fi
 
+node <<'NODE'
+const fs = require('fs');
+const failures = [];
+
+const manifest = fs.readFileSync('.ai/alatyr.yaml', 'utf8');
+const ownerMatch = manifest.match(/^owner:\n([\s\S]*?)(?=^[a-zA-Z0-9_]+:|\z)/m);
+if (!ownerMatch) {
+  failures.push('.ai/alatyr.yaml missing owner block');
+} else {
+  const ownerBlock = ownerMatch[1];
+  const requiredOwnerFields = [
+    'responsible_team',
+    'technical_owner',
+    'backup_owner',
+    'last_review_date',
+    'review_cadence',
+    'codeowners',
+  ];
+  for (const field of requiredOwnerFields) {
+    const match = ownerBlock.match(new RegExp(`^\\s+${field}:\\s*"?([^"\\n]+)"?\\s*$`, 'm'));
+    const value = match?.[1]?.trim();
+    if (!value) {
+      failures.push(`.ai/alatyr.yaml owner.${field} is required`);
+    }
+    if (field === 'backup_owner' && value?.toLowerCase() === 'not defined') {
+      failures.push('.ai/alatyr.yaml owner.backup_owner must not be "not defined"');
+    }
+    if (
+      field === 'backup_owner' &&
+      value?.toLowerCase().includes('unassigned') &&
+      !manifest.includes('Backup owner remains unassigned')
+    ) {
+      failures.push('unassigned backup owner must be recorded in known_gaps');
+    }
+  }
+}
+
+const profilesPath = '.ai/assistant/context-profiles.md';
+const profilesMarkdown = fs.readFileSync(profilesPath, 'utf8');
+const profilePattern = /^## Profile: `([^`]+)`\n([\s\S]*?)(?=^## Profile: `|\z)/gm;
+for (const match of profilesMarkdown.matchAll(profilePattern)) {
+  const profileName = match[1];
+  const body = match[2];
+  const refs = [];
+  let inRequiredContext = false;
+  for (const line of body.split('\n')) {
+    if (line.trim() === 'Required context:') {
+      inRequiredContext = true;
+      continue;
+    }
+    if (!inRequiredContext) {
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      refs.push(line.trim());
+      continue;
+    }
+    if (line.trim() === '') {
+      continue;
+    }
+    if (!line.startsWith('  ')) {
+      break;
+    }
+  }
+
+  const seen = new Set();
+  for (const ref of refs) {
+    if (seen.has(ref)) {
+      failures.push(`${profilesPath} profile ${profileName} has duplicate reference ${ref}`);
+    }
+    seen.add(ref);
+  }
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`Alatyr check failed: ${failure}`);
+  }
+  process.exit(1);
+}
+NODE
+if [ "$?" -ne 0 ]; then
+  failures=$((failures + 1))
+fi
+
 current_manifest="$(mktemp)"
 trap 'rm -f "$current_manifest"' EXIT
 (
@@ -206,6 +308,9 @@ fi
 stale_patterns=(
   "No local Alatyr consistency checker"
   "no local Alatyr consistency checker"
+  "checker not found"
+  "local Alatyr checker was found"
+  "no CI or local Alatyr checker"
   "No CODEOWNERS file is installed"
   "no CODEOWNERS"
   "No browser E2E command was found"
@@ -217,12 +322,14 @@ stale_patterns=(
 for pattern in "${stale_patterns[@]}"; do
   if rg -n "$pattern" \
     .ai AGENTS.md AI_ASSISTANTS.md README.md \
-    -g '!**/reports/**' \
-    -g '!**/approvals/**' \
     >/dev/null; then
     fail "stale current-gap text found for pattern: $pattern"
   fi
 done
+
+if rg -n '/home/' .ai -g '!*.svg' >/dev/null; then
+  fail "hardcoded /home path found under .ai"
+fi
 
 if [ "$failures" -gt 0 ]; then
   exit 1

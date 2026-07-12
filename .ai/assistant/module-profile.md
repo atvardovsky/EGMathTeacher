@@ -39,9 +39,11 @@ version, source commit, supported assistants, known gaps, and deviations.
 Validation or review: `npm run alatyr:check` and manual manifest/source
 review.
 Approval needs: required before overwriting existing assistant instructions.
-Residual risk: the local checker covers required files, script wiring, current
-gap text, CODEOWNERS, CI wiring, and diagram source hashes; it does not prove
-semantic correctness of every project fact.
+Residual risk: the local checker covers required files, script wiring,
+context-router references, manifest owner fields, local path leakage, stale
+checker wording, duplicate context-profile references, current gap text,
+CODEOWNERS, CI wiring, and diagram source hashes; it does not prove semantic
+correctness of every project fact.
 
 Core item: `adapter-ownership`
 State: enabled with gap
@@ -255,8 +257,9 @@ Required files:
 - `.github/CODEOWNERS`
 
 Reason: local deterministic checks now verify required adapter files, package
-scripts, CI wiring, CODEOWNERS, current gap text, and diagram source-hash
-consistency.
+scripts, CI wiring, CODEOWNERS, context-router references, owner metadata,
+local path leakage, stale checker wording, duplicate context-profile
+references, current gap text, and diagram source-hash consistency.
 Validation or review: `npm run alatyr:check`.
 Approval needs: required before weakening checker coverage, validation gates,
 or approval requirements.

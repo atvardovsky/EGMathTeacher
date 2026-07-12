@@ -5,14 +5,40 @@ This file reports adapter readiness by task type.
 ## Overall Summary
 
 Overall adapter state: usable
-Last reviewed: 2026-07-11
-Reviewed by: Codex using approved Alatyr framework update scope
+Last reviewed: 2026-07-12
+Reviewed by: Codex using approved Alatyr adapter drift-repair scope
 Blocking gaps:
 
+- backup owner remains unassigned in the adapter manifest
 - no formal production privacy policy or incident procedure
 - no frontend component, accessibility, or visual regression command
 - production auth hardening remains POC-only
 - production backup, restore, rollback, and incident runbooks remain undefined
+
+## Profile Maturity Summary
+
+Mature enough for routine use:
+
+- `docs-local`: mature for ordinary documentation and diagram text changes.
+- `code-local`: mature for focused local implementation and test changes.
+- `framework-upgrade`: mature for adapter-only Alatyr rechecks and drift
+  repair with explicit approval.
+
+Usable with approval and residual review:
+
+- `business-change`: usable when product behavior approval and docs/test sync
+  are explicit.
+- `architecture-change`: usable when architecture approval, diagrams, and
+  validation are explicit.
+- `ai-infrastructure`: usable for review, adapter-only repairs, and
+  approval-gated imports; provenance remains manual for third-party sources.
+
+Minimal or blocked for production-grade claims:
+
+- `data-change`: minimal-to-usable for POC SQLite changes, minimal for
+  production retention, rollback, backup, export, or delete work.
+- `security-sensitive`: minimal-to-usable for POC guard/source review, minimal
+  for production privacy, minors consent, incident, and auth-hardening claims.
 
 ## Task-Specific Maturity
 
@@ -163,8 +189,9 @@ Approval needs: required before importing third-party infrastructure,
 overwriting existing instructions, or broadening permissions.
 Blocking criteria: remote/package/plugin sources remain review-only until
 provenance, license, safety, and approval are clear.
-Residual risks: local checker does not validate third-party provenance, and no
-assistant-native skills are installed.
+Residual risks: local checker validates adapter structure and drift patterns
+but does not validate third-party provenance, and no assistant-native skills
+are installed.
 Final evidence: inventory/provenance, prompt-injection review, changed
 surfaces, validation/review, approval.
 
@@ -190,7 +217,10 @@ AlatyrCore tools may provide evidence but are not target requirements.
 Approval needs: required before overwriting existing assistant instructions.
 Blocking criteria: none after explicit approval for the approved adapter-only
 scope.
-Residual risks: no target checker for framework consistency.
+Residual risks: local checker covers router presence, required profiles,
+manifest owner fields, stale local-machine leakage, stale checker wording,
+duplicate context-profile references, CI wiring, and diagram hashes; it does
+not prove semantic correctness of every adapter fact.
 Final evidence: baseline/version, surfaces changed, validation/review,
 approval, residual risk.
 

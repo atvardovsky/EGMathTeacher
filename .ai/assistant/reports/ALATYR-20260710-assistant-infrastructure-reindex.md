@@ -82,5 +82,6 @@ Approvals: the user explicitly requested reindexing assistant infrastructure,
 including Alatyr. No runtime code, product behavior, live service, dependency,
 secret, or deployment surface was changed.
 
-Residual risk: no CI or local Alatyr checker enforces the index. Global
+Residual risk: CI and `npm run alatyr:check` enforce adapter structure, but
+the index still depends on manual semantic review. Global
 assistant settings outside this repository were not inventoried.

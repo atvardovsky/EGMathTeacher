@@ -12,7 +12,7 @@ installation:
 owner:
   responsible_team: "project maintainer"
   technical_owner: "atvardovsky"
-  backup_owner: "not defined"
+  backup_owner: "unassigned - known gap"
   last_review_date: "2026-07-12"
   review_cadence: "after framework updates or broad assistant-governance changes"
   codeowners: ".github/CODEOWNERS"
@@ -140,6 +140,7 @@ policies:
   source_access: ".ai/assistant/policies/ai-infrastructure-source-access.md"
   prompt_injection: ".ai/assistant/policies/prompt-injection.md"
 known_gaps:
+  - "Backup owner remains unassigned for adapter governance"
   - "No formal production privacy policy or incident procedure"
   - "No frontend component, accessibility, or visual regression test command"
   - "Production auth hardening remains POC-only"

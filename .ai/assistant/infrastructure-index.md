@@ -195,8 +195,11 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260711-settings-view.md`
 - `.ai/assistant/approvals/ALATYR-20260711-specialist-profile-pipeline.md`
 - `.ai/assistant/approvals/ALATYR-20260711-ui-system.md`
+- `.ai/assistant/approvals/ALATYR-20260712-adapter-drift-checker-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260712-background-batching.md`
 - `.ai/assistant/approvals/ALATYR-20260712-framework-context-router-update.md`
+- `.ai/assistant/approvals/ALATYR-20260712-lesson-contract-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260712-lesson-lifecycle-usage.md`
 - `.ai/assistant/approvals/ALATYR-20260712-role-operation-model-policy.md`
 - `.ai/assistant/approvals/ALATYR-20260712-session-progress-tracking.md`
 - `.ai/assistant/approvals/ALATYR-20260712-tutor-response-blocks.md`

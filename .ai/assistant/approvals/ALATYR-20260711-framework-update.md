@@ -19,7 +19,7 @@ added to scope.
 
 Allowed protected changes:
 
-- Adapter-only Alatyr update from `/home/atvardovsky/projects/AlatyrCore` at
+- Adapter-only Alatyr update from `https://github.com/atvardovsky/AlatyrCore` at
   `f66f857ae9992501d055c662c0c963bb9de7578d`.
 - Add new Alatyr framework/assistant files.
 - Manually merge existing `.ai/framework`, `.ai/assistant`, `AGENTS.md`, and
@@ -61,7 +61,7 @@ operation files without changing product runtime behavior.
 
 Approved validation or manual review:
 
-- Compare `.ai/framework` against `/home/atvardovsky/projects/AlatyrCore/framework`.
+- Compare `.ai/framework` against `<ALATYR_SOURCE_CHECKOUT>/framework`.
 - Check required adapter files exist.
 - Scan current target-owned adapter files for unresolved source placeholders.
 - Render diagrams because `assistant-governance.mmd` changed.

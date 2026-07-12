@@ -9,7 +9,7 @@ Prepared at: `not recorded by this source helper`
 ## Version Scope
 
 From manifest: `<TARGET_REPOSITORY_ROOT>/.ai/framework/rule-registry.json`
-To manifest: `/home/atvardovsky/projects/AlatyrCore/framework/rule-registry.json`
+To manifest: `https://github.com/atvardovsky/AlatyrCore framework/rule-registry.json`
 From framework version: `0.1.0-alpha.0`
 To framework version: `0.1.0-alpha.0`
 From adapter schema version: `1`
@@ -104,7 +104,7 @@ Removed rule owner categories:
 ## Framework File Changes
 
 From framework directory: `<TARGET_REPOSITORY_ROOT>/.ai/framework`
-To framework directory: `/home/atvardovsky/projects/AlatyrCore/framework`
+To framework directory: `https://github.com/atvardovsky/AlatyrCore framework/`
 
 Added framework files:
 - `context-router.md`
@@ -124,7 +124,7 @@ Removed framework files:
 ## Target Template Surface Changes
 
 From template directory: `/tmp/tmp.6HDLhl1zV9/templates/target`
-To template directory: `/home/atvardovsky/projects/AlatyrCore/templates/target`
+To template directory: `https://github.com/atvardovsky/AlatyrCore templates/target`
 
 Added target template surfaces:
 - `.ai/assistant/context-router.json`

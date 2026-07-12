@@ -5,7 +5,7 @@ Installation id: `ALATYR-20260709-egmathteacher`
 Framework source:
 
 - Git URL: `https://github.com/atvardovsky/AlatyrCore`
-- Local checkout inspected: `/home/atvardovsky/projects/AlatyrCore`
+- Alatyr source inspected: `https://github.com/atvardovsky/AlatyrCore`
 - Initial baseline commit: `17cf62e Route future sessions through installed adapter state`
 - Previous baseline commit: `f66f857 Add conformance and effectiveness evidence`
 - Current baseline commit: `6a6bef1 Add machine-readable context routing`
