@@ -26,7 +26,9 @@ The project contour owns:
   student attempts, mastery evidence, and learning signals; OpenAI owns
   uploaded files, vector
   stores, model responses, profile-generation responses, background model
-  responses, and generated images.
+  responses, and generated images. Knowledge-pack structured source files are
+  imported into SQLite; selected student-facing Markdown files may be synced
+  to OpenAI vector stores with local content-hash metadata.
 - UI facts: the web client uses Mantine, lucide icons, browser speech
   recognition, Russian/English static UI localization, and a teen-friendly
   modern tutor workspace.

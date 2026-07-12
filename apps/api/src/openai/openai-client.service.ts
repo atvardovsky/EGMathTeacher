@@ -66,6 +66,18 @@ export class OpenAiClientService {
     });
   }
 
+  async removeFileFromVectorStore(
+    vectorStoreId: string,
+    fileId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(
+      `/vector_stores/${encodeURIComponent(vectorStoreId)}/files/${encodeURIComponent(fileId)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
+
   async listVectorStoreFiles(vectorStoreId: string): Promise<Record<string, unknown>> {
     return this.requestJson(`/vector_stores/${encodeURIComponent(vectorStoreId)}/files`, {
       method: 'GET',

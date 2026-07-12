@@ -63,6 +63,9 @@ This repository houses a NestJS orchestration service that now handles both sign
     active-time estimation.
   - `AI_USAGE_*` – local usage-ledger settings. Prices are configured locally
     for user-visible estimates and are not provider billing proof.
+  - `OPENAI_VECTOR_STORE_IDS` – optional comma-separated vector store ids.
+    If empty, manual admin upload or knowledge-pack sync creates/reuses a
+    local project vector store recorded in SQLite.
   - `WEBRTC_ICE_SERVERS`, `WEBRTC_MAX_SESSIONS`, `TRANSCRIPT_LOG_DIR` – handshake + operational tuning.
   - `WEBRTC_ENABLE_BARGE_IN`, `WEBRTC_SESSION_IDLE_TIMEOUT_MS`, `WEBRTC_IDLE_SWEEP_INTERVAL_MS` – realtime turn-taking and idle-session behavior.
   - `OPENAI_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`, `OPENAI_CLIENT_SECRET_GRACE_MS` – OpenAI request resiliency tuning.
@@ -79,6 +82,24 @@ This repository houses a NestJS orchestration service that now handles both sign
 - `src/` – NestJS modules (conversation, WebRTC signaling, AI provider abstraction).
 - `docs/` – Supplemental design notes (`docs/webrtc-module.md` now describes the Nest ↔ OpenAI flow).
 - `logs/` – Default transcript output directory.
+
+## Knowledge Pack Import And RAG Sync
+
+Run from the repository root after placing the uncommitted knowledge-pack zip
+locally:
+
+```bash
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
+```
+
+`--import-db` loads structured curriculum, task-bank, misconception, and
+lesson-plan JSON/JSONL into SQLite. `--sync-rag` uploads only selected
+student-facing Markdown files to the active OpenAI vector store. RAG sync is
+content-hash based: unchanged files are skipped, changed synced files are
+uploaded and the old vector-store file is detached. `--dry-run` performs no
+OpenAI create/upload/attach/delete calls.
 
 ## WebRTC Flow (Browser ↔ NestJS ↔ OpenAI)
 

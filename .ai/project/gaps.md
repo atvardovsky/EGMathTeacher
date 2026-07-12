@@ -140,7 +140,7 @@ Requires RAG/product workflow decisions:
 
 - document review UI
 - chunk/retrieval diagnostics
-- stale file cleanup
+- manual admin-upload stale file cleanup outside the knowledge-pack sync path
 - source-material quality gates
 - non-OpenAI provider contracts
 

@@ -10,6 +10,7 @@ describe('AiModelService', () => {
       createVectorStore: jest.fn(async () => ({ id: 'vs_1' })),
       uploadFile: jest.fn(async () => ({ id: 'file_1' })),
       attachFileToVectorStore: jest.fn(async () => ({ status: 'queued' })),
+      removeFileFromVectorStore: jest.fn(async () => ({ deleted: true })),
       listVectorStoreFiles: jest.fn(async () => ({ data: [] })),
     };
     const service = new AiModelService(provider);
@@ -21,11 +22,15 @@ describe('AiModelService', () => {
     await expect(service.attachFileToVectorStore('vs_1', 'file_1')).resolves.toEqual({
       status: 'queued',
     });
+    await expect(service.removeFileFromVectorStore('vs_1', 'file_1')).resolves.toEqual({
+      deleted: true,
+    });
     await expect(service.listVectorStoreFiles('vs_1')).resolves.toEqual({ data: [] });
 
     expect(service.id).toBe('openai');
     expect(provider.createResponse).toHaveBeenCalledWith({ model: 'test' });
     expect(provider.attachFileToVectorStore).toHaveBeenCalledWith('vs_1', 'file_1');
+    expect(provider.removeFileFromVectorStore).toHaveBeenCalledWith('vs_1', 'file_1');
   });
 
   it('applies role and operation model policy to response requests', async () => {
@@ -36,6 +41,7 @@ describe('AiModelService', () => {
       createVectorStore: jest.fn(),
       uploadFile: jest.fn(),
       attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
       listVectorStoreFiles: jest.fn(),
     };
     const config = {
@@ -97,6 +103,7 @@ describe('AiModelService', () => {
       createVectorStore: jest.fn(),
       uploadFile: jest.fn(),
       attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
       listVectorStoreFiles: jest.fn(),
     };
     const config = {
@@ -126,6 +133,7 @@ describe('AiModelService', () => {
       createVectorStore: jest.fn(),
       uploadFile: jest.fn(),
       attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
       listVectorStoreFiles: jest.fn(),
     };
     const config = {

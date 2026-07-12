@@ -29,6 +29,13 @@ export class OpenAiModelProvider implements AiModelProvider {
     return this.openAiClient.attachFileToVectorStore(vectorStoreId, fileId);
   }
 
+  removeFileFromVectorStore(
+    vectorStoreId: string,
+    fileId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.openAiClient.removeFileFromVectorStore(vectorStoreId, fileId);
+  }
+
   listVectorStoreFiles(vectorStoreId: string): Promise<Record<string, unknown>> {
     return this.openAiClient.listVectorStoreFiles(vectorStoreId);
   }

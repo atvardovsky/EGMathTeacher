@@ -244,7 +244,8 @@ Rules from current implementation:
 
 ### Upload Knowledge Materials
 
-Admin user uploads documents for RAG grounding.
+Admin user uploads documents for RAG grounding, or an operator imports the
+local EGMathTeacher knowledge pack.
 
 Rules from current implementation:
 
@@ -255,6 +256,14 @@ Rules from current implementation:
 - OpenAI file and vector store ids are stored in SQLite metadata for the
   current OpenAI-backed provider.
 - Status can be checked through `GET /admin/knowledge/status`.
+- Local command: `npm run knowledge:sync -- --pack <zip> --import-db
+  [--sync-rag] [--dry-run]`.
+- Structured JSON/JSONL from the pack is imported into SQLite. Selected
+  student-facing Markdown files can be synced to the active OpenAI vector
+  store by content hash.
+- Unchanged synced Markdown files are skipped. Changed synced Markdown files
+  are uploaded and the superseded vector-store file attachment is detached.
+- `--dry-run` must not perform live OpenAI create/upload/attach/delete calls.
 
 ### Use WebRTC Voice Assistant
 

@@ -63,6 +63,11 @@ Production domain:
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.
+- Local knowledge-pack ingestion command for `EGMathTeacher-knowledge-pack-v1.0.zip`:
+  structured curriculum/task JSON and JSONL can be imported into SQLite, and
+  selected Markdown teaching files can be synced to OpenAI vector stores by
+  content hash. Unchanged files are skipped; changed synced files are uploaded
+  and the superseded vector-store file is detached.
 - Lesson type support for tutor sessions: the API supports meeting, tutor,
   concept, practice, diagnostic, exam strategy, mistake review, visual
   explanation, and reflection modes; the POC web UI exposes tutor, practice,
@@ -112,6 +117,16 @@ npm run lint
 npm run e2e
 npm run diagrams:check
 npm run alatyr:check
+```
+
+Knowledge-pack import defaults to local SQLite only. Add `--sync-rag` only
+when `OPENAI_API_KEY` is configured and live OpenAI file/vector-store writes
+are intended:
+
+```bash
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
 ```
 
 GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs install,

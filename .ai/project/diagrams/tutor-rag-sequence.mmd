@@ -62,7 +62,7 @@ sequenceDiagram
   Decision->>DB: Insert lesson_decisions and route profile deltas to background observations
   Decision-->>Tutor: Decision and backend policy result
   Tutor->>Knowledge: getActiveVectorStoreIds()
-  Knowledge->>DB: Read knowledge_files when env ids absent
+  Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
   Knowledge-->>Tutor: Vector store ids
   Tutor->>AIModel: Create tutor operation response with lifecycle, curriculum, verifier evidence, decision policy, profile context, lesson type, usage context, and optional file_search
   AIModel->>Policy: Resolve tutorAnswer or tutorAnswerWithRag policy

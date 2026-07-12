@@ -49,6 +49,10 @@ export interface AiModelProvider {
     vectorStoreId: string,
     fileId: string,
   ): Promise<Record<string, unknown>>;
+  removeFileFromVectorStore(
+    vectorStoreId: string,
+    fileId: string,
+  ): Promise<Record<string, unknown>>;
   listVectorStoreFiles(vectorStoreId: string): Promise<Record<string, unknown>>;
 }
 

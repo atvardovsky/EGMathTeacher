@@ -74,6 +74,11 @@ OpenAI calls can happen through the current model and realtime providers:
 - Vector Stores API
 - Realtime API
 
+The local `npm run knowledge:sync -- --sync-rag` command can create/reuse
+OpenAI vector stores, upload files, attach files, and detach superseded
+vector-store file attachments. `--dry-run` must not perform live OpenAI
+create/upload/attach/delete calls.
+
 Other configured providers are stubs unless implemented later.
 
 Assistants must not trigger live external calls unless the task explicitly
@@ -184,6 +189,8 @@ Require explicit programmer approval before:
 - deleting SQLite data
 - deleting transcript logs
 - deleting remote OpenAI files or vector stores
+- detaching remote OpenAI vector-store files outside the approved
+  knowledge-pack replacement path
 - changing system web server config
 - reloading production services
 - rotating credentials

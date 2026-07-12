@@ -282,18 +282,53 @@ This file records runtime flows from current source evidence.
 5. Settings does not edit account data or regenerate the AI profile in the
    current POC.
 
-## Knowledge Upload Flow
+## Knowledge Upload And Knowledge Pack Sync Flow
+
+Manual admin upload:
 
 1. Admin opens the knowledge screen.
 2. Web client calls `GET /admin/knowledge/status`.
 3. Admin uploads a supported file to `POST /admin/knowledge/files`.
 4. API rejects empty files or unsupported extensions.
-5. API uses an existing vector store id or creates `EGMathTeacher ЕГЭ
-   knowledge` through the model provider.
+5. API uses a configured vector store id, locally persisted project vector
+   store id, or creates `EGMathTeacher ЕГЭ knowledge` through the model
+   provider.
 6. API uploads the file through the model provider.
 7. API attaches the file to the vector store through the model provider.
-8. API stores local metadata in `knowledge_files`.
+8. API stores local metadata in `knowledge_files` and records the active
+   student RAG vector store in `project_ai_resources` when env ids are absent.
 9. Status refresh can query vector store file status and update local metadata.
+
+Local knowledge-pack import/sync:
+
+1. Operator runs `npm run knowledge:sync -- --pack <zip>` or `--root <dir>`.
+   If neither mode is provided, the command defaults to `--import-db`.
+2. The CLI extracts zip input to a temporary directory or uses the extracted
+   root directly. The knowledge-pack zip itself is a local artifact and should
+   not be committed.
+3. With `--import-db`, `KnowledgePackService` reads structured JSON/JSONL
+   files for curriculum topics, task types, skills, prerequisites, mastery
+   criteria, misconceptions, task bank tasks, error classification, and lesson
+   type plans.
+4. The importer computes each source file's SHA-256 hash and checks
+   `knowledge_source_files`. Unchanged structured files are skipped unless
+   `--force` is used. Changed files are upserted into the corresponding
+   SQLite tables inside the local migration-backed schema.
+5. With `--sync-rag`, only selected student-facing Markdown files are eligible
+   for OpenAI RAG upload: exam framework, curriculum overview, theory,
+   misconception guides, teaching methods, teen communication, lesson types,
+   lesson scenarios, and learning-plan Markdown rules/plans.
+6. RAG sync computes `source_path + content_hash` state. If a synced file is
+   unchanged, upload is skipped. If content changed, the new file is uploaded
+   and attached to the active vector store, then the superseded vector-store
+   file is detached through the model provider and marked `superseded`
+   locally.
+7. `--dry-run` plans RAG changes without creating vector stores, uploading
+   files, attaching files, or deleting vector-store file attachments.
+8. The active vector store id is stored in `project_ai_resources` when
+   `OPENAI_VECTOR_STORE_IDS` is empty. Tutor/profile/background RAG then uses
+   that locally stored vector store id automatically through
+   `KnowledgeService.getActiveVectorStoreIds()`.
 
 ## WebRTC Flow
 

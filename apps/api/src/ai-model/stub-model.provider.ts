@@ -29,6 +29,13 @@ export class StubModelProvider implements AiModelProvider {
     return this.notImplemented('vector store attachments');
   }
 
+  async removeFileFromVectorStore(
+    _vectorStoreId: string,
+    _fileId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.notImplemented('vector store attachment removal');
+  }
+
   async listVectorStoreFiles(_vectorStoreId: string): Promise<Record<string, unknown>> {
     return this.notImplemented('vector store file listing');
   }

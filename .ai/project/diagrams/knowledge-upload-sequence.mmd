@@ -1,14 +1,19 @@
 sequenceDiagram
   actor Admin
+  actor Operator
   participant Web as React Web Client
   participant API as KnowledgeController
   participant Guard as AdminGuard
+  participant CLI as knowledge:sync CLI
   participant Knowledge as KnowledgeService
+  participant Pack as KnowledgePackService
   participant DB as SQLite
   participant AIModel as AiModelService
   participant Files as OpenAI Files API
   participant Vectors as OpenAI Vector Stores
 
+  rect rgb(245,245,245)
+  Note over Admin,Vectors: Manual admin upload
   Admin->>Web: Select PDF/MD/TXT/DOCX/TeX file
   Web->>API: POST /admin/knowledge/files multipart
   API->>Guard: Validate admin session
@@ -31,6 +36,7 @@ sequenceDiagram
   Vectors-->>AIModel: status
   AIModel-->>Knowledge: attachment response
   Knowledge->>DB: Insert knowledge_files metadata
+  Knowledge->>DB: Upsert project_ai_resources when env ids are absent
   Knowledge-->>API: KnowledgeFileDto
   API-->>Web: Uploaded file metadata
   Web->>API: GET /admin/knowledge/status
@@ -41,3 +47,42 @@ sequenceDiagram
   AIModel-->>Knowledge: Status response
   Knowledge->>DB: Update and read metadata
   API-->>Web: vectorStoreIds and files
+  end
+
+  rect rgb(245,245,245)
+  Note over Operator,Vectors: Local knowledge-pack import and optional RAG sync
+  Operator->>CLI: npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]
+  CLI->>Pack: Resolve zip or extracted root
+  opt Import structured DB files
+    Pack->>DB: Read knowledge_source_files hashes
+    alt Structured source unchanged
+      Pack->>DB: Mark source file skipped
+    else New or changed structured source
+      Pack->>DB: Upsert curriculum, task bank, misconceptions, lesson plans
+      Pack->>DB: Record source path, hash, and import ledger
+    end
+  end
+  opt Sync student-facing Markdown to RAG
+    Pack->>Knowledge: syncRagSourceFile(relativePath, sha256)
+    alt dry-run
+      Knowledge-->>Pack: Planned upload/replace without OpenAI calls
+    else Same hash already active
+      Knowledge->>DB: Record skipped source state
+    else New or changed Markdown
+      Knowledge->>AIModel: Upload file
+      AIModel->>Files: OpenAI file upload
+      Files-->>AIModel: openai_file_id
+      Knowledge->>AIModel: Attach new file to vector store
+      AIModel->>Vectors: OpenAI vector attachment
+      Vectors-->>AIModel: status
+      Knowledge->>DB: Insert active knowledge_files row and project_ai_resources id
+      opt Older synced file exists
+        Knowledge->>AIModel: Remove old file from vector store
+        AIModel->>Vectors: DELETE /vector_stores/{vector_store_id}/files/{file_id}
+        Vectors-->>AIModel: deletion status
+        Knowledge->>DB: Mark old knowledge_files row superseded
+      end
+    end
+  end
+  Pack->>DB: Insert knowledge_pack_imports summary
+  end

@@ -124,6 +124,14 @@ visible next actions.
   so each assistant role can be tuned independently while provider support
   remains OpenAI-first in the current POC.
 - Admin-only upload of PDF, Markdown, TXT, DOCX, and TeX knowledge files.
+- Local knowledge-pack ingestion command for uncommitted EGMathTeacher
+  knowledge-pack zip or extracted directory. Structured curriculum, task-bank,
+  misconception, and lesson-plan JSON/JSONL are imported into SQLite.
+  Student-facing Markdown files can be synced to OpenAI vector stores with
+  source-path/content-hash idempotency: unchanged files are skipped, changed
+  synced files are uploaded and the superseded vector-store attachment is
+  detached. Dry-run RAG sync performs no OpenAI create/upload/attach/delete
+  calls.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
 - Image generation remains asynchronous and explicit; generated images render
@@ -151,7 +159,9 @@ visible next actions.
     profile/strategy refresh, and quality review. Legacy per-turn extraction
     is still available through configuration.
   - `TutorModule`: RAG tutor response and image generation endpoints.
-  - `KnowledgeModule`: admin file upload and vector store status.
+  - `KnowledgeModule`: admin file upload, local knowledge-pack structured
+    import, idempotent RAG sync, vector store status, and local project vector
+    store id persistence.
   - `WebRtcModule`: inherited voice assistant/WebRTC bridge.
   - `OpenAiClientModule`: OpenAI REST client for Responses, images, files,
     and vector stores.
@@ -193,8 +203,18 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   answer shape, and strategy adjustment recommendations.
 - `lesson_decisions`: per-action Lesson Decision Agent and backend policy
   observability rows.
-- `curriculum_skills`: minimal canonical topic/skill/task-type registry for
-  lesson routing and verifier support.
+- `project_ai_resources`: durable local ids for project-level external AI
+  resources such as the active student RAG vector store when env ids are not
+  configured.
+- `knowledge_source_files` and `knowledge_pack_imports`: local knowledge-pack
+  import/sync hash ledger.
+- `curriculum_topics`, `curriculum_task_types`, `curriculum_skills`,
+  `curriculum_prerequisite_edges`, `curriculum_mastery_criteria`,
+  `curriculum_misconceptions`, `error_classification_entries`,
+  `lesson_type_plans`, and `task_bank_tasks`: imported structured
+  knowledge-pack curriculum/task metadata for future lesson planning and
+  verifier expansion. Runtime verified mastery is still implemented only for
+  the existing linear-equation numeric vertical.
 - `lesson_tasks`: backend-generated or imported tasks tied to a lesson
   session and curriculum skill.
 - `student_attempts`: submitted answers and deterministic verifier results.

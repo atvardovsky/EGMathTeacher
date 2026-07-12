@@ -15,8 +15,56 @@ erDiagram
     TEXT openai_file_id
     TEXT vector_store_id
     TEXT status
+    TEXT source_kind
+    TEXT source_path
+    TEXT source_pack_version
+    TEXT content_hash
+    TEXT sync_status
+    TEXT superseded_at
+    TEXT error_message
     TEXT created_at
     TEXT updated_at
+  }
+
+  PROJECT_AI_RESOURCES {
+    TEXT resource_key PK
+    TEXT provider
+    TEXT resource_type
+    TEXT resource_id
+    TEXT metadata_json
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  KNOWLEDGE_SOURCE_FILES {
+    TEXT id PK
+    TEXT source_pack_version
+    TEXT relative_path
+    TEXT target_kind
+    TEXT content_hash
+    INTEGER size_bytes
+    TEXT status
+    TEXT knowledge_file_id FK
+    TEXT metadata_json
+    TEXT error_message
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  KNOWLEDGE_PACK_IMPORTS {
+    TEXT id PK
+    TEXT pack_version
+    TEXT root_path
+    TEXT import_kind
+    TEXT status
+    INTEGER structured_file_count
+    INTEGER rag_file_count
+    INTEGER imported_row_count
+    INTEGER uploaded_file_count
+    INTEGER skipped_file_count
+    TEXT error_message
+    TEXT started_at
+    TEXT completed_at
   }
 
   SCHEMA_MIGRATIONS {
@@ -199,7 +247,151 @@ erDiagram
     TEXT task_type_id
     TEXT task_type_title
     TEXT verifier_kind
+    TEXT description
+    TEXT prerequisites_json
+    TEXT task_type_ids_json
+    TEXT typical_misconceptions_json
+    TEXT explanation_methods_json
+    TEXT minimum_mastery_criterion
+    TEXT verification_methods_json
+    TEXT recommended_lesson_type
+    TEXT deterministic_verification
+    TEXT difficulty
+    INTEGER estimated_learning_minutes
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
     TEXT created_at
+    TEXT updated_at
+  }
+
+  CURRICULUM_TOPICS {
+    TEXT topic_id PK
+    TEXT title
+    TEXT exam_track
+    TEXT prerequisite_topic_ids_json
+    TEXT skill_ids_json
+    TEXT theory_document_id
+    TEXT status
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  CURRICULUM_TASK_TYPES {
+    TEXT task_type_id PK
+    TEXT title
+    TEXT exam_track
+    TEXT response_kind
+    TEXT runtime_verifier_kind
+    TEXT planned_verifier_kind
+    TEXT year_binding
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  CURRICULUM_PREREQUISITE_EDGES {
+    TEXT id PK
+    TEXT edge_type
+    TEXT from_id
+    TEXT to_id
+    TEXT relation
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  CURRICULUM_MASTERY_CRITERIA {
+    TEXT skill_id PK
+    TEXT minimum_criterion
+    TEXT required_evidence_sequence_json
+    INTEGER self_report_can_complete
+    INTEGER single_success_can_complete
+    TEXT recommended_recheck_days_json
+    TEXT regression_trigger
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  CURRICULUM_MISCONCEPTIONS {
+    TEXT misconception_id PK
+    TEXT title
+    TEXT domain
+    TEXT observable_sign
+    TEXT possible_causes_json
+    TEXT random_vs_systematic
+    TEXT first_question
+    TEXT first_hint
+    TEXT second_hint
+    TEXT prerequisite_to_check
+    TEXT retry_task_rule
+    TEXT forbidden_inference
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  ERROR_CLASSIFICATION_ENTRIES {
+    TEXT id PK
+    TEXT entry_type
+    TEXT entry_key
+    TEXT entry_json
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  LESSON_TYPE_PLANS {
+    TEXT phase PK
+    TEXT goal
+    TEXT recommended_lesson_mix_json
+    TEXT transition_criteria_json
+    TEXT minimum_evidence
+    TEXT reflection_frequency
+    TEXT review_frequency
+    TEXT mock_exam_place
+    TEXT prerequisite_return_rule
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
+  }
+
+  TASK_BANK_TASKS {
+    TEXT task_id PK
+    TEXT topic_id
+    TEXT skill_id
+    TEXT task_type_id
+    TEXT difficulty
+    TEXT prompt
+    TEXT expected_answer
+    TEXT solution_steps_json
+    TEXT common_errors_json
+    TEXT hint_ladder_json
+    TEXT verifier_kind
+    TEXT source_type
+    TEXT verification_json
+    TEXT task_bank_file
+    TEXT source_pack_version
+    TEXT source_path
+    TEXT content_hash
+    TEXT created_at
+    TEXT updated_at
   }
 
   LESSON_TASKS {
@@ -289,6 +481,8 @@ erDiagram
   USERS ||--o{ STUDENT_ATTEMPTS : submits
   USERS ||--o{ MASTERY_EVIDENCE : earns
   USERS ||--o{ AI_USAGE_LEDGER : has
+  KNOWLEDGE_FILES ||--o{ KNOWLEDGE_SOURCE_FILES : syncs
+  PROJECT_AI_RESOURCES ||--o{ KNOWLEDGE_FILES : points_to
   LESSON_SESSIONS ||--o{ LESSON_EFFECTIVENESS_SIGNALS : records
   LESSON_SESSIONS ||--o{ LESSON_DECISIONS : decides
   LESSON_SESSIONS ||--o{ LESSON_TASKS : assigns
@@ -297,6 +491,11 @@ erDiagram
   LESSON_TASKS ||--o{ STUDENT_ATTEMPTS : checked_by
   LESSON_TASKS ||--o{ MASTERY_EVIDENCE : supports
   STUDENT_ATTEMPTS ||--o{ MASTERY_EVIDENCE : verifies
+  CURRICULUM_TOPICS ||--o{ CURRICULUM_SKILLS : groups
+  CURRICULUM_TASK_TYPES ||--o{ CURRICULUM_SKILLS : supports
+  CURRICULUM_SKILLS ||--o{ TASK_BANK_TASKS : has
+  CURRICULUM_TASK_TYPES ||--o{ TASK_BANK_TASKS : defines
+  CURRICULUM_SKILLS ||--o| CURRICULUM_MASTERY_CRITERIA : has
   CURRICULUM_SKILLS ||--o{ LESSON_TASKS : defines
   LESSON_SESSIONS ||--o{ AI_USAGE_LEDGER : attributes
   BACKGROUND_ANALYSIS_WINDOWS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : groups

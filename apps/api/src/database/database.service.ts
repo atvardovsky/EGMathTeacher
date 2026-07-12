@@ -690,6 +690,271 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_mastery_evidence_user_skill
         ON mastery_evidence(user_id, skill_id, created_at);
     `);
+
+    this.applyMigration('008_knowledge_pack_ingestion', `
+      ALTER TABLE knowledge_files
+        ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'manual_upload';
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN source_path TEXT;
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN source_pack_version TEXT;
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN content_hash TEXT;
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'superseded', 'failed', 'cleanup_failed'));
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN superseded_at TEXT;
+
+      ALTER TABLE knowledge_files
+        ADD COLUMN error_message TEXT;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_files_source_hash
+        ON knowledge_files(source_kind, source_path, content_hash, vector_store_id)
+        WHERE source_path IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_files_source_active
+        ON knowledge_files(source_kind, source_path, sync_status, updated_at);
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN description TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN prerequisites_json TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN task_type_ids_json TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN typical_misconceptions_json TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN explanation_methods_json TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN minimum_mastery_criterion TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN verification_methods_json TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN recommended_lesson_type TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN deterministic_verification TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN difficulty TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN estimated_learning_minutes INTEGER;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN source_pack_version TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN source_path TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN content_hash TEXT;
+
+      ALTER TABLE curriculum_skills
+        ADD COLUMN updated_at TEXT;
+
+      CREATE TABLE IF NOT EXISTS project_ai_resources (
+        resource_key TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS knowledge_source_files (
+        id TEXT PRIMARY KEY,
+        source_pack_version TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        target_kind TEXT NOT NULL CHECK (target_kind IN ('db_structured', 'student_rag', 'metadata')),
+        content_hash TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'imported', 'synced', 'skipped', 'failed')),
+        knowledge_file_id TEXT,
+        metadata_json TEXT NOT NULL,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (source_pack_version, relative_path, target_kind),
+        FOREIGN KEY (knowledge_file_id) REFERENCES knowledge_files(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_source_files_target
+        ON knowledge_source_files(target_kind, status, updated_at);
+
+      CREATE TABLE IF NOT EXISTS knowledge_pack_imports (
+        id TEXT PRIMARY KEY,
+        pack_version TEXT NOT NULL,
+        root_path TEXT NOT NULL,
+        import_kind TEXT NOT NULL CHECK (import_kind IN ('structured', 'rag', 'structured_and_rag')),
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+        structured_file_count INTEGER NOT NULL DEFAULT 0,
+        rag_file_count INTEGER NOT NULL DEFAULT 0,
+        imported_row_count INTEGER NOT NULL DEFAULT 0,
+        uploaded_file_count INTEGER NOT NULL DEFAULT 0,
+        skipped_file_count INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_pack_imports_completed
+        ON knowledge_pack_imports(completed_at);
+
+      CREATE TABLE IF NOT EXISTS curriculum_topics (
+        topic_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        exam_track TEXT NOT NULL,
+        prerequisite_topic_ids_json TEXT NOT NULL,
+        skill_ids_json TEXT NOT NULL,
+        theory_document_id TEXT,
+        status TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS curriculum_task_types (
+        task_type_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        exam_track TEXT NOT NULL,
+        response_kind TEXT NOT NULL,
+        runtime_verifier_kind TEXT NOT NULL,
+        planned_verifier_kind TEXT NOT NULL,
+        year_binding TEXT,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS curriculum_prerequisite_edges (
+        id TEXT PRIMARY KEY,
+        edge_type TEXT NOT NULL CHECK (edge_type IN ('topic', 'skill')),
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (edge_type, from_id, to_id, relation)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_curriculum_prerequisite_edges_to
+        ON curriculum_prerequisite_edges(edge_type, to_id);
+
+      CREATE TABLE IF NOT EXISTS curriculum_mastery_criteria (
+        skill_id TEXT PRIMARY KEY,
+        minimum_criterion TEXT NOT NULL,
+        required_evidence_sequence_json TEXT NOT NULL,
+        self_report_can_complete INTEGER NOT NULL CHECK (self_report_can_complete IN (0, 1)),
+        single_success_can_complete INTEGER NOT NULL CHECK (single_success_can_complete IN (0, 1)),
+        recommended_recheck_days_json TEXT NOT NULL,
+        regression_trigger TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS curriculum_misconceptions (
+        misconception_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        observable_sign TEXT NOT NULL,
+        possible_causes_json TEXT NOT NULL,
+        random_vs_systematic TEXT NOT NULL,
+        first_question TEXT NOT NULL,
+        first_hint TEXT NOT NULL,
+        second_hint TEXT NOT NULL,
+        prerequisite_to_check TEXT,
+        retry_task_rule TEXT NOT NULL,
+        forbidden_inference TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS error_classification_entries (
+        id TEXT PRIMARY KEY,
+        entry_type TEXT NOT NULL CHECK (entry_type IN ('error_kind', 'classification_level', 'misconception_id', 'global_constraint')),
+        entry_key TEXT NOT NULL,
+        entry_json TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (entry_type, entry_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS lesson_type_plans (
+        phase TEXT PRIMARY KEY,
+        goal TEXT NOT NULL,
+        recommended_lesson_mix_json TEXT NOT NULL,
+        transition_criteria_json TEXT NOT NULL,
+        minimum_evidence TEXT NOT NULL,
+        reflection_frequency TEXT NOT NULL,
+        review_frequency TEXT NOT NULL,
+        mock_exam_place TEXT NOT NULL,
+        prerequisite_return_rule TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS task_bank_tasks (
+        task_id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        difficulty TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        expected_answer TEXT NOT NULL,
+        solution_steps_json TEXT NOT NULL,
+        common_errors_json TEXT NOT NULL,
+        hint_ladder_json TEXT NOT NULL,
+        verifier_kind TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        verification_json TEXT NOT NULL,
+        task_bank_file TEXT NOT NULL,
+        source_pack_version TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_task_bank_tasks_skill
+        ON task_bank_tasks(skill_id, task_type_id, difficulty);
+
+      CREATE INDEX IF NOT EXISTS idx_task_bank_tasks_topic
+        ON task_bank_tasks(topic_id, task_type_id);
+    `);
   }
 
   private applyMigration(

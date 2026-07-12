@@ -81,6 +81,13 @@ export class AiModelService implements AiModelProvider {
     return this.provider.attachFileToVectorStore(vectorStoreId, fileId);
   }
 
+  removeFileFromVectorStore(
+    vectorStoreId: string,
+    fileId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.provider.removeFileFromVectorStore(vectorStoreId, fileId);
+  }
+
   listVectorStoreFiles(vectorStoreId: string): Promise<Record<string, unknown>> {
     return this.provider.listVectorStoreFiles(vectorStoreId);
   }

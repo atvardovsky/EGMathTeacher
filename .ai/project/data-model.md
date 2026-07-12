@@ -34,7 +34,10 @@ effectiveness signals, and the AI usage ledger, migration
 `006_lesson_decision_agent` after adding decision observability, and migration
 `007_verified_learning_loop` after adding request idempotency, local
 curriculum seeds, backend lesson tasks, student attempts, mastery evidence,
-and usage/decision correlation ids.
+and usage/decision correlation ids, and migration
+`008_knowledge_pack_ingestion` after adding knowledge-pack import ledgers,
+structured curriculum/task-bank tables, project AI resource ids, and
+source-path/content-hash RAG sync metadata.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -63,10 +66,82 @@ Source owner: `apps/api/src/auth` and `apps/api/src/database/database.service.ts
 | `openai_file_id` | `TEXT` | required |
 | `vector_store_id` | `TEXT` | required |
 | `status` | `TEXT` | required |
+| `source_kind` | `TEXT` | required; `manual_upload` or a sync source such as `knowledge_pack_student_rag` |
+| `source_path` | `TEXT` | optional source-relative path for imported/synced files |
+| `source_pack_version` | `TEXT` | optional knowledge-pack version |
+| `content_hash` | `TEXT` | optional SHA-256 content hash for idempotent sync |
+| `sync_status` | `TEXT` | required; `active`, `superseded`, `failed`, or `cleanup_failed` |
+| `superseded_at` | `TEXT` | optional ISO timestamp when replaced by a newer synced file |
+| `error_message` | `TEXT` | optional cleanup/sync error |
 | `created_at` | `TEXT` | required ISO timestamp |
 | `updated_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/knowledge`.
+
+Manual admin uploads use `source_kind=manual_upload`. Knowledge-pack RAG sync
+uses `source_kind=knowledge_pack_student_rag`, stores the source path and hash,
+skips unchanged files, and marks older synced rows `superseded` after the
+remote vector-store attachment has been detached. If remote cleanup fails, the
+row is kept visible as `cleanup_failed`.
+
+### `project_ai_resources`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `resource_key` | `TEXT` | primary key, for example `student_rag_vector_store` |
+| `provider` | `TEXT` | required provider id |
+| `resource_type` | `TEXT` | required external resource type |
+| `resource_id` | `TEXT` | required external id |
+| `metadata_json` | `TEXT` | required local metadata |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge`.
+
+This table stores local project-level external AI resource ids. The current
+use is the active OpenAI student RAG vector store when
+`OPENAI_VECTOR_STORE_IDS` is not configured.
+
+### `knowledge_source_files`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `source_pack_version` | `TEXT` | required knowledge-pack version |
+| `relative_path` | `TEXT` | required path inside the pack |
+| `target_kind` | `TEXT` | required; `db_structured`, `student_rag`, or `metadata` |
+| `content_hash` | `TEXT` | required SHA-256 hash |
+| `size_bytes` | `INTEGER` | required source file size |
+| `status` | `TEXT` | required; `pending`, `imported`, `synced`, `skipped`, or `failed` |
+| `knowledge_file_id` | `TEXT` | optional reference to `knowledge_files(id)` |
+| `metadata_json` | `TEXT` | required import/sync metadata |
+| `error_message` | `TEXT` | optional import/sync error |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+This is the local idempotency ledger for knowledge-pack source files.
+
+### `knowledge_pack_imports`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `pack_version` | `TEXT` | required knowledge-pack version |
+| `root_path` | `TEXT` | required local root processed by the CLI |
+| `import_kind` | `TEXT` | required; `structured`, `rag`, or `structured_and_rag` |
+| `status` | `TEXT` | required; `completed` or `failed` |
+| `structured_file_count` | `INTEGER` | required count |
+| `rag_file_count` | `INTEGER` | required count |
+| `imported_row_count` | `INTEGER` | required count |
+| `uploaded_file_count` | `INTEGER` | required count |
+| `skipped_file_count` | `INTEGER` | required count |
+| `error_message` | `TEXT` | optional failure reason |
+| `started_at` | `TEXT` | required ISO timestamp |
+| `completed_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 ### `student_profiles`
 
@@ -374,13 +449,140 @@ teaching flow quality and cost-per-outcome analysis, not grades.
 | `task_type_title` | `TEXT` | required human-readable task type title |
 | `verifier_kind` | `TEXT` | required verifier kind, currently `linear_equation_numeric` or `unsupported` |
 | `created_at` | `TEXT` | required timestamp |
+| `description` | `TEXT` | optional imported skill description |
+| `prerequisites_json` | `TEXT` | optional imported prerequisite skill ids |
+| `task_type_ids_json` | `TEXT` | optional imported task-type ids |
+| `typical_misconceptions_json` | `TEXT` | optional imported misconception ids |
+| `explanation_methods_json` | `TEXT` | optional imported teaching methods |
+| `minimum_mastery_criterion` | `TEXT` | optional imported mastery criterion |
+| `verification_methods_json` | `TEXT` | optional imported verification methods |
+| `recommended_lesson_type` | `TEXT` | optional imported lesson-type hint |
+| `deterministic_verification` | `TEXT` | optional imported verifier availability |
+| `difficulty` | `TEXT` | optional imported difficulty band |
+| `estimated_learning_minutes` | `INTEGER` | optional imported estimate |
+| `source_pack_version` | `TEXT` | optional knowledge-pack version |
+| `source_path` | `TEXT` | optional source-relative path |
+| `content_hash` | `TEXT` | optional source file SHA-256 |
+| `updated_at` | `TEXT` | optional update timestamp |
 
 Source owner: `apps/api/src/lesson/curriculum.service.ts` and
 `apps/api/src/database/database.service.ts`.
 
 The current POC seeds a minimal curriculum registry. Only
 `algebra.linear.solve_one_variable` has a deterministic verifier. Other seeded
-skills are routing context and remain unsupported for verified mastery.
+skills are routing context and remain unsupported for verified mastery. The
+knowledge-pack importer can upsert the broader curriculum skill registry into
+this table while preserving the runtime rule that only implemented verifier
+contracts can produce verified mastery.
+
+### `curriculum_topics`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `topic_id` | `TEXT` | primary key |
+| `title` | `TEXT` | required |
+| `exam_track` | `TEXT` | required |
+| `prerequisite_topic_ids_json` | `TEXT` | required serialized topic ids |
+| `skill_ids_json` | `TEXT` | required serialized skill ids |
+| `theory_document_id` | `TEXT` | optional RAG theory document id |
+| `status` | `TEXT` | required source status |
+| `source_pack_version` | `TEXT` | required knowledge-pack version |
+| `source_path` | `TEXT` | required source-relative path |
+| `content_hash` | `TEXT` | required source file SHA-256 |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `curriculum_task_types`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `task_type_id` | `TEXT` | primary key |
+| `title` | `TEXT` | required |
+| `exam_track` | `TEXT` | required |
+| `response_kind` | `TEXT` | required |
+| `runtime_verifier_kind` | `TEXT` | required runtime verifier support marker |
+| `planned_verifier_kind` | `TEXT` | required planned verifier kind |
+| `year_binding` | `TEXT` | optional annual source binding |
+| `source_pack_version` | `TEXT` | required knowledge-pack version |
+| `source_path` | `TEXT` | required source-relative path |
+| `content_hash` | `TEXT` | required source file SHA-256 |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `curriculum_prerequisite_edges`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `edge_type` | `TEXT` | required; `topic` or `skill` |
+| `from_id` | `TEXT` | required prerequisite topic/skill id |
+| `to_id` | `TEXT` | required dependent topic/skill id |
+| `relation` | `TEXT` | required relation label |
+| `source_pack_version` | `TEXT` | required knowledge-pack version |
+| `source_path` | `TEXT` | required source-relative path |
+| `content_hash` | `TEXT` | required source file SHA-256 |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `curriculum_mastery_criteria`
+
+Stores imported mastery criteria per skill, including required evidence
+sequence, self-report/single-success completion flags, recheck cadence, and
+regression trigger. Source owner:
+`apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `curriculum_misconceptions`
+
+Stores imported misconception playbook rows with observable signs, possible
+causes, first diagnostic question, first/second hints, prerequisite check,
+retry-task rule, and forbidden inference. Source owner:
+`apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `error_classification_entries`
+
+Stores imported error-classification material as typed entries:
+`error_kind`, `classification_level`, `misconception_id`, or
+`global_constraint`. Source owner:
+`apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `lesson_type_plans`
+
+Stores imported lesson-plan phase definitions, goal, lesson mix,
+transition criteria, evidence requirement, reflection/review frequency,
+mock-exam placement, and prerequisite-return rule. Source owner:
+`apps/api/src/knowledge/knowledge-pack.service.ts`.
+
+### `task_bank_tasks`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `task_id` | `TEXT` | primary key |
+| `topic_id` | `TEXT` | required canonical topic id |
+| `skill_id` | `TEXT` | required canonical skill id |
+| `task_type_id` | `TEXT` | required canonical task type id |
+| `difficulty` | `TEXT` | required difficulty label |
+| `prompt` | `TEXT` | required student-visible prompt |
+| `expected_answer` | `TEXT` | required backend answer; not shown before attempt |
+| `solution_steps_json` | `TEXT` | required serialized solution steps |
+| `common_errors_json` | `TEXT` | required serialized error ids |
+| `hint_ladder_json` | `TEXT` | required serialized hint ladder |
+| `verifier_kind` | `TEXT` | required verifier kind |
+| `source_type` | `TEXT` | required pack source type |
+| `verification_json` | `TEXT` | required source verification metadata |
+| `task_bank_file` | `TEXT` | required source JSONL filename |
+| `source_pack_version` | `TEXT` | required knowledge-pack version |
+| `source_path` | `TEXT` | required source-relative path |
+| `content_hash` | `TEXT` | required source file SHA-256 |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 ### `lesson_tasks`
 
@@ -559,7 +761,10 @@ OpenAI. The API creates or references:
 - OpenAI Realtime sessions and client secrets
 
 Remote provider state is not fully represented locally. Local
-`knowledge_files` stores metadata only.
+`knowledge_files`, `knowledge_source_files`, `knowledge_pack_imports`, and
+`project_ai_resources` store sync metadata, source hashes, and active resource
+ids; OpenAI remains the owner of uploaded file bytes, vector indexes, and
+remote processing state.
 
 ## Frontend Types
 

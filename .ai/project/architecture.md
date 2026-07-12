@@ -13,6 +13,9 @@ EGMathTeacher is a browser-based POC with:
 - OpenAI-first model provider facade for tutor answers, specialist profile
   generation, delayed background assistant work, RAG files/vector stores, and
   image generation
+- Local knowledge-pack ingestion and RAG sync tooling that imports structured
+  JSON/JSONL into SQLite and optionally syncs selected Markdown files to
+  OpenAI vector stores by content hash
 - Role/operation model policy inside the model facade so tutor, onboarding,
   lesson-decision, background, quality-review, and image assistant roles can
   use different models and service-tier settings
@@ -80,7 +83,7 @@ flowchart LR
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
-| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload and vector store status. |
+| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, idempotent Markdown RAG sync, vector store status, and local project vector-store id persistence. |
 | `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
@@ -168,6 +171,12 @@ configuration.
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
 | `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. |
+
+Local operator command:
+
+| Command | Responsibility |
+| --- | --- |
+| `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]` | Import structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. |
 
 ## Deployment Shape
 

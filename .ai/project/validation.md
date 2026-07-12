@@ -20,6 +20,7 @@ Run from repository root unless noted.
 | Check Alatyr diagram drift | `npm run diagrams:check` | `package.json`, `scripts/check-diagrams.sh`, `.ai/project/diagrams/rendered/source-hashes.sha256` |
 | Smoke-check running dev stack | `npm run smoke:dev` | `package.json`, `scripts/smoke-dev.sh` |
 | Check Alatyr adapter consistency | `npm run alatyr:check` | `package.json`, `scripts/check-alatyr.sh` |
+| Knowledge-pack import/RAG sync CLI | `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]` | `package.json`, `apps/api/src/knowledge/knowledge-pack.cli.ts` |
 | API test watch | `npm run test:watch --workspace @egmathteacher/api` | `apps/api/package.json` |
 | Web preview | `npm run preview --workspace @egmathteacher/web` | `apps/web/package.json` |
 
@@ -47,6 +48,9 @@ Current covered areas:
   policy and only completes when policy accepts the completion proposal
 - deterministic linear-equation verifier, student attempts, mastery evidence,
   and cost-per-verified-outcome summary behavior
+- knowledge-pack structured import idempotency and mocked RAG sync behavior,
+  including dry-run safety, unchanged-file skips, changed-file replacement,
+  and superseded vector-store attachment cleanup
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths
@@ -106,6 +110,9 @@ citation display, and explicit image rendering.
 - OpenAI integration changes: use mocked/unit validation by default; only call
   live OpenAI when the user explicitly requests or approves live validation
   with credentials and spend risk understood.
+- Knowledge-pack RAG sync changes: validate with mocked unit tests by default.
+  `--dry-run` may be used for local planning; do not run non-dry-run
+  `--sync-rag` without explicit live OpenAI credential/spend approval.
 
 ## Final Evidence Format
 

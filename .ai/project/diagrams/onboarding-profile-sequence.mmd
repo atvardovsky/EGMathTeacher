@@ -23,7 +23,7 @@ sequenceDiagram
   Web->>API: PUT /student-profile/me
   API->>Profile: completeOnboarding(user, answers)
   Profile->>Knowledge: getActiveVectorStoreIds()
-  Knowledge->>DB: Read knowledge_files when env ids absent
+  Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
   Knowledge-->>Profile: Vector store ids
   Profile->>AIModel: Math knowledge diagnostician with optional file_search
   AIModel->>Policy: Resolve onboardingKnowledgeDiagnosis policy
