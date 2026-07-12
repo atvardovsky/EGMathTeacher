@@ -75,6 +75,6 @@ Approved validation or manual review:
 Used by operation/change: `lesson lifecycle, goal stop, strategy signal, and usage transparency implementation`
 Patch changed after approval: `yes; implementation details were adjusted during local build/test feedback`
 Implementation stayed within approved scope: `yes`
-Validation run: `pending at approval-record creation`
-Result/evidence: `to be reported in final response`
-Residual risk: `usage costs remain local estimates unless current provider pricing is configured; production privacy/billing reconciliation remains a gap`
+Validation run: `npm run build`; `npm test`; `npm run lint`; `npm run e2e`; `npm run diagrams:render`; `npm run diagrams:check`; `npm run alatyr:check`; `git diff --check`
+Result/evidence: `all listed local validation passed for commit 2e00871; build completed with the existing Vite large-chunk warning`
+Residual risk: `usage costs remain local estimates unless current provider pricing is configured; production privacy/billing reconciliation remains a gap; follow-up review found lesson-mode, scoped-progress, model-completion, and timing heuristic repairs tracked by ALATYR-20260712-lesson-contract-repair`

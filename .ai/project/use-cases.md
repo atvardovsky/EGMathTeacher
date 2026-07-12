@@ -59,6 +59,10 @@ Rules from current implementation:
   diagnostic, and mistake review.
 - Lesson type controls the goal of the response, expected block mix, and which
   background learning signals should be emphasized.
+- Switching the lesson mode in the web UI starts a new conversation/session
+  boundary. If an older client reuses a conversation id with a different
+  lesson type, the API finishes the previous active lesson session and creates
+  a new one for the requested lesson type.
 - Each tutor turn belongs to a lesson session with a lesson goal, success
   criteria, current goal status, active-learning seconds, and daily/continuous
   learning-limit state.
@@ -69,12 +73,16 @@ Rules from current implementation:
   and avoid starting a long new topic.
 - Hard daily or continuous limits return a local stop response without calling
   the model for a new explanation.
-- The tutor can report `goalStatus=reached`; when that happens the lesson
-  session is completed and the answer should summarize and avoid opening a new
-  major topic.
-- Recent progress/regression signals inform the explanation strategy. Progress
-  can increase independence; regression should reduce step size, change the
-  example, add visual support, or check prerequisite understanding.
+- The tutor can suggest `goalStatus=reached`, but the backend treats that as a
+  pending suggestion unless the current lesson already has backend-visible
+  student evidence such as a later confirmation, attempt, or answer. Accepted
+  completion sets `goalStatusEvidence=backend_observed`; unaccepted model-only
+  completion keeps the lesson in progress with
+  `goalStatusEvidence=model_suggested_pending`.
+- Scoped progress/regression signals inform the explanation strategy. The
+  lesson strategy signal is selected from rows relevant to the current
+  conversation, lesson type, or inferred topic hint, so an unrelated topic
+  should not force the current lesson into regression mode.
 - Tutor responses are expected to include an ordered `blocks` array for text,
   task, example, and image blocks, plus legacy `answer`, `tasks`, `examples`,
   `needsImage`, and `imagePrompt` fields for compatibility.

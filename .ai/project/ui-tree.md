@@ -86,7 +86,8 @@ App
 - The tutor workspace is the default authenticated view.
 - The tutor workspace exposes the main POC lesson modes: tutor, practice,
   diagnostic, and mistake review. Older API clients may omit lesson type and
-  let the API infer it.
+  let the API infer it. Changing the visible lesson mode clears the current
+  conversation id so the next prompt starts a fresh lesson session.
 - Admin users can switch to the materials view.
 - Authenticated users can switch to Settings.
 - Student users without a stored profile must complete the first meeting before

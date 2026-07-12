@@ -20,6 +20,6 @@ export default registerAs('app', () => ({
     process.env.LESSON_CONTINUOUS_HARD_LIMIT_MINUTES ?? '60',
     10,
   ),
-  lessonMinTurnSeconds: parseInt(process.env.LESSON_MIN_TURN_SECONDS ?? '120', 10),
+  lessonMinTurnSeconds: parseInt(process.env.LESSON_MIN_TURN_SECONDS ?? '30', 10),
   lessonMaxTurnGapSeconds: parseInt(process.env.LESSON_MAX_TURN_GAP_SECONDS ?? '900', 10),
 }));

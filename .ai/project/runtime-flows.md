@@ -82,8 +82,12 @@ This file records runtime flows from current source evidence.
    If lesson type is omitted, it infers a conservative default from the
    prompt.
 4. `LessonService` creates or touches the active `lesson_sessions` row for the
-   conversation. It updates turn count, active-learning heuristic seconds,
-   daily and continuous learning-limit state, goal status, and the current
+   conversation and lesson type. If an older client reuses a conversation id
+   with a different lesson type, the previous active session is finished and a
+   new session is created. The first turn adds no active-learning seconds; later
+   quick turns use the configured minimum-turn heuristic. The service updates
+   turn count, active-learning heuristic seconds, daily and continuous
+   learning-limit state, goal status, and the current scoped
    progress/regression strategy signal.
 5. If a hard daily or continuous learning limit is reached, `TutorService`
    returns a local stop response, persists the tutor turn, and does not call
@@ -114,10 +118,12 @@ This file records runtime flows from current source evidence.
    task, example, and image blocks. Legacy `answer`, `tasks`, `examples`,
    `needsImage`, and `imagePrompt` fields remain populated for compatibility.
    The preferred contract also includes `lessonLifecycle.goalStatus` so the
-   model can mark the lesson goal reached or blocked.
+   model can suggest that the lesson goal is reached or blocked.
 13. API extracts citations from file-search annotations/results.
 14. `LessonService` completes the turn, stores a lesson effectiveness signal,
-    and marks the lesson goal reached when the answer reports it.
+    and accepts goal completion only when backend-visible student evidence
+    supports the model suggestion. Otherwise `goalStatus=reached` remains a
+    pending model suggestion and the lesson stays in progress.
 15. API writes the tutor turn and lesson type to `tutor_turns`.
 16. API enqueues background AI work. In batched mode, it stores a sanitized
     tutor-turn observation with lesson type and schedules or reschedules a grouped

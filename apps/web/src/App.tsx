@@ -829,9 +829,13 @@ function TutorWorkspace({
     [],
   );
 
-  const latestLifecycle = useMemo(
-    () => turns.find((turn) => turn.answer?.lessonLifecycle)?.answer?.lessonLifecycle,
-    [turns],
+  const activeLifecycle = useMemo(
+    () =>
+      conversationId
+        ? turns.find((turn) => turn.answer?.lessonLifecycle?.conversationId === conversationId)
+            ?.answer?.lessonLifecycle
+        : undefined,
+    [conversationId, turns],
   );
 
   useEffect(() => {
@@ -845,6 +849,19 @@ function TutorWorkspace({
     } catch {
       // Usage visibility must not block tutoring when the POC API is unavailable.
     }
+  }
+
+  function changeLessonType(value: string) {
+    const nextLessonType = toLessonType(value);
+    setLessonType((currentLessonType) => {
+      if (nextLessonType !== currentLessonType) {
+        setConversationId(undefined);
+        setUsageSummary((currentSummary) =>
+          currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
+        );
+      }
+      return nextLessonType;
+    });
   }
 
   async function sendMessage(rawPrompt = draft, source: 'text' | 'voice' = 'text') {
@@ -1012,7 +1029,7 @@ function TutorWorkspace({
           <SegmentedControl
             fullWidth
             value={lessonType}
-            onChange={(value) => setLessonType(toLessonType(value))}
+            onChange={changeLessonType}
             data={[
               { value: 'tutor', label: t.tutor.lessonModeOptions.tutor },
               { value: 'practice', label: t.tutor.lessonModeOptions.practice },
@@ -1049,7 +1066,7 @@ function TutorWorkspace({
           t={t}
           locale={locale}
           summary={usageSummary}
-          lifecycle={latestLifecycle}
+          lifecycle={activeLifecycle}
           expanded={usageExpanded}
           onToggle={() => setUsageExpanded((current) => !current)}
         />

@@ -164,6 +164,7 @@ export class TutorService {
       userId: options.user.id,
       conversationId,
       lessonType,
+      topicHint: this.inferTopicHint(message),
     });
     if (lifecycle.shouldStop) {
       const answer = this.buildLimitStopAnswer(conversationId, lessonType, lifecycle);
@@ -200,6 +201,7 @@ export class TutorService {
     answer.citations = this.extractCitations(response);
     answer.lessonLifecycle = this.lessonService.completeTurn({
       userId: options.user.id,
+      studentMessage: message,
       lifecycle: answer.lessonLifecycle,
       goalStatus: answer.lessonLifecycle.goalStatus,
       finishReason: answer.lessonLifecycle.finishReason,
@@ -310,7 +312,7 @@ export class TutorService {
       'Учитывай тип занятия из запроса. Тип занятия управляет целью ответа, набором блоков, уровнем диагностики и тем, какие учебные сигналы важно собрать.',
       'Учитывай состояние lessonLifecycle: цель, критерии успеха, лимиты времени, рекомендацию перерыва и сигнал прогресса/регресса.',
       'Если lessonLifecycle показывает soft_limit, мягко заверши текущий шаг и не начинай длинную новую тему.',
-      'Если цель занятия достигнута, выставь lessonLifecycle.goalStatus="reached", дай короткое резюме и не открывай новую большую тему.',
+      'Выставляй lessonLifecycle.goalStatus="reached" только как предложение завершения, когда ученик уже показал попытку, подтверждение понимания или проверяемый результат. Backend завершит урок только при наличии наблюдаемого evidence.',
       'Если прогресс сменился регрессом, поменяй стратегию: меньше шаг, другой пример, визуальная опора или короткая проверка базы.',
       'Планируй ответ как ordered blocks: text, example, task, image. Текст должен работать даже если картинка не будет создана.',
       'Если ученик просит задачу, верни 1-3 task blocks и продублируй их в поле tasks.',
@@ -856,6 +858,23 @@ export class TutorService {
     return 'tutor';
   }
 
+  private inferTopicHint(message: string): string | undefined {
+    const normalized = message.toLowerCase();
+    const topicHints: Array<[RegExp, string]> = [
+      [/производн|derivative/, 'производ'],
+      [/квадратн|дискриминант|парабол|quadratic|discriminant|parabola/, 'квадрат'],
+      [/логарифм|logarithm|log\b/, 'логарифм'],
+      [/тригонометр|синус|косинус|тангенс|trigonometry|sine|cosine/, 'тригонометр'],
+      [/геометр|треугольник|окружност|площад|объем|geometry|triangle|circle|area|volume/, 'геометр'],
+      [/вероятност|probability/, 'вероятност'],
+      [/параметр|parameter/, 'параметр'],
+      [/интеграл|integral/, 'интеграл'],
+      [/функци|график|function|graph/, 'функц'],
+      [/уравнен|неравенств|equation|inequality/, 'уравнен'],
+    ];
+    return topicHints.find(([pattern]) => pattern.test(normalized))?.[1];
+  }
+
   private isLessonType(value: string): value is LessonType {
     return Object.prototype.hasOwnProperty.call(LESSON_TYPE_CONFIGS, value);
   }
@@ -879,6 +898,7 @@ export class TutorService {
       `lessonSessionId: ${lifecycle.lessonSessionId}`,
       `Статус: ${lifecycle.status}`,
       `Статус цели: ${lifecycle.goalStatus}`,
+      `Evidence статуса цели: ${lifecycle.goalStatusEvidence}`,
       `Цель занятия: ${lifecycle.lessonGoal}`,
       `Критерии успеха: ${lifecycle.successCriteria.join('; ')}`,
       `Активное время занятия: ${Math.round(lifecycle.activeLearningSeconds / 60)} мин`,

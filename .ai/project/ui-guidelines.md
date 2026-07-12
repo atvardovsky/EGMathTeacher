@@ -72,7 +72,9 @@ landing page.
 - Use Mantine form components for inputs, selects, multi-selects, switches,
   segmented controls, file upload, alerts, badges, tables, and progress.
 - Use a segmented control for the main lesson type because it is a mode
-  choice, not a command.
+  choice, not a command. Changing the mode starts a fresh lesson/conversation
+  boundary so tutor, practice, diagnostic, and mistake-review state do not
+  drift into each other.
 - Use lucide icons for buttons and navigation when an icon exists.
 - Keep route-like UI in one predictable tree: auth, first meeting, tutor,
   knowledge materials.

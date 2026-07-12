@@ -19,9 +19,9 @@ sequenceDiagram
   API->>Auth: Validate session cookie
   Auth-->>API: Authenticated user
   API->>Tutor: answerMessage(user, message, source, lessonType)
-  Tutor->>Lesson: beginTurn(userId, conversationId, lessonType)
-  Lesson->>DB: Upsert lesson_sessions and compute limits
-  DB-->>Lesson: Recent progress/regression rows
+  Tutor->>Lesson: beginTurn(userId, conversationId, lessonType, topicHint)
+  Lesson->>DB: Upsert lesson_sessions scoped by conversation and lesson type, compute limits
+  DB-->>Lesson: Scoped progress/regression rows
   Lesson-->>Tutor: Lesson lifecycle and strategy signal
   alt Hard learning limit reached
     Tutor->>DB: Insert local stop tutor_turn
@@ -43,8 +43,8 @@ sequenceDiagram
   AIModel->>Usage: Record operation usage when usage context exists
   Usage->>DB: Insert ai_usage_ledger
   AIModel-->>Tutor: Provider response
-  Tutor->>Lesson: completeTurn(goalStatus, answer shape)
-  Lesson->>DB: Update lesson_sessions and insert lesson_effectiveness_signals
+  Tutor->>Lesson: completeTurn(model goal suggestion, student evidence, answer shape)
+  Lesson->>DB: Accept goal only with evidence, update lesson_sessions and insert lesson_effectiveness_signals
   Tutor->>DB: Insert tutor_turn with lesson_type
   Tutor->>Background: enqueueTutorTurnWork()
   alt Background batching enabled

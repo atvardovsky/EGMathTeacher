@@ -287,7 +287,12 @@ Source owner: `apps/api/src/lesson`, `apps/api/src/tutor`, and
 Lesson sessions are DB memory for the current student. They track lesson goal
 state, configurable daily/continuous learning-time heuristic status, and
 goal-based stopping. The time-limit fields are product heuristics for pacing
-and breaks, not clinical fatigue assessment.
+and breaks, not clinical fatigue assessment. Active sessions are scoped by
+conversation id and lesson type; a lesson-type switch finishes the previous
+active session and starts a new one. The DTO exposes `goalStatusEvidence` so
+callers can distinguish backend-observed completion, model-suggested pending
+completion, learning-limit stops, and ordinary in-progress state without
+adding a separate SQLite column in the POC.
 
 ### `lesson_effectiveness_signals`
 
@@ -308,8 +313,10 @@ Source owner: `apps/api/src/lesson` and
 `apps/api/src/database/database.service.ts`.
 
 Effectiveness signals are teaching-only records used to connect recent
-progress/regression with explanation strategy. They are not grades and must
-not store sensitive non-teaching details.
+scoped progress/regression with explanation strategy. Strategy selection uses
+rows relevant to the current conversation, lesson type, or inferred topic hint
+instead of all recent rows for the user. They are not grades and must not store
+sensitive non-teaching details.
 
 ### `ai_usage_ledger`
 

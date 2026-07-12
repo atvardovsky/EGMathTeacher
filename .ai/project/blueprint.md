@@ -37,14 +37,19 @@ visible next actions.
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
   exposes tutor, practice, diagnostic, and mistake-review modes and the API
-  infers a safe default for older clients.
+  infers a safe default for older clients. Switching the lesson mode in the
+  UI starts a new conversation boundary, and the API finishes any active
+  session if an older client sends a different lesson type for the same
+  conversation id.
 - Tutor turns are attached to a lesson session with a goal, success criteria,
   goal status, active-learning time, daily/continuous learning-limit status,
   and a progress/regression strategy signal. The POC uses configurable
   educational time-limit heuristics, not clinical fatigue diagnosis.
-- A lesson can stop when a hard learning limit is reached or when the tutor
-  reports the lesson goal as reached. Soft limits ask the tutor to wrap up the
-  current step instead of starting a long new topic.
+- A lesson can stop when a hard learning limit is reached or when backend-
+  visible student evidence supports a model suggestion that the lesson goal is
+  reached. A raw LLM `goalStatus=reached` is treated as a pending suggestion
+  until the backend sees student completion evidence. Soft limits ask the
+  tutor to wrap up the current step instead of starting a long new topic.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
@@ -79,8 +84,10 @@ visible next actions.
   `student_skill_progress`, and L5 strategy hints consumed by profile/strategy
   refresh jobs.
 - Lesson effectiveness signals store goal status, answer shape, and the
-  current strategy adjustment recommendation so recent progress/regression can
-  change how later explanations are framed.
+  current strategy adjustment recommendation so scoped progress/regression
+  rows for the current conversation, lesson type, or topic hint can change how
+  later explanations are framed without letting unrelated topics dominate the
+  current strategy.
 - Background assistant calls use the model-provider facade and can request
   lower-cost OpenAI Flex processing through operation-level service-tier
   policy when using the OpenAI provider.

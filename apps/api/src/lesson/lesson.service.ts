@@ -5,6 +5,7 @@ import { DatabaseService } from '../database/database.service';
 import type { LessonType } from '../tutor/tutor.types';
 import {
   LessonGoalStatus,
+  LessonGoalStatusEvidence,
   LessonLifecycleDto,
   LessonLimitState,
   LessonLimitStatus,
@@ -17,10 +18,12 @@ interface BeginTurnInput {
   userId: string;
   conversationId: string;
   lessonType: LessonType;
+  topicHint?: string;
 }
 
 interface CompleteTurnInput {
   userId: string;
+  studentMessage: string;
   lifecycle: LessonLifecycleDto;
   goalStatus: LessonGoalStatus;
   finishReason?: string;
@@ -87,7 +90,11 @@ export class LessonService {
     const now = new Date();
     const nowIso = now.toISOString();
     const session = this.getOrCreateSession(input, nowIso);
-    const incrementSeconds = this.estimateActiveSeconds(session.last_activity_at, now);
+    const incrementSeconds = this.estimateActiveSeconds(
+      session.last_activity_at,
+      session.turn_count,
+      now,
+    );
     const activeLearningSeconds = session.active_learning_seconds + incrementSeconds;
     const dayActiveLearningSeconds =
       this.getTodayActiveSeconds(input.userId, session.id) + activeLearningSeconds;
@@ -149,14 +156,23 @@ export class LessonService {
       updated_at: nowIso,
     };
 
-    return this.toLifecycle(updatedSession, dayActiveLearningSeconds, dailyLimit, continuousLimit);
+    return this.toLifecycle(
+      updatedSession,
+      dayActiveLearningSeconds,
+      dailyLimit,
+      continuousLimit,
+      input.topicHint,
+    );
   }
 
   completeTurn(input: CompleteTurnInput): LessonLifecycleDto {
     const nowIso = new Date().toISOString();
     const requestedGoalStatus = this.normalizeGoalStatus(input.goalStatus);
     const hardStop = input.lifecycle.shouldStop || requestedGoalStatus === 'stopped_by_limit';
-    const goalReached = requestedGoalStatus === 'reached';
+    const modelSuggestedGoalReached = requestedGoalStatus === 'reached';
+    const goalReached =
+      modelSuggestedGoalReached && !hardStop && this.canAcceptGoalReached(input);
+    const pendingGoalSuggestion = modelSuggestedGoalReached && !goalReached && !hardStop;
     const status: LessonSessionStatus = hardStop
       ? 'hard_limit_reached'
       : goalReached
@@ -168,14 +184,27 @@ export class LessonService {
       ? 'stopped_by_limit'
       : goalReached
         ? 'reached'
-        : requestedGoalStatus;
+        : requestedGoalStatus === 'blocked'
+          ? 'blocked'
+          : 'in_progress';
+    const goalStatusEvidence: LessonGoalStatusEvidence = hardStop
+      ? 'learning_limit'
+      : goalReached
+        ? 'backend_observed'
+        : pendingGoalSuggestion
+          ? 'model_suggested_pending'
+          : input.lifecycle.goalStatusEvidence;
     const finishReason =
       input.finishReason ||
       (goalReached
         ? 'lesson_goal_reached'
         : hardStop
           ? input.lifecycle.finishReason ?? 'learning_limit_reached'
-          : undefined);
+          : pendingGoalSuggestion
+            ? 'model_suggested_goal_reached_pending_student_evidence'
+            : undefined);
+    const persistedFinishReason =
+      goalReached || hardStop ? finishReason : input.lifecycle.finishReason;
 
     this.db.run(
       `UPDATE lesson_sessions
@@ -185,7 +214,7 @@ export class LessonService {
       [
         status,
         goalStatus,
-        finishReason ?? null,
+        persistedFinishReason ?? null,
         goalReached || hardStop ? nowIso : null,
         nowIso,
         input.lifecycle.lessonSessionId,
@@ -199,6 +228,7 @@ export class LessonService {
       ...input.lifecycle,
       status,
       goalStatus,
+      goalStatusEvidence,
       finishReason,
       shouldStop: hardStop || goalReached,
       shouldSuggestBreak: input.lifecycle.shouldSuggestBreak || goalReached,
@@ -213,13 +243,30 @@ export class LessonService {
        FROM lesson_sessions
        WHERE user_id = ?
          AND conversation_id = ?
+         AND lesson_type = ?
+         AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [input.userId, input.conversationId, input.lessonType, ...TERMINAL_STATUSES],
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const differentActiveSession = this.db.get<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND conversation_id = ?
          AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})
        ORDER BY created_at DESC
        LIMIT 1`,
       [input.userId, input.conversationId, ...TERMINAL_STATUSES],
     );
-    if (existing) {
-      return existing;
+    if (differentActiveSession && differentActiveSession.lesson_type !== input.lessonType) {
+      this.finishSessionForLessonTypeChange(differentActiveSession, input.lessonType, nowIso);
     }
 
     const defaults = LESSON_GOALS[input.lessonType];
@@ -260,14 +307,21 @@ export class LessonService {
     dayActiveLearningSeconds: number,
     dailyLimit: LessonLimitState,
     continuousLimit: LessonLimitState,
+    topicHint?: string,
   ): LessonLifecycleDto {
-    const strategySignal = this.getStrategySignal(session.user_id);
+    const strategySignal = this.getStrategySignal(
+      session.user_id,
+      session.conversation_id,
+      session.lesson_type,
+      topicHint,
+    );
     return {
       lessonSessionId: session.id,
       conversationId: session.conversation_id,
       lessonType: session.lesson_type,
       status: session.status,
       goalStatus: session.goal_status,
+      goalStatusEvidence: this.getGoalStatusEvidence(session),
       lessonGoal: session.goal_text,
       successCriteria: this.parseStringArray(session.success_criteria_json),
       finishReason: session.finish_reason ?? undefined,
@@ -302,7 +356,14 @@ export class LessonService {
     return this.normalizeSeconds(row?.total);
   }
 
-  private estimateActiveSeconds(previousActivityIso: string, now: Date): number {
+  private estimateActiveSeconds(
+    previousActivityIso: string,
+    turnCount: number,
+    now: Date,
+  ): number {
+    if (turnCount <= 0) {
+      return 0;
+    }
     const previous = new Date(previousActivityIso).getTime();
     if (!Number.isFinite(previous)) {
       return this.minTurnSeconds;
@@ -334,25 +395,19 @@ export class LessonService {
     };
   }
 
-  private getStrategySignal(userId: string): LessonStrategySignal {
-    const rows = this.db.all<{
-      topic: string;
-      skill: string;
-      direction: LessonStrategySignal['direction'];
-      support_needed: string;
-      independence: string;
-    }>(
-      `SELECT topic, skill, direction, support_needed, independence
-       FROM student_skill_progress
-       WHERE user_id = ?
-       ORDER BY created_at DESC
-       LIMIT 8`,
-      [userId],
-    );
+  private getStrategySignal(
+    userId: string,
+    conversationId: string,
+    lessonType: LessonType,
+    topicHint?: string,
+  ): LessonStrategySignal {
+    const rows = this.getScopedSkillProgressRows(userId, conversationId, lessonType, topicHint);
     if (rows.length === 0) {
       return {
         direction: 'unknown',
-        summary: 'Пока недостаточно накопленных сигналов по прогрессу.',
+        summary: topicHint
+          ? `Пока нет накопленных сигналов по текущей теме: ${topicHint}.`
+          : 'Пока нет накопленных сигналов по текущему занятию.',
         recommendedAdjustment: 'Объясняй короткими шагами и собирай сигналы понимания.',
       };
     }
@@ -371,7 +426,7 @@ export class LessonService {
     if (progressCount >= 2) {
       return {
         direction: 'progress',
-        summary: 'Есть несколько недавних сигналов прогресса.',
+        summary: 'Есть несколько релевантных сигналов прогресса по текущему занятию.',
         recommendedAdjustment:
           'Дай ученику больше самостоятельности, но оставь короткую проверку понимания.',
       };
@@ -379,10 +434,102 @@ export class LessonService {
 
     return {
       direction: 'stable',
-      summary: 'Последние сигналы стабильны или неоднозначны.',
+      summary: 'Релевантные сигналы стабильны или неоднозначны.',
       recommendedAdjustment:
         'Продолжай текущую стратегию и собирай больше evidence через мини-задачи.',
     };
+  }
+
+  private getScopedSkillProgressRows(
+    userId: string,
+    conversationId: string,
+    lessonType: LessonType,
+    topicHint?: string,
+  ): Array<{
+    topic: string;
+    skill: string;
+    direction: LessonStrategySignal['direction'];
+    support_needed: string;
+    independence: string;
+  }> {
+    const topicPattern = topicHint ? `%${topicHint}%` : undefined;
+    if (topicPattern) {
+      return this.db.all<{
+        topic: string;
+        skill: string;
+        direction: LessonStrategySignal['direction'];
+        support_needed: string;
+        independence: string;
+      }>(
+        `SELECT topic, skill, direction, support_needed, independence
+         FROM student_skill_progress
+         WHERE user_id = ?
+           AND lesson_type = ?
+           AND (
+             conversation_id = ?
+             OR topic LIKE ?
+             OR skill LIKE ?
+           )
+         ORDER BY
+           CASE WHEN conversation_id = ? THEN 0 ELSE 1 END,
+           created_at DESC
+         LIMIT 8`,
+        [userId, lessonType, conversationId, topicPattern, topicPattern, conversationId],
+      );
+    }
+
+    return this.db.all<{
+      topic: string;
+      skill: string;
+      direction: LessonStrategySignal['direction'];
+      support_needed: string;
+      independence: string;
+    }>(
+      `SELECT topic, skill, direction, support_needed, independence
+       FROM student_skill_progress
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND lesson_type = ?
+       ORDER BY created_at DESC
+       LIMIT 8`,
+      [userId, conversationId, lessonType],
+    );
+  }
+
+  private getGoalStatusEvidence(session: LessonSessionRecord): LessonGoalStatusEvidence {
+    if (session.goal_status === 'stopped_by_limit' || session.status === 'hard_limit_reached') {
+      return 'learning_limit';
+    }
+    if (session.goal_status === 'reached' || session.status === 'goal_reached') {
+      return 'backend_observed';
+    }
+    return 'none';
+  }
+
+  private canAcceptGoalReached(input: CompleteTurnInput): boolean {
+    if (input.lifecycle.turnCount < 2) {
+      return false;
+    }
+    return this.studentMessageShowsCompletionEvidence(input.studentMessage);
+  }
+
+  private studentMessageShowsCompletionEvidence(message: string): boolean {
+    return /понял|поняла|получилось|решил|решила|ответ|равно|=|верно|да,|спасибо|understood|solved|answer|correct/i.test(
+      message,
+    );
+  }
+
+  private finishSessionForLessonTypeChange(
+    session: LessonSessionRecord,
+    nextLessonType: LessonType,
+    nowIso: string,
+  ): void {
+    this.db.run(
+      `UPDATE lesson_sessions
+       SET status = 'finished', finish_reason = ?, finished_at = ?, updated_at = ?
+       WHERE id = ?`,
+      [`lesson_type_changed_to_${nextLessonType}`, nowIso, nowIso, session.id],
+    );
   }
 
   private recordEffectivenessSignal(
@@ -465,7 +612,7 @@ export class LessonService {
   }
 
   private get minTurnSeconds(): number {
-    return this.secondsConfig('app.lessonMinTurnSeconds', 120);
+    return this.secondsConfig('app.lessonMinTurnSeconds', 30);
   }
 
   private get maxTurnGapSeconds(): number {

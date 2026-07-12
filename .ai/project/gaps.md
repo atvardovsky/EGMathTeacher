@@ -51,6 +51,19 @@ decisions.
 - API tests assert current migration ledger entries and SQLite foreign-key
   integrity after schema initialization.
 
+### Lesson Lifecycle Contract Cleanup
+
+- Lesson mode switching now starts a fresh web conversation/session boundary.
+- The API also finishes an active lesson session when an older client reuses a
+  conversation id with a different lesson type.
+- First tutor turn no longer immediately adds active-learning seconds, and the
+  default minimum turn heuristic is 30 seconds instead of 120 seconds.
+- Model-suggested `goalStatus=reached` no longer completes a lesson by itself;
+  backend-visible student evidence is required for `backend_observed`
+  completion.
+- Lesson strategy signals now use scoped progress/regression rows relevant to
+  the current conversation, lesson type, or inferred topic hint.
+
 ## Remaining Gaps By Logical Set
 
 ### Student Privacy, Consent, And Data Rights
@@ -115,3 +128,12 @@ Requires RAG/product workflow decisions:
 - stale file cleanup
 - source-material quality gates
 - non-OpenAI provider contracts
+
+### Pedagogical Mastery Engine
+
+Remaining teaching-engine gaps:
+
+- deterministic mathematical checker for at least one vertical ЕГЭ task type
+- closed loop from task attempt to error classification, hint, retry, and
+  proven mastery update
+- full curriculum/prerequisite map for topic-aware progression

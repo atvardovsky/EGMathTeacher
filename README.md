@@ -65,7 +65,9 @@ Production domain:
 - Lesson type support for tutor sessions: the API supports meeting, tutor,
   concept, practice, diagnostic, exam strategy, mistake review, visual
   explanation, and reflection modes; the POC web UI exposes tutor, practice,
-  level check, and mistake review.
+  level check, and mistake review. Switching the visible lesson mode starts a
+  fresh conversation/session boundary, and the API also protects older clients
+  by finishing an active session when the lesson type changes.
 - Tutor answers return ordered response blocks for text, examples, tasks, and
   optional image plans while preserving legacy `answer`, `tasks`, `examples`,
   `needsImage`, and `imagePrompt` fields.
@@ -77,7 +79,8 @@ Production domain:
   by topic and skill are kept in SQLite for future explanation strategy.
 - Lesson lifecycle tracking records active lesson sessions, configurable daily
   and continuous learning-time limits, goal status, and effectiveness signals
-  so the tutor can stop when the lesson goal is reached or a hard limit is hit.
+  so the tutor can stop when a hard limit is hit or when backend-visible
+  student evidence supports a model suggestion that the lesson goal is reached.
 - User-visible lesson usage bar shows the signed-in user's own estimated
   daily and per-lesson AI expenses with operation/model/token/image details.
   Cost estimates come from local pricing configuration; they are not provider

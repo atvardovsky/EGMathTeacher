@@ -52,6 +52,12 @@ export type LessonGoalStatus =
   | 'blocked'
   | 'stopped_by_limit';
 
+export type LessonGoalStatusEvidence =
+  | 'none'
+  | 'model_suggested_pending'
+  | 'backend_observed'
+  | 'learning_limit';
+
 export type LessonLimitStatus = 'ok' | 'soft_limit' | 'hard_limit';
 
 export interface LessonLimitState {
@@ -74,6 +80,7 @@ export interface TutorLessonLifecycle {
   lessonType: LessonType;
   status: LessonSessionStatus;
   goalStatus: LessonGoalStatus;
+  goalStatusEvidence: LessonGoalStatusEvidence;
   lessonGoal: string;
   successCriteria: string[];
   finishReason?: string;
