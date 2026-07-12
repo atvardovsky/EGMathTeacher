@@ -32,6 +32,9 @@ Use after the initial Alatyr Core installation or a scoped adapter expansion.
 - Bridge capability matrix result
 - Root entry points checked
 - Supported bridge files checked
+- Adapter drift checks result
+- Local path leakage result
+- Target-local checker status or unresolved gap
 - AI infrastructure inventory result or skipped reason
 - Validation run or manual review
 - Validation skipped or unresolved
@@ -73,6 +76,9 @@ Core baseline.
 - Task-specific maturity result
 - Operation help and routing result
 - Bridge capability matrix result
+- Adapter drift checks result
+- Local path leakage result
+- Target-local checker status or unresolved gap
 - Validation run or manual review
 - Validation skipped or unresolved
 - Post-update message result
@@ -107,6 +113,9 @@ adapter.
 - Bridge capability matrix result
 - Operation help and routing result
 - Approval-record policy result
+- Adapter drift checks result
+- Local path leakage result
+- Target-local checker status or unresolved gap
 - AI infrastructure inventory result or skipped reason
 - Prompt-injection policy result
 - Validation run or manual review

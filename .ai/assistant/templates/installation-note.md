@@ -7,8 +7,8 @@ Framework source:
 - Git URL: `https://github.com/atvardovsky/AlatyrCore`
 - Alatyr source inspected: `https://github.com/atvardovsky/AlatyrCore`
 - Initial baseline commit: `17cf62e Route future sessions through installed adapter state`
-- Previous baseline commit: `f66f857 Add conformance and effectiveness evidence`
-- Current baseline commit: `6a6bef1 Add machine-readable context routing`
+- Previous baseline commit: `6a6bef1 Add machine-readable context routing`
+- Current baseline commit: `4654732 Add installed adapter validator`
 - Framework version: `0.1.0-alpha.0`
 - Adapter schema version: `1`
 - Template version: `1`
@@ -64,8 +64,11 @@ framework update overwrote existing `.ai/framework`, `.ai/assistant`,
 programmer approval. The 2026-07-12 framework update added context-router
 support and updated `.ai/framework`, `.ai/assistant`, `AGENTS.md`,
 `AI_ASSISTANTS.md`, and `scripts/check-alatyr.sh` after the programmer asked to
-update Alatyr. These updates did not change runtime code, runtime config,
-system web server config, live services, or accepted product behavior.
+update Alatyr. A later 2026-07-12 framework update refreshed the baseline to
+`4654732`, added installed-adapter drift-check evidence requirements, and kept
+target validation on `npm run alatyr:check`. These updates did not change
+runtime code, runtime config, system web server config, live services, or
+accepted product behavior.
 
 ## Current Gaps
 

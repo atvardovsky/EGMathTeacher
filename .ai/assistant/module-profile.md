@@ -7,7 +7,8 @@ blocked, or not applicable for EGMathTeacher.
 
 Core profile state: complete with documented gaps
 Last reviewed: 2026-07-12
-Reviewed by: Codex using Alatyr update approval from the programmer
+Reviewed by: Codex using Alatyr framework update approval to source commit
+`465473284966676d86bb6e55d1254b20e415bf5c`
 
 Core item: `contours`
 State: enabled

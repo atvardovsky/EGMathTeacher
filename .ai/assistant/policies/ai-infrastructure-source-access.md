@@ -57,6 +57,11 @@ canonical integration into EGMathTeacher adapter files.
 Remote source review must not expose secrets, cookies, private student data,
 local database contents, local certificates, or production configuration.
 
+When imported or adapted infrastructure creates, changes, or documents checker
+rules, record the target-local adapter checker status from target evidence.
+Do not claim that a checker exists or is missing unless repository evidence
+supports it.
+
 ## Current Inventory
 
 Current assistant infrastructure is indexed in

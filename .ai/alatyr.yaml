@@ -2,7 +2,7 @@ schema_version: 1
 framework:
   name: "Alatyr Core"
   version: "0.1.0-alpha.0"
-  source: "https://github.com/atvardovsky/AlatyrCore at 6a6bef16d6966264b0686534c813cdbda210194a"
+  source: "https://github.com/atvardovsky/AlatyrCore at 465473284966676d86bb6e55d1254b20e415bf5c"
   template_version: 1
   rule_registry: ".ai/framework/rule-registry.json"
 installation:

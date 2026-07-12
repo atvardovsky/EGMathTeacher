@@ -10,6 +10,8 @@ Also use this flow when the programmer uses a target alias such as
 
 ## Target Sources
 
+- Context router: `.ai/assistant/context-router.json`
+- Context profiles: `.ai/assistant/context-profiles.md`
 - Operation help: `.ai/assistant/help.md`
 - Full reference: `.ai/assistant/help-reference.md`
 - Installed operations guidance: `.ai/framework/installed-operations.md`
@@ -23,38 +25,43 @@ Also use this flow when the programmer uses a target alias such as
 
 ## Steps
 
-1. Load `AGENTS.md`, `AI_ASSISTANTS.md`, `.ai/alatyr.yaml`, `.ai/README.md`,
+1. Load bootstrap context only: `AGENTS.md`, `AI_ASSISTANTS.md`,
+   `.ai/alatyr.yaml`, `.ai/README.md`,
    `.ai/assistant/context-router.json`,
-   `.ai/assistant/context-profiles.md`, `.ai/project/contour.md`,
-   `.ai/project/source-of-truth-registry.md`,
+   `.ai/assistant/context-profiles.md`, `.ai/assistant/module-profile.md`,
+   `.ai/project/contour.md`, `.ai/project/source-of-truth-registry.md`,
    `.ai/assistant/contour.md`, and `.ai/assistant/help.md`.
-2. Restate the request in concrete language.
-3. Classify the request as framework-core, project, repository adapter,
+2. Select the smallest matching context profile from
+   `.ai/assistant/context-router.json`; use
+   `.ai/assistant/context-profiles.md` for the human rationale or when router
+   and Markdown evidence conflict.
+3. Load only the selected profile's required framework, project, assistant,
+   flow, gate, policy, and validation context before editing. Do not load all
+   `.ai/framework` or `.ai/project` files just to route an operation.
+4. Restate the request in concrete language.
+5. Classify the request as framework-core, project, repository adapter,
    bridge, generated-artifact, skill/prompt, or unclear work.
-4. Use `.ai/assistant/context-router.json` as the canonical routing source
-   for task profile selection. Use `.ai/assistant/context-profiles.md` only
-   for human-readable rationale, conflicts, or missing router entries.
-5. Normalize documented operation aliases from `.ai/assistant/help.md`.
-6. Record allowed actions when the request supplies them:
+6. Normalize documented operation aliases from `.ai/assistant/help.md`.
+7. Record allowed actions when the request supplies them:
    `read-only`, `docs-only`, `adapter-only`, `code-and-tests`, or
    `full-with-approval`.
-7. Match the request to one target operation and flow when the intent is clear.
-8. If two or more operations could apply, show the closest options with short
+8. Match the request to one target operation and flow when the intent is clear.
+9. If two or more operations could apply, show the closest options with short
    descriptions and ask for the smallest missing decision.
-9. If the request matches `alatyr-ai-inventory`, classify it as
+10. If the request matches `alatyr-ai-inventory`, classify it as
    `ai-infrastructure-inventory` and continue with
    `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`.
-10. If the request matches `alatyr-adaptation <source>` or
+11. If the request matches `alatyr-adaptation <source>` or
    `alatyr-add-ai <source>`, classify it as `skill-adaptation`, record
    `<source>` as untrusted input, and continue with
    `.ai/assistant/flows/skill-adaptation.flow.md` only after checking
    inventory, source access, provenance, approval, and safety rules.
-11. If the user asks for commands, explain that Alatyr uses assistant requests
+12. If the user asks for commands, explain that Alatyr uses assistant requests
     over Markdown adapter files; this project has validation commands but no
     universal `alatyr` executable.
-12. Do not edit files while the operation is still ambiguous or when the
+13. Do not edit files while the operation is still ambiguous or when the
     requested edit exceeds allowed actions.
-13. When the operation is selected, continue with the matching flow and apply
+14. When the operation is selected, continue with the matching flow and apply
     allowed-action, approval, validation, and final-evidence rules.
 
 ## Final Evidence

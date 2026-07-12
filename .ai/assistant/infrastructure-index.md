@@ -54,7 +54,7 @@ Supported bridge behavior is recorded in
 ## Alatyr Framework Files
 
 Portable framework rules copied from AlatyrCore baseline
-`6a6bef16d6966264b0686534c813cdbda210194a`.
+`465473284966676d86bb6e55d1254b20e415bf5c`.
 
 - `.ai/framework/README.md`
 - `.ai/framework/adapter-maturity.md`
@@ -199,6 +199,7 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260712-adapter-drift-checker-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260712-background-batching.md`
 - `.ai/assistant/approvals/ALATYR-20260712-framework-context-router-update.md`
+- `.ai/assistant/approvals/ALATYR-20260712-framework-update-4654732.md`
 - `.ai/assistant/approvals/ALATYR-20260712-lesson-agent-contracts.md`
 - `.ai/assistant/approvals/ALATYR-20260712-lesson-contract-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260712-lesson-lifecycle-usage.md`
@@ -265,6 +266,7 @@ Reports:
 - `.ai/assistant/reports/ALATYR-20260710-assistant-infrastructure-reindex.md`
 - `.ai/assistant/reports/ALATYR-20260711-framework-update.md`
 - `.ai/assistant/reports/ALATYR-20260712-framework-update-context-router.md`
+- `.ai/assistant/reports/ALATYR-20260712-framework-update-4654732.md`
 
 Action: keep adapter files aligned with current project commands, gates, and
 operation routing. Reports are historical evidence unless a newer report says

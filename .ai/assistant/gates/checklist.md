@@ -100,6 +100,13 @@ diagrams, prompts, skills, bridge files, or checker rules in the same change.
 If no semantic/logical fact changed, final evidence must explain why no
 companion update was needed.
 
+During installation, framework update, or adapter recheck, also verify adapter
+drift hazards: no hard-coded local machine paths, no stale checker existence
+claims, no duplicate context-profile references, context router references are
+present where bootstrap routing is described, unresolved owner placeholders
+remain known gaps, and any target-local adapter checker evidence matches the
+repository.
+
 ## Validation
 
 Use target commands only:
