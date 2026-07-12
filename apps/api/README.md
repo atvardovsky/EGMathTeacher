@@ -33,14 +33,14 @@ This repository houses a NestJS orchestration service that now handles both sign
 
 - **NestJS (.env)**
   - `AI_PROVIDER` – defaults to `openai-realtime`; other providers are stubbed.
-  - `AI_MODEL_PROVIDER` – defaults to `openai`; used by tutor, profile,
-    image, file, and vector-store operations. Non-OpenAI model providers are
-    stubs in this POC.
+  - `AI_MODEL_PROVIDER` – defaults to `openai`; used by lesson-decision,
+    tutor, profile, image, file, and vector-store operations. Non-OpenAI model
+    providers are stubs in this POC.
   - `AI_OPERATION_*_MODEL` – optional per-role/per-operation model overrides
-    for tutor answers, RAG tutor answers, onboarding specialists, background
-    assistants, quality review, and image generation. Empty values fall back
-    to `OPENAI_RESPONSES_MODEL`, `OPENAI_IMAGE_MODEL`, or the background model
-    defaults.
+    for lesson decisions, tutor answers, RAG tutor answers, onboarding
+    specialists, background assistants, quality review, and image generation.
+    Empty values fall back to `OPENAI_RESPONSES_MODEL`, `OPENAI_IMAGE_MODEL`,
+    or the background model defaults.
   - `AI_OPERATION_*_SERVICE_TIER` – optional per-operation service-tier
     overrides for Responses API operations. Empty tutor/onboarding values use
     the standard tier; empty background values fall back to
@@ -114,18 +114,19 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
 
 Tutor/product API surfaces also include:
 
-- `POST /tutor/message` for lesson-aware tutor answers with lifecycle and
-  usage snapshots.
+- `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
+  Agent policy, request idempotency, lifecycle, verifier evidence, and usage
+  snapshots.
 - `POST /tutor/image` for explicit explanatory image generation with optional
   lesson usage attribution.
 - `GET /usage/me/summary` for the signed-in user's own usage estimates and
-  per-operation details.
+  per-operation, decision, verifier, and verified-outcome details.
 
 ## Notes on OpenAI Realtime
 
 - Persona instructions and voice are injected during `/webrtc` session setup; the Node bridge collapses them into a single `instructions` string and `voice` parameter when creating the OpenAI session.
 - File Search ids are accepted but currently ignored because the REST surface does not yet allow attaching them to Realtime sessions.
-- Tutor/profile/image/file/vector-store operations go through the
+- Lesson-decision, tutor/profile/image/file/vector-store operations go through the
   OpenAI-first `AiModelService` facade. `AiOperationPolicyService` resolves
   the assistant role, operation name, model, metadata, prompt-cache eligibility,
   and optional service tier before the provider call. Only the realtime voice

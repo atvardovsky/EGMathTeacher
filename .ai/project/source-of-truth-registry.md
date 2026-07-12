@@ -29,13 +29,15 @@ approval, residual risk.
 ## Fact Type: `business rule`
 
 Fact type: `business rule`
-Canonical owner: `.ai/project/use-cases.md`, `.ai/project/blueprint.md`, and
-the implementing service/controller tests.
+Canonical owner: `.ai/project/use-cases.md`, `.ai/project/blueprint.md`,
+`.ai/project/lesson-agent-tools.md`, and the implementing service/controller
+tests.
 Derived surfaces:
 
 - `README.md`
 - `.ai/project/runtime-flows.md`
 - `.ai/project/data-model.md`
+- `.ai/project/lesson-agent-tools.md`
 - tutor/profile prompts in code
 - tests under `apps/api/test`
 
@@ -49,6 +51,41 @@ Approval trigger: any accepted business-policy change requires explicit
 approval.
 Final evidence: rule owner, implementation/test/doc updates, validation,
 approval.
+
+## Fact Type: `lesson agent tool contract`
+
+Fact type: `lesson agent tool contract`
+Canonical owner: `.ai/project/lesson-agent-tools.md` and
+`apps/api/src/lesson`.
+Derived surfaces:
+
+- `.ai/project/blueprint.md`
+- `.ai/project/use-cases.md`
+- `.ai/project/runtime-flows.md`
+- `.ai/project/data-model.md`
+- `.ai/project/architecture.md`
+- `.ai/project/diagrams/*.mmd`
+- `apps/api/src/ai-model`
+- `apps/api/src/tutor`
+- `apps/api/src/lesson/curriculum.service.ts`
+- `apps/api/src/lesson/math-verifier.service.ts`
+- tests under `apps/api/test`
+
+Sync direction: accepted tool names, allowed state changes, evidence levels,
+backend rejection behavior, verifier requirements, curriculum ids, and
+observability fields flow from
+`lesson-agent-tools.md` into lesson policy code, tutor prompts, model operation
+policy, persistence, tests, docs, and diagrams.
+Validation or manual review: `npm run build`, `npm test`, `npm run lint`,
+`npm run diagrams:render` when diagrams change, and manual source-doc review.
+Conflict resolver: backend policy code owns current enforcement;
+`lesson-agent-tools.md` owns accepted contract intent and must be updated when
+policy behavior changes.
+Approval trigger: architecture, accepted business behavior, data model,
+assistant prompt/tool, or validation rule changes require explicit programmer
+approval.
+Final evidence: tool contract changed, policy/code/tests/docs/diagrams synced,
+approval, validation, and residual risk.
 
 ## Fact Type: `UI behavior and design system`
 

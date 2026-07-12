@@ -874,6 +874,7 @@ function TutorWorkspace({
     setDraft('');
     setVoiceInterim('');
     const id = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
     const currentLessonType = lessonType;
     setTurns((current) => [{ id, prompt, source, lessonType: currentLessonType }, ...current]);
     try {
@@ -882,6 +883,7 @@ function TutorWorkspace({
         body: JSON.stringify({
           message: prompt,
           conversationId,
+          requestId,
           source,
           lessonType: currentLessonType,
         }),
@@ -1163,6 +1165,9 @@ function UsageBar({
   const today = summary?.today ?? emptyUsageTotals();
   const lesson = summary?.currentLesson?.total ?? emptyUsageTotals();
   const details = summary?.currentLesson?.items ?? [];
+  const decisions = summary?.currentLesson?.decisions ?? [];
+  const verifiedOutcomes = summary?.currentLesson?.verifiedOutcomes ?? 0;
+  const costPerVerifiedOutcome = summary?.currentLesson?.costPerVerifiedOutcomeUsd ?? null;
   const needsPricingNote =
     !today.pricingConfigured &&
     (today.totalTokens > 0 || today.imageCount > 0 || lesson.totalTokens > 0 || lesson.imageCount > 0);
@@ -1204,6 +1209,22 @@ function UsageBar({
               lifecycle
                 ? `${formatDuration(lifecycle.activeLearningSeconds)} / ${formatDuration(lifecycle.dayActiveLearningSeconds)}`
                 : t.tutor.usage.noData
+            }
+          />
+          <UsageMetric
+            label={t.tutor.usage.evidence}
+            value={lifecycle ? lifecycle.goalEvidenceLevel : t.tutor.usage.noData}
+          />
+          <UsageMetric
+            label={t.tutor.usage.verified}
+            value={verifiedOutcomes.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
+          />
+          <UsageMetric
+            label={t.tutor.usage.costPerOutcome}
+            value={
+              costPerVerifiedOutcome === null
+                ? t.tutor.usage.noData
+                : formatCurrency(costPerVerifiedOutcome)
             }
           />
         </SimpleGrid>
@@ -1268,6 +1289,69 @@ function UsageBar({
                   ))}
                 </Table.Tbody>
               </Table>
+            )}
+            {decisions.length > 0 && (
+              <>
+                <Divider my="sm" />
+                <Text size="sm" fw={900} mb="xs">
+                  {t.tutor.usage.decisions}
+                </Text>
+                <Table striped highlightOnHover withTableBorder={false}>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>{t.tutor.usage.tool}</Table.Th>
+                      <Table.Th>{t.tutor.usage.result}</Table.Th>
+                      <Table.Th>{t.tutor.usage.evidence}</Table.Th>
+                      <Table.Th>{t.tutor.usage.latency}</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {decisions.slice(0, 8).map((decision) => (
+                      <Table.Tr key={decision.id}>
+                        <Table.Td>
+                          <Text size="sm" fw={700} className="break-anywhere">
+                            {decision.toolName}
+                          </Text>
+                          {decision.lessonOutcome && (
+                            <Text size="xs" c="dimmed" className="break-anywhere">
+                              {decision.lessonOutcome}
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge color={decision.accepted ? 'teal' : 'red'} variant="light">
+                            {decision.accepted ? t.tutor.usage.accepted : t.tutor.usage.rejected}
+                          </Badge>
+                          {decision.rejectionReason && (
+                            <Text size="xs" c="dimmed" className="break-anywhere">
+                              {decision.rejectionReason}
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" className="break-anywhere">
+                            {decision.evidenceLevel}
+                          </Text>
+                          {decision.verifierResult && (
+                            <Text size="xs" c="dimmed">
+                              {decision.verifierResult}
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          {decision.latencyMs}
+                          {' ms'}
+                          {decision.fallbackUsed && (
+                            <Text size="xs" c="dimmed">
+                              {t.tutor.usage.fallback}
+                            </Text>
+                          )}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </>
             )}
           </Box>
         )}

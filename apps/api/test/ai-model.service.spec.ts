@@ -117,4 +117,41 @@ describe('AiModelService', () => {
       prompt: 'graph',
     });
   });
+
+  it('applies lesson decision agent operation policy', async () => {
+    const provider = {
+      id: 'openai',
+      createResponse: jest.fn(async () => ({ output_text: '{}' })),
+      generateImage: jest.fn(),
+      createVectorStore: jest.fn(),
+      uploadFile: jest.fn(),
+      attachFileToVectorStore: jest.fn(),
+      listVectorStoreFiles: jest.fn(),
+    };
+    const config = {
+      get: jest.fn((key: string) => {
+        const values: Record<string, unknown> = {
+          'ai.modelProvider': 'openai',
+          'ai.operationModels.lessonDecision': 'gpt-lesson-decision',
+        };
+        return values[key];
+      }),
+    };
+    const service = new AiModelService(
+      provider,
+      new AiOperationPolicyService(config as any),
+    );
+
+    await service.createOperationResponse('lessonDecision', { instructions: 'decide' });
+
+    expect(provider.createResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gpt-lesson-decision',
+        metadata: expect.objectContaining({
+          ai_role: 'lesson_decision_agent',
+          ai_operation: 'lesson.decide_next_action',
+        }),
+      }),
+    );
+  });
 });

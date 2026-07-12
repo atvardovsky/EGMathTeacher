@@ -1,5 +1,6 @@
 export type AiAssistantRole =
   | 'tutor'
+  | 'lesson_decision_agent'
   | 'image_explainer'
   | 'onboarding_diagnostician'
   | 'psychopedagogical_profiler'
@@ -10,6 +11,7 @@ export type AiAssistantRole =
   | 'quality_reviewer';
 
 export type AiOperationKey =
+  | 'lessonDecision'
   | 'tutorAnswer'
   | 'tutorAnswerWithRag'
   | 'tutorImage'
@@ -55,6 +57,7 @@ export interface AiUsageContext {
   conversationId?: string;
   lessonSessionId?: string;
   lessonType?: string;
+  correlationId?: string;
 }
 
 export interface AiOperationPayload extends Record<string, unknown> {

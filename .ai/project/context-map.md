@@ -26,14 +26,14 @@ This file maps project facts to their owning sources.
 | Architecture and module ownership | `.ai/project/architecture.md`, `apps/api/src/app.module.ts`, package files |
 | Runtime flows | `.ai/project/runtime-flows.md`, controllers/services under `apps/api/src`, `apps/web/src/App.tsx` |
 | API endpoints | Controllers under `apps/api/src`, `.ai/project/architecture.md` |
-| Data model | `apps/api/src/database/database.service.ts`, `.ai/project/data-model.md`, `apps/web/src/types.ts` |
+| Data model | `apps/api/src/database/database.service.ts`, `.ai/project/data-model.md`, `.ai/project/lesson-agent-tools.md`, `apps/web/src/types.ts` |
 | Auth and roles | `apps/api/src/auth`, `.ai/project/security-safety.md`, `.ai/project/use-cases.md` |
 | First-login profile and student memory | `apps/api/src/student-profile`, `apps/web/src/App.tsx`, `.ai/project/use-cases.md`, `.ai/project/data-model.md` |
 | Background AI job queue, stored observations, analysis windows, learning signals, session summaries, and skill progress/regression | `apps/api/src/background-ai`, `apps/api/src/database/database.service.ts`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
 | Tutor/RAG/image/lesson-type behavior | `apps/api/src/tutor`, `apps/api/src/knowledge`, `.ai/project/runtime-flows.md` |
-| Lesson lifecycle, goal stop, learning-time heuristics, and effectiveness signals | `apps/api/src/lesson`, `apps/api/src/tutor`, `apps/api/src/database/database.service.ts`, `.ai/project/use-cases.md`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
-| Model-provider facade and role/operation model policy for profile, tutor, background, image, and knowledge flows | `apps/api/src/ai-model`, `apps/api/src/openai`, `.ai/project/architecture.md`, `.ai/project/runtime-flows.md` |
-| AI usage ledger and signed-in user usage summaries | `apps/api/src/usage`, `apps/api/src/ai-model`, `apps/api/src/tutor`, `apps/web/src/App.tsx`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
+| Lesson lifecycle, decision tools, deterministic verifier V1, curriculum ids, goal stop, learning-time heuristics, mastery evidence, and effectiveness signals | `apps/api/src/lesson`, `apps/api/src/tutor`, `apps/api/src/database/database.service.ts`, `.ai/project/lesson-agent-tools.md`, `.ai/project/use-cases.md`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
+| Model-provider facade and role/operation model policy for profile, lesson-decision, tutor, background, image, and knowledge flows | `apps/api/src/ai-model`, `apps/api/src/openai`, `.ai/project/architecture.md`, `.ai/project/runtime-flows.md` |
+| AI usage ledger, decision observability, verified-outcome economics, and signed-in user usage summaries | `apps/api/src/usage`, `apps/api/src/ai-model`, `apps/api/src/lesson`, `apps/api/src/tutor`, `apps/web/src/App.tsx`, `.ai/project/runtime-flows.md`, `.ai/project/data-model.md` |
 | WebRTC behavior | `apps/api/docs/webrtc-module.md`, `apps/api/src/webrtc`, `apps/api/README.md` |
 | Frontend workflow/UI facts | `apps/web/src/App.tsx`, `apps/web/src/i18n.ts`, `apps/web/src/styles.css`, `.ai/project/ui-guidelines.md`, `.ai/project/ui-tree.md`, `.ai/project/use-cases.md` |
 | Validation commands | package files, `.ai/project/validation.md` |

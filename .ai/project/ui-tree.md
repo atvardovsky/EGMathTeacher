@@ -43,7 +43,8 @@ App
       │  │  ├─ Today estimate
       │  │  ├─ Current lesson estimate
       │  │  ├─ Goal status and active-learning time
-      │  │  └─ Expandable operation/model/token/image details
+      │  │  ├─ Verified outcome and cost-per-outcome estimates
+      │  │  └─ Expandable safe operation/model/token/image/decision details
       │  ├─ Textarea composer
       │  ├─ Voice action
       │  ├─ Send action
@@ -100,7 +101,8 @@ App
   `GET /student-profile/me`.
 - The tutor workspace displays the signed-in user's own usage bar. It is
   informational for all users, not admin-only. It must stay compact by default
-  and only show safe usage details when expanded.
+  and only show safe usage, verifier, and decision-policy details when
+  expanded.
 
 ## Non-Goals
 
@@ -108,4 +110,4 @@ App
 - No packaged desktop shell exists in the current repository.
 - No parent, teacher, school, class, payment, or progress-dashboard UI exists.
   The usage bar is cost transparency, not a subscription or billing dashboard.
-- No frontend automated E2E, accessibility, or visual regression suite exists.
+- Mocked frontend E2E exists. No accessibility or visual regression suite exists.

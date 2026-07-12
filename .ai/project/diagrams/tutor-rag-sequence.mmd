@@ -4,7 +4,11 @@ sequenceDiagram
   participant API as TutorController
   participant Auth as AuthGuard
   participant Tutor as TutorService
+  participant Curriculum as CurriculumService
   participant Lesson as LessonService
+  participant Verifier as MathVerifierService
+  participant Decision as LessonDecisionService
+  participant LessonPolicy as LessonPolicyService
   participant Profile as StudentProfileService
   participant Background as BackgroundAiService
   participant Knowledge as KnowledgeService
@@ -15,11 +19,19 @@ sequenceDiagram
   participant OpenAI as OpenAI-backed model provider
 
   Student->>Web: Type prompt or use speech recognition
-  Web->>API: POST /tutor/message with lessonType
+  Web->>API: POST /tutor/message with lessonType and requestId
   API->>Auth: Validate session cookie
   Auth-->>API: Authenticated user
-  API->>Tutor: answerMessage(user, message, source, lessonType)
-  Tutor->>Lesson: beginTurn(userId, conversationId, lessonType, topicHint)
+  API->>Tutor: answerMessage(user, message, source, lessonType, requestId)
+  Tutor->>DB: Check tutor_turns by requestId
+  alt Duplicate requestId
+    DB-->>Tutor: Stored TutorAnswer
+    Tutor-->>API: Cached answer and usage snapshot
+    API-->>Web: Cached response
+  else New request
+  Tutor->>Curriculum: resolve(message)
+  Curriculum-->>Tutor: topicId, skillId, taskTypeId, verifierKind
+  Tutor->>Lesson: beginTurn(userId, conversationId, lessonType, topicId)
   Lesson->>DB: Upsert lesson_sessions scoped by conversation and lesson type, compute limits
   DB-->>Lesson: Scoped progress/regression rows
   Lesson-->>Tutor: Lesson lifecycle and strategy signal
@@ -28,14 +40,31 @@ sequenceDiagram
     Tutor-->>API: TutorAnswer with stop lifecycle
     API-->>Web: Stop response and usage snapshot
   else Tutor may continue
+  Tutor->>Verifier: verifyPendingTaskAttempt(message, lessonSessionId)
+  Verifier->>DB: Read pending lesson_tasks and insert student_attempts/mastery_evidence when applicable
+  DB-->>Verifier: Verifier evidence
+  Verifier-->>Tutor: Backend verifier evidence
   Tutor->>Profile: getTutorContext(userId)
   Profile->>DB: Read student_profiles
   DB-->>Profile: Profile summary and strategy
   Profile-->>Tutor: Tutor profile context
+  Tutor->>Decision: decide(message, lifecycle, profile, curriculum, verifier evidence, allowed tools)
+  Decision->>AIModel: lessonDecision operation
+  AIModel->>Policy: Resolve lessonDecision policy
+  Policy-->>AIModel: Decision role, model, optional service tier
+  AIModel->>OpenAI: Responses API request
+  OpenAI-->>AIModel: LessonDecision JSON
+  AIModel->>Usage: Record decision usage
+  Usage->>DB: Insert ai_usage_ledger
+  AIModel-->>Decision: Decision response
+  Decision->>LessonPolicy: Validate proposed actions
+  LessonPolicy-->>Decision: Accepted/rejected action results
+  Decision->>DB: Insert lesson_decisions and route profile deltas to background observations
+  Decision-->>Tutor: Decision and backend policy result
   Tutor->>Knowledge: getActiveVectorStoreIds()
   Knowledge->>DB: Read knowledge_files when env ids absent
   Knowledge-->>Tutor: Vector store ids
-  Tutor->>AIModel: Create tutor operation response with lifecycle, profile context, lesson type, usage context, and optional file_search
+  Tutor->>AIModel: Create tutor operation response with lifecycle, curriculum, verifier evidence, decision policy, profile context, lesson type, usage context, and optional file_search
   AIModel->>Policy: Resolve tutorAnswer or tutorAnswerWithRag policy
   Policy-->>AIModel: Role, model, metadata, optional service tier
   AIModel->>OpenAI: Responses API request
@@ -43,9 +72,12 @@ sequenceDiagram
   AIModel->>Usage: Record operation usage when usage context exists
   Usage->>DB: Insert ai_usage_ledger
   AIModel-->>Tutor: Provider response
-  Tutor->>Lesson: completeTurn(model goal suggestion, student evidence, answer shape)
-  Lesson->>DB: Accept goal only with evidence, update lesson_sessions and insert lesson_effectiveness_signals
-  Tutor->>DB: Insert tutor_turn with lesson_type
+  Tutor->>Verifier: ensureBackendTask(answer, curriculum)
+  Verifier->>DB: Insert lesson_tasks for supported verified vertical
+  Verifier-->>Tutor: Pending backend task evidence
+  Tutor->>Lesson: completeTurn(model goal suggestion, decision policy, answer shape)
+  Lesson->>DB: Accept goal only through backend policy, update lesson_sessions and insert lesson_effectiveness_signals
+  Tutor->>DB: Insert tutor_turn with requestId and lesson_type
   Tutor->>Background: enqueueTutorTurnWork()
   alt Background batching enabled
     Background->>DB: Insert background_learning_observations with lesson_type
@@ -55,12 +87,13 @@ sequenceDiagram
   end
   Tutor->>Usage: Read lesson/day usage snapshot
   Usage->>DB: Summarize ai_usage_ledger
-  Tutor-->>API: TutorAnswer with lesson lifecycle, usage, and ordered blocks
-  API-->>Web: Lesson type, lifecycle, usage, text, task, example, image blocks, citations
+  Tutor-->>API: TutorAnswer with lesson lifecycle, usage, debug, and ordered blocks
+  API-->>Web: Lesson type, lifecycle, usage/debug, text, task, example, image blocks, citations
   Web->>API: GET /usage/me/summary
   API->>Usage: getUserSummary(userId, lessonSessionId)
-  Usage->>DB: Read ai_usage_ledger for signed-in user
-  API-->>Web: Usage summary for usage bar
+  Usage->>DB: Read ai_usage_ledger, lesson_decisions, and mastery_evidence for signed-in user
+  API-->>Web: Usage/debug summary for usage bar
+  end
   end
   Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, or quality trigger
   Background->>DB: Recover stale queued observations and running jobs

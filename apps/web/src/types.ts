@@ -58,7 +58,24 @@ export type LessonGoalStatusEvidence =
   | 'backend_observed'
   | 'learning_limit';
 
+export type LessonEvidenceLevel =
+  | 'none'
+  | 'self_reported'
+  | 'agent_interpreted'
+  | 'attempt_submitted'
+  | 'deterministically_verified'
+  | 'repeated_independent_success';
+
 export type LessonLimitStatus = 'ok' | 'soft_limit' | 'hard_limit';
+
+export type LessonVerifierResult =
+  | 'none'
+  | 'correct'
+  | 'incorrect'
+  | 'equivalent'
+  | 'partially_correct'
+  | 'invalid_format'
+  | 'cannot_verify';
 
 export interface LessonLimitState {
   status: LessonLimitStatus;
@@ -81,6 +98,7 @@ export interface TutorLessonLifecycle {
   status: LessonSessionStatus;
   goalStatus: LessonGoalStatus;
   goalStatusEvidence: LessonGoalStatusEvidence;
+  goalEvidenceLevel: LessonEvidenceLevel;
   lessonGoal: string;
   successCriteria: string[];
   finishReason?: string;
@@ -106,6 +124,7 @@ export interface UsageTotals {
 
 export interface UsageLedgerItem {
   id: string;
+  correlationId: string | null;
   lessonSessionId: string | null;
   conversationId: string | null;
   lessonType: LessonType | null;
@@ -126,6 +145,20 @@ export interface UsageLedgerItem {
   createdAt: string;
 }
 
+export interface LessonDecisionUsageItem {
+  id: string;
+  correlationId: string | null;
+  toolName: string;
+  accepted: boolean;
+  rejectionReason?: string;
+  evidenceLevel: LessonEvidenceLevel | string;
+  verifierResult?: LessonVerifierResult | string;
+  latencyMs: number;
+  fallbackUsed: boolean;
+  lessonOutcome?: string;
+  createdAt: string;
+}
+
 export interface LessonUsageSummary {
   lessonSessionId: string;
   conversationId: string | null;
@@ -134,6 +167,9 @@ export interface LessonUsageSummary {
   goalStatus: string | null;
   total: UsageTotals;
   items: UsageLedgerItem[];
+  decisions: LessonDecisionUsageItem[];
+  verifiedOutcomes: number;
+  costPerVerifiedOutcomeUsd: number | null;
 }
 
 export interface UserUsageSummary {
@@ -147,6 +183,41 @@ export interface TutorUsageSnapshot {
   currency: 'USD';
   lesson: UsageTotals;
   today: UsageTotals;
+}
+
+export interface TutorDebugInfo {
+  curriculum: {
+    topicId: string;
+    topicTitle: string;
+    skillId: string;
+    skillTitle: string;
+    taskTypeId: string;
+    taskTypeTitle: string;
+  };
+  decision: {
+    acceptedActions: string[];
+    rejectedActions: Array<{
+      toolName: string;
+      reason: string;
+      requiredAction?: string;
+    }>;
+    evidenceLevel: LessonEvidenceLevel;
+    verifierResult: LessonVerifierResult;
+    recommendedNextAction?: string;
+    goalCompletionAccepted: boolean;
+    goalCompletionReason: string;
+    latencyMs: number;
+    fallbackUsed: boolean;
+  };
+  verifier: {
+    attemptSubmitted: boolean;
+    taskId?: string;
+    attemptId?: string;
+    result: LessonVerifierResult;
+    errorCode?: string;
+    confidence: 'low' | 'medium' | 'high' | 'unknown';
+    masteryUpdateAllowed: boolean;
+  };
 }
 
 export interface TutorTextBlock {
@@ -194,6 +265,7 @@ export interface TutorAnswer {
   needsImage: boolean;
   imagePrompt?: string;
   citations: TutorCitation[];
+  debug?: TutorDebugInfo;
 }
 
 export interface TutorTurn {

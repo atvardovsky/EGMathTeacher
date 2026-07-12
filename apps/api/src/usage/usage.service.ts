@@ -56,15 +56,16 @@ export class UsageService {
 
     this.db.run(
       `INSERT INTO ai_usage_ledger (
-         id, user_id, conversation_id, lesson_session_id, lesson_type,
+         id, correlation_id, user_id, conversation_id, lesson_session_id, lesson_type,
          operation_key, operation, assistant_role, provider, model,
          response_format, service_tier, input_tokens, cached_input_tokens,
          output_tokens, total_tokens, image_count, estimated_cost_usd,
          pricing_source, created_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        context.correlationId ?? null,
         context.userId,
         context.conversationId ?? null,
         context.lessonSessionId ?? null,
@@ -89,6 +90,7 @@ export class UsageService {
 
     return {
       id,
+      correlationId: context.correlationId ?? null,
       lessonSessionId: context.lessonSessionId ?? null,
       conversationId: context.conversationId ?? null,
       lessonType: (context.lessonType ?? null) as AiUsageLedgerItem['lessonType'],
@@ -198,6 +200,9 @@ export class UsageService {
         lessonSessionId,
       ]),
       items,
+      decisions: this.getDecisionItems(userId, lessonSessionId, itemLimit),
+      verifiedOutcomes: this.getVerifiedOutcomeCount(userId, lessonSessionId),
+      costPerVerifiedOutcomeUsd: this.getCostPerVerifiedOutcome(userId, lessonSessionId),
     };
   }
 
@@ -207,7 +212,7 @@ export class UsageService {
     limit: number,
   ): AiUsageLedgerItem[] {
     const rows = this.db.all<AiUsageRecord>(
-      `SELECT id, user_id, conversation_id, lesson_session_id, lesson_type,
+      `SELECT id, correlation_id, user_id, conversation_id, lesson_session_id, lesson_type,
               operation_key, operation, assistant_role, provider, model,
               response_format, service_tier, input_tokens, cached_input_tokens,
               output_tokens, total_tokens, image_count, estimated_cost_usd,
@@ -220,6 +225,7 @@ export class UsageService {
     );
     return rows.map((row) => ({
       id: row.id,
+      correlationId: row.correlation_id,
       lessonSessionId: row.lesson_session_id,
       conversationId: row.conversation_id,
       lessonType: row.lesson_type,
@@ -239,6 +245,76 @@ export class UsageService {
       pricingSource: row.pricing_source,
       createdAt: row.created_at,
     }));
+  }
+
+  private getDecisionItems(
+    userId: string,
+    lessonSessionId: string,
+    limit: number,
+  ) {
+    const rows = this.db.all<{
+      id: string;
+      usage_correlation_id: string | null;
+      tool_name: string;
+      accepted: number;
+      rejection_reason: string | null;
+      evidence_level: string;
+      verifier_result: string | null;
+      latency_ms: number;
+      retry_count: number;
+      fallback_used: number | null;
+      lesson_outcome: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, usage_correlation_id, tool_name, accepted, rejection_reason,
+              evidence_level, verifier_result, latency_ms, retry_count,
+              fallback_used, lesson_outcome, created_at
+       FROM lesson_decisions
+       WHERE user_id = ?
+         AND lesson_session_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, lessonSessionId, limit],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      correlationId: row.usage_correlation_id,
+      toolName: row.tool_name,
+      accepted: row.accepted === 1,
+      rejectionReason: row.rejection_reason ?? undefined,
+      evidenceLevel: row.evidence_level,
+      verifierResult: row.verifier_result ?? undefined,
+      latencyMs: row.latency_ms,
+      fallbackUsed: (row.fallback_used ?? row.retry_count) > 0,
+      lessonOutcome: row.lesson_outcome ?? undefined,
+      createdAt: row.created_at,
+    }));
+  }
+
+  private getVerifiedOutcomeCount(userId: string, lessonSessionId: string): number {
+    const row = this.db.get<{ count: number | null }>(
+      `SELECT COUNT(*) AS count
+       FROM mastery_evidence
+       WHERE user_id = ?
+         AND lesson_session_id = ?`,
+      [userId, lessonSessionId],
+    );
+    return this.normalizeCount(row?.count);
+  }
+
+  private getCostPerVerifiedOutcome(
+    userId: string,
+    lessonSessionId: string,
+  ): number | null {
+    const verifiedOutcomes = this.getVerifiedOutcomeCount(userId, lessonSessionId);
+    if (verifiedOutcomes <= 0) {
+      return null;
+    }
+    const totals = this.getTotals(`WHERE user_id = ? AND lesson_session_id = ?`, [
+      userId,
+      lessonSessionId,
+    ]);
+    return this.normalizeMoney(totals.estimatedCostUsd / verifiedOutcomes);
   }
 
   private getLatestLessonSessionId(userId: string): string | undefined {

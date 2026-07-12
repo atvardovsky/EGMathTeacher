@@ -16,6 +16,9 @@ Use these files as the project source-of-truth set:
   deployment flows.
 - `data-model.md`: local persistence, in-memory state, remote OpenAI objects,
   and retention gaps.
+- `lesson-agent-tools.md`: Lesson Decision Agent tools, backend policy
+  contract, allowed state changes, evidence requirements, privacy limits, and
+  observability.
 - `validation.md`: discovered commands, test surface, and unresolved checks.
 - `gaps.md`: grouped current gaps, fixed cleanup items, and blocked decisions.
 - `security-safety.md`: secrets, auth, live-service, destructive-operation,

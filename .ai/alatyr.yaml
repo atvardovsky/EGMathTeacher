@@ -46,6 +46,7 @@ source_of_truth:
     - ".ai/project/architecture.md"
     - ".ai/project/runtime-flows.md"
     - ".ai/project/data-model.md"
+    - ".ai/project/lesson-agent-tools.md"
     - ".ai/project/validation.md"
     - ".ai/project/gaps.md"
     - ".ai/project/security-safety.md"

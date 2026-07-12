@@ -42,8 +42,9 @@ The web UI follows this tree:
 6. Tutor lesson modes expose only the main POC choices in the UI: tutor,
    practice, diagnostic, and mistake review.
 7. Tutor workspace shows a compact lesson usage bar for all signed-in users.
-   It can expand to safe operation/model/token/image details, but it should
-   not look like an admin debug console.
+   It can expand to safe operation/model/token/image, verifier, and
+   decision-policy details, but it should not look like an admin debug
+   console.
 8. Settings view for language, voice, account info, and read-only profile
    memory, including recent session summaries and skill progress/regression.
 9. Admin knowledge-materials view only for admin users.
@@ -118,7 +119,9 @@ landing page.
   learning memory. They should be compact and should not look like grades.
 - The usage bar is learner-facing transparency. Show only the signed-in user's
   own estimated usage, with no raw prompts, hidden instructions, provider
-  request ids, or stack traces.
+  request ids, or stack traces. Decision rows may show safe tool names,
+  accepted/rejected status, evidence level, verifier result, latency, and
+  fallback status.
 - Error states must be visible near the affected workflow.
 
 ## Validation

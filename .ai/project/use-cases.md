@@ -73,11 +73,30 @@ Rules from current implementation:
   and avoid starting a long new topic.
 - Hard daily or continuous limits return a local stop response without calling
   the model for a new explanation.
-- The tutor can suggest `goalStatus=reached`, but the backend treats that as a
-  pending suggestion unless the current lesson already has backend-visible
-  student evidence such as a later confirmation, attempt, or answer. Accepted
-  completion sets `goalStatusEvidence=backend_observed`; unaccepted model-only
-  completion keeps the lesson in progress with
+- Before the final tutor response, a Lesson Decision Agent reads the lesson
+  lifecycle, current message, recent history, profile context, curriculum ids,
+  backend verifier evidence, limits, scoped progress signals, and allowed
+  tools. It chooses pedagogical actions such as continuing, explaining, giving
+  a task, requesting an attempt, checking an answer, changing strategy,
+  suggesting visual support, or proposing goal completion.
+- The decision agent cannot directly mutate durable state. Backend policy
+  accepts or rejects proposed state-affecting actions and stores every action
+  result in `lesson_decisions`.
+- The tutor can output `lessonLifecycle.goalStatus="reached"` only as a
+  reflection of backend policy acceptance. A raw LLM completion suggestion is
+  pending unless `propose_goal_completion` was accepted by policy.
+- Self-reported phrases such as "я понял", "спасибо", or "получилось" are
+  only `self_reported` evidence. They should trigger
+  `request_student_attempt` or `request_student_explanation`, not lesson
+  completion.
+- Attempt-based completion requires a backend-observed attempt. Practice and
+  mistake-review completion require backend verifier evidence.
+- For the first supported vertical, the backend can generate a linear-equation
+  task, verify a numeric answer, write `student_attempts`, write
+  `mastery_evidence` for correct answers, and allow policy to complete the
+  goal from that proof.
+- Accepted completion sets `goalStatusEvidence=backend_observed`; unaccepted
+  model-only or policy-rejected completion keeps the lesson in progress with
   `goalStatusEvidence=model_suggested_pending`.
 - Scoped progress/regression signals inform the explanation strategy. The
   lesson strategy signal is selected from rows relevant to the current
@@ -121,11 +140,17 @@ Rules from current implementation:
   answer, and they must store only teaching-useful signals.
 - Lesson effectiveness signals store goal status, answer shape, and strategy
   adjustment recommendations. They are teaching signals, not grades.
+- Lesson decision rows store action-level observability: tool name, sanitized
+  decision JSON, backend policy result, accepted/rejected status, rejection
+  reason, evidence level, verifier result when available, model, local usage
+  correlation id, latency, fallback marker, and lesson outcome. They are
+  debug/product signals, not grades.
 - The web tutor workspace shows a user-visible usage bar for the signed-in
   user's own AI expenses. It shows today's estimate, current lesson estimate,
-  and expanded operation/model/token/image details. It must not expose raw
-  prompts, hidden instructions, provider request ids, stack traces, secrets, or
-  another user's usage.
+  evidence level, verified outcome count, cost per verified outcome, and
+  expanded operation/model/token/image/decision details. It must not expose
+  raw prompts, hidden instructions, provider request ids, stack traces,
+  secrets, or another user's usage.
 
 ### Complete First-Login Meeting
 

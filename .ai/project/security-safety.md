@@ -94,9 +94,11 @@ Potential student data in this POC:
 - background learning observations, grouped analysis windows, learning signals,
   session summaries, skill progress/regression rows, profile-refresh evidence,
   strategy-refresh evidence, and quality-review records
-- lesson session lifecycle rows, lesson effectiveness signals, and local AI
-  usage ledger rows for the signed-in user's operation/model/token/image/cost
-  estimates
+- lesson session lifecycle rows, lesson effectiveness signals, lesson decision
+  action/policy observability, and local AI usage ledger rows for the signed-in
+  user's operation/model/token/image/cost estimates
+- backend-generated lesson tasks, bounded student attempts, deterministic
+  verifier results, and mastery evidence for supported task types
 - generated images and prompts
 - uploaded knowledge file metadata
 - voice transcripts and transcript files
@@ -114,6 +116,12 @@ Current data-minimization rule:
   results must sanitize payloads before storage; session summaries and skill
   progress/regression rows must stay teaching-useful and must not store raw
   sensitive personal details, clinical diagnoses, or non-teaching facts
+- lesson decision rows must store teaching-action evidence and policy results,
+  not clinical labels, sensitive personal details, raw hidden prompts, provider
+  request ids, secrets, or billing credentials
+- verifier rows must store only task/answer evidence needed for teaching and
+  debugging; expected answers must not be exposed to the student before an
+  attempt is submitted
 
 The authenticated web settings view may display the signed-in user's own
 read-only tutoring profile memory. It must not add profile editing, export,
@@ -122,11 +130,12 @@ review.
 
 The tutor workspace may display a signed-in user's own usage bar. The usage
 bar can show operation names, assistant roles, model names, token counts,
-image counts, service tier, and locally estimated cost. It must not show raw
-prompts, hidden system/developer instructions, RAG chunks, provider request
-ids, secrets, billing credentials, stack traces, or another user's usage. Cost
-values are local estimates based on configured prices and are not provider
-billing proof.
+image counts, service tier, local estimated cost, decision action outcomes,
+evidence levels, verifier results, and cost per verified outcome. It must not
+show raw prompts, hidden system/developer instructions, RAG chunks, provider
+request ids, secrets, billing credentials, stack traces, or another user's
+usage. Cost values are local estimates based on configured prices and are not
+provider billing proof.
 
 Gaps:
 

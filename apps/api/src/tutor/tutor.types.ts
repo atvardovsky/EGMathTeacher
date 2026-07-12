@@ -61,7 +61,24 @@ export type LessonGoalStatusEvidence =
   | 'backend_observed'
   | 'learning_limit';
 
+export type LessonEvidenceLevel =
+  | 'none'
+  | 'self_reported'
+  | 'agent_interpreted'
+  | 'attempt_submitted'
+  | 'deterministically_verified'
+  | 'repeated_independent_success';
+
 export type LessonLimitStatus = 'ok' | 'soft_limit' | 'hard_limit';
+
+export type LessonVerifierResult =
+  | 'none'
+  | 'correct'
+  | 'incorrect'
+  | 'equivalent'
+  | 'partially_correct'
+  | 'invalid_format'
+  | 'cannot_verify';
 
 export interface LessonLimitState {
   status: LessonLimitStatus;
@@ -84,6 +101,7 @@ export interface TutorLessonLifecycle {
   status: LessonSessionStatus;
   goalStatus: LessonGoalStatus;
   goalStatusEvidence: LessonGoalStatusEvidence;
+  goalEvidenceLevel: LessonEvidenceLevel;
   lessonGoal: string;
   successCriteria: string[];
   finishReason?: string;
@@ -111,6 +129,47 @@ export interface TutorUsageSnapshot {
   currency: 'USD';
   lesson: TutorUsageTotals;
   today: TutorUsageTotals;
+}
+
+export interface TutorDebugDecision {
+  acceptedActions: string[];
+  rejectedActions: Array<{
+    toolName: string;
+    reason: string;
+    requiredAction?: string;
+  }>;
+  evidenceLevel: LessonEvidenceLevel;
+  verifierResult: LessonVerifierResult;
+  recommendedNextAction?: string;
+  goalCompletionAccepted: boolean;
+  goalCompletionReason: string;
+  latencyMs: number;
+  fallbackUsed: boolean;
+}
+
+export interface TutorDebugVerifier {
+  attemptSubmitted: boolean;
+  taskId?: string;
+  attemptId?: string;
+  result: LessonVerifierResult;
+  errorCode?: string;
+  confidence: 'low' | 'medium' | 'high' | 'unknown';
+  masteryUpdateAllowed: boolean;
+}
+
+export interface TutorDebugCurriculum {
+  topicId: string;
+  topicTitle: string;
+  skillId: string;
+  skillTitle: string;
+  taskTypeId: string;
+  taskTypeTitle: string;
+}
+
+export interface TutorDebugInfo {
+  curriculum: TutorDebugCurriculum;
+  decision: TutorDebugDecision;
+  verifier: TutorDebugVerifier;
 }
 
 export interface TutorTextBlock {
@@ -158,4 +217,5 @@ export interface TutorAnswer {
   needsImage: boolean;
   imagePrompt?: string;
   citations: TutorCitation[];
+  debug?: TutorDebugInfo;
 }

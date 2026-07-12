@@ -7,6 +7,7 @@ import type { LessonType, TutorAnswer } from './tutor.types';
 interface TutorMessageBody {
   message?: string;
   conversationId?: string;
+  requestId?: string;
   source?: 'text' | 'voice';
   lessonType?: LessonType;
 }
@@ -33,6 +34,7 @@ export class TutorController {
       user: request.user!,
       message: body.message,
       conversationId: body.conversationId,
+      requestId: body.requestId,
       source: body.source ?? 'text',
       lessonType: body.lessonType,
     });

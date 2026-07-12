@@ -134,7 +134,7 @@ describe('LessonService', () => {
     expect(lifecycle.strategySignal.summary).toContain('Релевантные');
   });
 
-  it('treats model goal completion as pending until student evidence is visible', () => {
+  it('keeps model goal completion pending without backend policy acceptance', () => {
     const firstLifecycle = service.beginTurn({
       userId: 'student-1',
       conversationId: 'conv-goal',
@@ -162,7 +162,7 @@ describe('LessonService', () => {
       conversationId: 'conv-goal',
       lessonType: 'tutor',
     });
-    const acceptedCompletion = service.completeTurn({
+    const selfReportedCompletion = service.completeTurn({
       userId: 'student-1',
       studentMessage: 'Поняла, получилось: ответ равен 6',
       lifecycle: secondLifecycle,
@@ -174,9 +174,130 @@ describe('LessonService', () => {
       },
     });
 
+    expect(selfReportedCompletion.goalStatus).toBe('in_progress');
+    expect(selfReportedCompletion.goalStatusEvidence).toBe('model_suggested_pending');
+    expect(selfReportedCompletion.shouldStop).toBe(false);
+  });
+
+  it('accepts goal completion only when backend policy accepted it', () => {
+    service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-policy',
+      lessonType: 'tutor',
+    });
+    const lifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-policy',
+      lessonType: 'tutor',
+    });
+
+    const acceptedCompletion = service.completeTurn({
+      userId: 'student-1',
+      studentMessage: 'x = 6',
+      lifecycle,
+      goalStatus: 'in_progress',
+      decisionPolicy: {
+        decisionId: 'decision-1',
+        evidenceLevel: 'attempt_submitted',
+        actionResults: [
+          {
+            toolName: 'propose_goal_completion',
+            accepted: true,
+            reason: 'Backend policy accepted goal completion for this lesson type.',
+            evidenceLevel: 'attempt_submitted',
+          },
+        ],
+        acceptedActions: ['propose_goal_completion'],
+        rejectedActions: [],
+        goalCompletion: {
+          proposed: true,
+          accepted: true,
+          reason: 'Backend policy accepted goal completion for this lesson type.',
+          evidenceLevel: 'attempt_submitted',
+        },
+        shouldSuggestBreak: false,
+        goalBlocked: false,
+        recommendedNextAction: 'propose_goal_completion',
+        verifierResult: 'cannot_verify',
+      },
+      answerShape: {
+        tasksCount: 0,
+        examplesCount: 0,
+        imageBlocksCount: 0,
+      },
+    });
+
     expect(acceptedCompletion.goalStatus).toBe('reached');
     expect(acceptedCompletion.goalStatusEvidence).toBe('backend_observed');
+    expect(acceptedCompletion.goalEvidenceLevel).toBe('attempt_submitted');
     expect(acceptedCompletion.status).toBe('goal_reached');
     expect(acceptedCompletion.shouldStop).toBe(true);
+  });
+
+  it('persists goal blocked when backend policy accepts blockage', () => {
+    service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-blocked',
+      lessonType: 'tutor',
+    });
+    const lifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-blocked',
+      lessonType: 'tutor',
+    });
+
+    const blocked = service.completeTurn({
+      userId: 'student-1',
+      studentMessage: 'Я все еще путаюсь',
+      lifecycle,
+      goalStatus: 'in_progress',
+      decisionPolicy: {
+        decisionId: 'decision-blocked',
+        evidenceLevel: 'agent_interpreted',
+        actionResults: [
+          {
+            toolName: 'mark_goal_blocked',
+            accepted: true,
+            reason: 'Goal blockage can be recorded after repeated evidence in the current lesson.',
+            evidenceLevel: 'agent_interpreted',
+          },
+        ],
+        acceptedActions: ['mark_goal_blocked'],
+        rejectedActions: [],
+        goalCompletion: {
+          proposed: false,
+          accepted: false,
+          reason: 'No goal-completion action was proposed.',
+          evidenceLevel: 'agent_interpreted',
+        },
+        shouldSuggestBreak: false,
+        goalBlocked: true,
+        recommendedNextAction: 'mark_goal_blocked',
+        verifierResult: 'cannot_verify',
+      },
+      answerShape: {
+        tasksCount: 0,
+        examplesCount: 1,
+        imageBlocksCount: 0,
+      },
+    });
+
+    expect(blocked.goalStatus).toBe('blocked');
+    expect(blocked.finishReason).toBe('lesson_goal_blocked_by_backend_policy');
+    const row = db.get<{ goal_status: string; finish_reason: string | null }>(
+      'SELECT goal_status, finish_reason FROM lesson_sessions WHERE id = ?',
+      [lifecycle.lessonSessionId],
+    );
+    expect(row).toEqual({
+      goal_status: 'blocked',
+      finish_reason: 'lesson_goal_blocked_by_backend_policy',
+    });
+
+    const nextTurn = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-blocked',
+      lessonType: 'tutor',
+    });
+    expect(nextTurn.goalStatus).toBe('blocked');
   });
 });

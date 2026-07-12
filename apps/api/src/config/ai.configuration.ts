@@ -26,6 +26,7 @@ export default registerAs('ai', () => {
       requestTimeoutMs: parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? '30000', 10),
     },
     operationModels: {
+      lessonDecision: process.env.AI_OPERATION_LESSON_DECISION_MODEL ?? responsesModel,
       tutorAnswer: process.env.AI_OPERATION_TUTOR_ANSWER_MODEL ?? responsesModel,
       tutorAnswerWithRag:
         process.env.AI_OPERATION_TUTOR_ANSWER_WITH_RAG_MODEL ??
@@ -61,6 +62,7 @@ export default registerAs('ai', () => {
         backgroundResponsesModel,
     },
     operationServiceTiers: {
+      lessonDecision: process.env.AI_OPERATION_LESSON_DECISION_SERVICE_TIER ?? '',
       tutorAnswer: process.env.AI_OPERATION_TUTOR_ANSWER_SERVICE_TIER ?? '',
       tutorAnswerWithRag:
         process.env.AI_OPERATION_TUTOR_ANSWER_WITH_RAG_SERVICE_TIER ?? '',
@@ -128,6 +130,10 @@ export default registerAs('ai', () => {
         process.env.AI_BACKGROUND_SESSION_SUMMARY_TURN_INTERVAL ?? '5',
         10,
       ),
+    },
+    lessonDecision: {
+      enabled: (process.env.AI_LESSON_DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
+      timeoutMs: parseInt(process.env.AI_LESSON_DECISION_TIMEOUT_MS ?? '4000', 10),
     },
     usage: {
       trackingEnabled: (process.env.AI_USAGE_TRACKING_ENABLED ?? 'true').toLowerCase() !== 'false',

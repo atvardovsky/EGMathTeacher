@@ -46,7 +46,8 @@ boundaries, or when evidence conflicts.
   `.ai/project/contour.md`, `.ai/project/source-of-truth-registry.md`,
   `.ai/project/context-map.md`, `.ai/project/use-cases.md`,
   `.ai/project/architecture.md`, `.ai/project/runtime-flows.md`,
-  `.ai/project/data-model.md`, `.ai/project/validation.md`,
+  `.ai/project/data-model.md`, `.ai/project/lesson-agent-tools.md`,
+  `.ai/project/validation.md`,
   `.ai/project/gaps.md`,
   `.ai/project/security-safety.md`, `.ai/project/guards.md`,
   `.ai/project/diagrams.md`, `apps/api/README.md`, and

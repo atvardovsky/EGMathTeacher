@@ -101,6 +101,7 @@ to `.ai/framework`.
 - `.ai/project/diagrams.md`
 - `.ai/project/gaps.md`
 - `.ai/project/guards.md`
+- `.ai/project/lesson-agent-tools.md`
 - `.ai/project/runtime-flows.md`
 - `.ai/project/security-safety.md`
 - `.ai/project/source-of-truth-registry.md`
@@ -198,11 +199,13 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260712-adapter-drift-checker-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260712-background-batching.md`
 - `.ai/assistant/approvals/ALATYR-20260712-framework-context-router-update.md`
+- `.ai/assistant/approvals/ALATYR-20260712-lesson-agent-contracts.md`
 - `.ai/assistant/approvals/ALATYR-20260712-lesson-contract-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260712-lesson-lifecycle-usage.md`
 - `.ai/assistant/approvals/ALATYR-20260712-role-operation-model-policy.md`
 - `.ai/assistant/approvals/ALATYR-20260712-session-progress-tracking.md`
 - `.ai/assistant/approvals/ALATYR-20260712-tutor-response-blocks.md`
+- `.ai/assistant/approvals/ALATYR-20260712-verified-learning-loop.md`
 - `.ai/assistant/approvals/approval-template.md`
 - `.ai/assistant/checklists/change-impact.md`
 

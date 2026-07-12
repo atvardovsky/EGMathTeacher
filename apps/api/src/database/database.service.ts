@@ -480,6 +480,216 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_ai_usage_ledger_user_operation
         ON ai_usage_ledger(user_id, operation_key, created_at);
     `);
+
+    this.applyMigration('006_lesson_decision_agent', `
+      CREATE TABLE IF NOT EXISTS lesson_decisions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL DEFAULT 'tutor'
+          CHECK (lesson_type IN (
+            'meeting',
+            'tutor',
+            'concept',
+            'practice',
+            'diagnostic',
+            'exam_strategy',
+            'mistake_review',
+            'visual_explanation',
+            'reflection'
+          )),
+        operation_key TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        assistant_role TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        decision_json TEXT NOT NULL,
+        policy_result_json TEXT NOT NULL,
+        accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
+        rejection_reason TEXT,
+        evidence_level TEXT NOT NULL
+          CHECK (evidence_level IN (
+            'none',
+            'self_reported',
+            'agent_interpreted',
+            'attempt_submitted',
+            'deterministically_verified',
+            'repeated_independent_success'
+          )),
+        verifier_result TEXT,
+        latency_ms INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        lesson_outcome TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_decisions_user_created
+        ON lesson_decisions(user_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_decisions_lesson_created
+        ON lesson_decisions(lesson_session_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_decisions_tool_created
+        ON lesson_decisions(tool_name, accepted, created_at);
+    `);
+
+    this.applyMigration('007_verified_learning_loop', `
+      ALTER TABLE tutor_turns
+        ADD COLUMN request_id TEXT;
+
+      ALTER TABLE ai_usage_ledger
+        ADD COLUMN correlation_id TEXT;
+
+      ALTER TABLE lesson_decisions
+        ADD COLUMN usage_correlation_id TEXT;
+
+      ALTER TABLE lesson_decisions
+        ADD COLUMN fallback_used INTEGER NOT NULL DEFAULT 0
+          CHECK (fallback_used IN (0, 1));
+
+      ALTER TABLE lesson_decisions
+        ADD COLUMN profile_delta_routed INTEGER NOT NULL DEFAULT 0
+          CHECK (profile_delta_routed IN (0, 1));
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tutor_turns_user_request
+        ON tutor_turns(user_id, request_id)
+        WHERE request_id IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_ledger_correlation
+        ON ai_usage_ledger(correlation_id);
+
+      CREATE TABLE IF NOT EXISTS curriculum_skills (
+        skill_id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        topic_title TEXT NOT NULL,
+        skill_title TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        task_type_title TEXT NOT NULL,
+        verifier_kind TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO curriculum_skills (
+        skill_id, topic_id, topic_title, skill_title,
+        task_type_id, task_type_title, verifier_kind, created_at
+      )
+      VALUES
+        (
+          'algebra.linear.solve_one_variable',
+          'algebra.linear_equations',
+          'Линейные уравнения',
+          'Решение линейного уравнения с одной переменной',
+          'ege.base.linear_equation_numeric',
+          'ЕГЭ: линейное уравнение с числовым ответом',
+          'linear_equation_numeric',
+          datetime('now')
+        ),
+        (
+          'algebra.quadratic.discriminant',
+          'algebra.quadratic_equations',
+          'Квадратные уравнения',
+          'Дискриминант и корни квадратного уравнения',
+          'ege.base.quadratic_roots',
+          'ЕГЭ: корни квадратного уравнения',
+          'unsupported',
+          datetime('now')
+        ),
+        (
+          'calculus.derivative.basic_rules',
+          'calculus.derivatives',
+          'Производная',
+          'Базовые правила вычисления производной',
+          'ege.base.derivative_value',
+          'ЕГЭ: вычисление производной',
+          'unsupported',
+          datetime('now')
+        );
+
+      CREATE TABLE IF NOT EXISTS lesson_tasks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        expected_answer TEXT NOT NULL,
+        verifier_kind TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('backend_generated', 'model_imported')),
+        status TEXT NOT NULL CHECK (status IN (
+          'pending',
+          'attempted',
+          'verified_correct',
+          'blocked'
+        )),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_tasks_lesson_status
+        ON lesson_tasks(user_id, lesson_session_id, status, created_at);
+
+      CREATE TABLE IF NOT EXISTS student_attempts (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        answer_text TEXT NOT NULL,
+        verifier_result TEXT NOT NULL CHECK (verifier_result IN (
+          'correct',
+          'incorrect',
+          'equivalent',
+          'partially_correct',
+          'invalid_format',
+          'cannot_verify'
+        )),
+        expected_answer TEXT,
+        error_code TEXT,
+        confidence TEXT NOT NULL CHECK (confidence IN ('low', 'medium', 'high', 'unknown')),
+        mastery_update_allowed INTEGER NOT NULL CHECK (mastery_update_allowed IN (0, 1)),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES lesson_tasks(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_student_attempts_lesson_created
+        ON student_attempts(lesson_session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS mastery_evidence (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        attempt_id TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        evidence_level TEXT NOT NULL CHECK (evidence_level IN (
+          'deterministically_verified',
+          'repeated_independent_success'
+        )),
+        verifier_result TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id),
+        FOREIGN KEY (task_id) REFERENCES lesson_tasks(id),
+        FOREIGN KEY (attempt_id) REFERENCES student_attempts(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mastery_evidence_user_skill
+        ON mastery_evidence(user_id, skill_id, created_at);
+    `);
   }
 
   private applyMigration(

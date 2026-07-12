@@ -4,6 +4,8 @@ import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import type { LessonType } from '../tutor/tutor.types';
 import {
+  LessonDecisionPolicyResult,
+  LessonEvidenceLevel,
   LessonGoalStatus,
   LessonGoalStatusEvidence,
   LessonLifecycleDto,
@@ -27,6 +29,7 @@ interface CompleteTurnInput {
   lifecycle: LessonLifecycleDto;
   goalStatus: LessonGoalStatus;
   finishReason?: string;
+  decisionPolicy?: LessonDecisionPolicyResult;
   answerShape: {
     tasksCount: number;
     examplesCount: number;
@@ -121,7 +124,9 @@ export class LessonService {
       ? 'stopped_by_limit'
       : session.goal_status === 'reached'
         ? 'reached'
-        : 'in_progress';
+        : session.goal_status === 'blocked'
+          ? 'blocked'
+          : 'in_progress';
     const finishReason = hardLimitReached
       ? this.limitFinishReason(dailyLimit, continuousLimit)
       : session.finish_reason ?? undefined;
@@ -169,10 +174,14 @@ export class LessonService {
     const nowIso = new Date().toISOString();
     const requestedGoalStatus = this.normalizeGoalStatus(input.goalStatus);
     const hardStop = input.lifecycle.shouldStop || requestedGoalStatus === 'stopped_by_limit';
+    const policyAcceptedGoalReached = Boolean(input.decisionPolicy?.goalCompletion.accepted);
+    const policyBlockedGoal = Boolean(input.decisionPolicy?.goalBlocked);
     const modelSuggestedGoalReached = requestedGoalStatus === 'reached';
-    const goalReached =
-      modelSuggestedGoalReached && !hardStop && this.canAcceptGoalReached(input);
-    const pendingGoalSuggestion = modelSuggestedGoalReached && !goalReached && !hardStop;
+    const goalReached = policyAcceptedGoalReached && !hardStop;
+    const pendingGoalSuggestion =
+      (modelSuggestedGoalReached || Boolean(input.decisionPolicy?.goalCompletion.proposed)) &&
+      !goalReached &&
+      !hardStop;
     const status: LessonSessionStatus = hardStop
       ? 'hard_limit_reached'
       : goalReached
@@ -184,7 +193,7 @@ export class LessonService {
       ? 'stopped_by_limit'
       : goalReached
         ? 'reached'
-        : requestedGoalStatus === 'blocked'
+        : policyBlockedGoal || requestedGoalStatus === 'blocked'
           ? 'blocked'
           : 'in_progress';
     const goalStatusEvidence: LessonGoalStatusEvidence = hardStop
@@ -194,17 +203,30 @@ export class LessonService {
         : pendingGoalSuggestion
           ? 'model_suggested_pending'
           : input.lifecycle.goalStatusEvidence;
+    const goalEvidenceLevel: LessonEvidenceLevel = hardStop
+      ? input.lifecycle.goalEvidenceLevel
+      : goalReached
+        ? (input.decisionPolicy?.goalCompletion.evidenceLevel ?? 'agent_interpreted')
+        : pendingGoalSuggestion
+          ? (input.decisionPolicy?.goalCompletion.evidenceLevel ??
+            input.decisionPolicy?.evidenceLevel ??
+            input.lifecycle.goalEvidenceLevel)
+          : policyBlockedGoal
+            ? (input.decisionPolicy?.evidenceLevel ?? input.lifecycle.goalEvidenceLevel)
+          : (input.decisionPolicy?.evidenceLevel ?? input.lifecycle.goalEvidenceLevel);
     const finishReason =
       input.finishReason ||
       (goalReached
         ? 'lesson_goal_reached'
         : hardStop
           ? input.lifecycle.finishReason ?? 'learning_limit_reached'
+          : policyBlockedGoal
+            ? 'lesson_goal_blocked_by_backend_policy'
           : pendingGoalSuggestion
             ? 'model_suggested_goal_reached_pending_student_evidence'
             : undefined);
     const persistedFinishReason =
-      goalReached || hardStop ? finishReason : input.lifecycle.finishReason;
+      goalReached || hardStop || policyBlockedGoal ? finishReason : input.lifecycle.finishReason;
 
     this.db.run(
       `UPDATE lesson_sessions
@@ -229,9 +251,13 @@ export class LessonService {
       status,
       goalStatus,
       goalStatusEvidence,
+      goalEvidenceLevel,
       finishReason,
       shouldStop: hardStop || goalReached,
-      shouldSuggestBreak: input.lifecycle.shouldSuggestBreak || goalReached,
+      shouldSuggestBreak:
+        input.lifecycle.shouldSuggestBreak ||
+        goalReached ||
+        Boolean(input.decisionPolicy?.shouldSuggestBreak),
     };
   }
 
@@ -322,6 +348,7 @@ export class LessonService {
       status: session.status,
       goalStatus: session.goal_status,
       goalStatusEvidence: this.getGoalStatusEvidence(session),
+      goalEvidenceLevel: this.getLatestGoalEvidenceLevel(session.id),
       lessonGoal: session.goal_text,
       successCriteria: this.parseStringArray(session.success_criteria_json),
       finishReason: session.finish_reason ?? undefined,
@@ -506,17 +533,18 @@ export class LessonService {
     return 'none';
   }
 
-  private canAcceptGoalReached(input: CompleteTurnInput): boolean {
-    if (input.lifecycle.turnCount < 2) {
-      return false;
-    }
-    return this.studentMessageShowsCompletionEvidence(input.studentMessage);
-  }
-
-  private studentMessageShowsCompletionEvidence(message: string): boolean {
-    return /понял|поняла|получилось|решил|решила|ответ|равно|=|верно|да,|спасибо|understood|solved|answer|correct/i.test(
-      message,
+  private getLatestGoalEvidenceLevel(lessonSessionId: string): LessonEvidenceLevel {
+    const row = this.db.get<{ evidence_level: LessonEvidenceLevel }>(
+      `SELECT evidence_level
+       FROM lesson_decisions
+       WHERE lesson_session_id = ?
+         AND tool_name = 'propose_goal_completion'
+         AND accepted = 1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [lessonSessionId],
     );
+    return row?.evidence_level ?? 'none';
   }
 
   private finishSessionForLessonTypeChange(

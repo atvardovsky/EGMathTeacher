@@ -56,9 +56,10 @@ Production domain:
   `AI_BACKGROUND_BATCHING_ENABLED=false` to restore legacy per-turn
   background extraction. Stale running jobs and claimed observations are
   recovered by the worker.
-- Role and operation policy layer for model selection: tutor, onboarding,
-  background, quality-review, and image operations can use separate model and
-  service-tier settings while keeping OpenAI as the first implemented provider.
+- Role and operation policy layer for model selection: lesson decision, tutor,
+  onboarding, background, quality-review, and image operations can use separate
+  model and service-tier settings while keeping OpenAI as the first implemented
+  provider.
 - OpenAI-first model provider facade for tutor responses, profile generation,
   images, files, and vector stores; non-OpenAI model providers are stubs for now.
 - Tutor endpoint using OpenAI Responses API with `file_search` over OpenAI vector stores.
@@ -78,13 +79,18 @@ Production domain:
   compact session summaries, learning signals, and progress/regression rows
   by topic and skill are kept in SQLite for future explanation strategy.
 - Lesson lifecycle tracking records active lesson sessions, configurable daily
-  and continuous learning-time limits, goal status, and effectiveness signals
-  so the tutor can stop when a hard limit is hit or when backend-visible
-  student evidence supports a model suggestion that the lesson goal is reached.
+  and continuous learning-time limits, goal status, decision-policy results,
+  and effectiveness signals. The Lesson Decision Agent proposes teaching
+  actions, but backend policy controls goal completion; self-reported phrases
+  such as "я понял" are not accepted as mastery evidence.
+- The first deterministic verified learning loop supports backend-generated
+  linear-equation tasks, numeric answer verification, stored attempts, mastery
+  evidence, and goal completion from backend proof for that vertical.
 - User-visible lesson usage bar shows the signed-in user's own estimated
-  daily and per-lesson AI expenses with operation/model/token/image details.
-  Cost estimates come from local pricing configuration; they are not provider
-  billing proof.
+  daily and per-lesson AI expenses with operation/model/token/image details,
+  decision outcomes, verifier status, verified outcome count, and cost per
+  verified outcome. Cost estimates come from local pricing configuration; they
+  are not provider billing proof.
 - Russian/English static web UI locale switch for auth, first meeting, tutor, and admin views.
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for

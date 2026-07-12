@@ -18,6 +18,14 @@ interface AiOperationDefinition {
 }
 
 const OPERATION_DEFINITIONS: Record<AiOperationKey, AiOperationDefinition> = {
+  lessonDecision: {
+    operation: 'lesson.decide_next_action',
+    role: 'lesson_decision_agent',
+    responseFormat: 'json',
+    modelPaths: ['ai.operationModels.lessonDecision', 'ai.openai.responsesModel'],
+    fallbackModel: 'gpt-5.5',
+    serviceTierPaths: ['ai.operationServiceTiers.lessonDecision'],
+  },
   tutorAnswer: {
     operation: 'tutor.answer',
     role: 'tutor',

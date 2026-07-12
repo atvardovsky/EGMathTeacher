@@ -63,6 +63,21 @@ decisions.
   completion.
 - Lesson strategy signals now use scoped progress/regression rows relevant to
   the current conversation, lesson type, or inferred topic hint.
+- Lesson Decision Agent contracts now route each tutor turn through structured
+  teaching actions and backend policy before final answer generation.
+- Self-reported completion phrases are no longer accepted as goal completion;
+  they remain weak evidence that should trigger a student attempt or
+  explanation.
+- `lesson_decisions` stores action-level decision/policy observability.
+- Lesson decision calls can be disabled or locally timed out into a safe
+  fallback.
+- Tutor messages can carry a request id for idempotent retry handling.
+- A first deterministic verified learning loop exists for linear equations:
+  backend-generated task, student attempt, numeric verifier, mastery evidence,
+  and cost-per-verified-outcome visibility.
+- Accepted `mark_goal_blocked` policy now updates durable lesson goal state.
+- Profile-delta proposals from the immediate decision path are routed into
+  sanitized background observations instead of mutating the profile.
 
 ## Remaining Gaps By Logical Set
 
@@ -133,7 +148,11 @@ Requires RAG/product workflow decisions:
 
 Remaining teaching-engine gaps:
 
-- deterministic mathematical checker for at least one vertical ЕГЭ task type
-- closed loop from task attempt to error classification, hint, retry, and
-  proven mastery update
+- deterministic mathematical checkers beyond the current linear-equation
+  numeric-answer vertical
+- richer closed loop from verified error classification to adaptive hint,
+  retry ladder, repeated success, and mastery decay/review
 - full curriculum/prerequisite map for topic-aware progression
+- native curriculum IDs still need broader coverage beyond the current
+  minimal resolver
+- conversational first meeting still needs to replace the form-first fallback

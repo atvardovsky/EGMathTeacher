@@ -38,7 +38,15 @@ Current covered areas:
   and stale queued/running state recovery
 - tutor structured output and image data URL behavior
 - AI model-provider facade delegation and role/operation policy application
-  for response and image requests
+  for response, lesson-decision, and image requests
+- Lesson Decision Agent policy rejection and decision observability storage
+- Lesson Decision Agent fallback/timeout-safe path, backend verifier evidence
+  strengthening, sanitized decision storage, and profile-delta background
+  routing
+- lesson lifecycle goal completion remains pending without accepted backend
+  policy and only completes when policy accepts the completion proposal
+- deterministic linear-equation verifier, student attempts, mastery evidence,
+  and cost-per-verified-outcome summary behavior
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths

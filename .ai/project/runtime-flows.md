@@ -76,12 +76,19 @@ This file records runtime flows from current source evidence.
 2. Web client calls `POST /tutor/message` with:
    - `message`
    - optional `conversationId`
+   - `requestId` for idempotent retry handling
    - source `text` or `voice`
    - optional `lessonType`
 3. `TutorService` normalizes the message, conversation id, and lesson type.
    If lesson type is omitted, it infers a conservative default from the
-   prompt.
-4. `LessonService` creates or touches the active `lesson_sessions` row for the
+   prompt. When `requestId` already has a stored tutor turn for the signed-in
+   user, the API returns that stored answer instead of calling the models again.
+4. `CurriculumService` resolves a canonical topic, skill, task type, and
+   verifier kind. The current verified vertical is
+   `algebra.linear.solve_one_variable` /
+   `ege.base.linear_equation_numeric`; unsupported skills remain routing
+   context but cannot produce verified mastery.
+5. `LessonService` creates or touches the active `lesson_sessions` row for the
    conversation and lesson type. If an older client reuses a conversation id
    with a different lesson type, the previous active session is finished and a
    new session is created. The first turn adds no active-learning seconds; later
@@ -89,51 +96,81 @@ This file records runtime flows from current source evidence.
    turn count, active-learning heuristic seconds, daily and continuous
    learning-limit state, goal status, and the current scoped
    progress/regression strategy signal.
-5. If a hard daily or continuous learning limit is reached, `TutorService`
+6. If a hard daily or continuous learning limit is reached, `TutorService`
    returns a local stop response, persists the tutor turn, and does not call
    the model for a new explanation.
-6. `StudentProfileService` loads the stored student profile summary and
+7. `MathVerifierService` checks the current message against the latest pending
+   backend task for the lesson session when the message looks like a submitted
+   answer. It writes `student_attempts` and, for correct/equivalent supported
+   answers, writes `mastery_evidence` and a verified progress row.
+8. `StudentProfileService` loads the stored student profile summary and
    explanation strategy when available.
-7. `KnowledgeService` returns configured or uploaded vector store ids.
-8. `TutorService` builds a model-provider request:
+9. `LessonDecisionService` calls the `lessonDecision` model-provider
+   operation with the lesson lifecycle, current message, recent turns, profile
+   context, scoped strategy signal, curriculum context, backend verifier
+   evidence, limits, and allowed lesson-agent tools. The decision call can be
+   disabled with `AI_LESSON_DECISION_ENABLED=false` or fail fast to a local
+   fallback after `AI_LESSON_DECISION_TIMEOUT_MS`.
+10. `LessonPolicyService` accepts or rejects proposed actions. The decision
+   agent cannot directly finish lessons or mutate profiles. Self-reported
+   understanding remains weak evidence and should lead to a requested attempt
+   or explanation. Attempt-based completion requires backend-observed attempt
+   evidence; practice and mistake-review completion require backend verifier
+   evidence.
+11. `LessonDecisionService` stores action-level observability in
+   `lesson_decisions`, including tool name, sanitized decision JSON, policy
+   result, accepted/rejected status, evidence level, verifier result when
+   available, latency, model, local usage correlation id, fallback marker, and
+   outcome. `propose_profile_delta` is rejected from immediate mutation and
+   routed into sanitized background observations.
+12. `KnowledgeService` returns configured or uploaded vector store ids.
+13. `TutorService` builds a model-provider request:
    - Russian ЕГЭ tutor instructions
    - user name
    - source type
    - lesson type description, goal, and preferred block mix
+   - curriculum ids and backend verifier evidence
    - lesson lifecycle state, goal criteria, learning-limit state, and
      progress/regression strategy signal
+   - Lesson Decision Agent action results and backend policy outcome
    - optional DB-backed student profile context
    - user prompt
    - optional `file_search` tool
    - local-only usage context for user, conversation, lesson session, and
-     lesson type
-9. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
+     lesson type plus a local correlation id
+14. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
    operation policy, including model, metadata, and optional service tier.
-10. The current OpenAI-backed provider calls Responses API.
-11. After the provider returns, `AiModelService` strips local usage context
+15. The current OpenAI-backed provider calls Responses API.
+16. After the provider returns, `AiModelService` strips local usage context
     from provider payloads and writes `ai_usage_ledger` when usage context is
     present.
-12. API parses model output as structured tutor JSON when possible. The
+17. API parses model output as structured tutor JSON when possible. The
    preferred response contract is an ordered `blocks` array containing text,
    task, example, and image blocks. Legacy `answer`, `tasks`, `examples`,
    `needsImage`, and `imagePrompt` fields remain populated for compatibility.
    The preferred contract also includes `lessonLifecycle.goalStatus` so the
-   model can suggest that the lesson goal is reached or blocked.
-13. API extracts citations from file-search annotations/results.
-14. `LessonService` completes the turn, stores a lesson effectiveness signal,
-    and accepts goal completion only when backend-visible student evidence
-    supports the model suggestion. Otherwise `goalStatus=reached` remains a
+   model can report policy-accepted goal completion or blockage.
+18. API extracts citations from file-search annotations/results.
+19. If the lesson needs an independent attempt and the resolved curriculum
+    vertical is supported, `MathVerifierService` appends and stores a
+    backend-generated verifiable task without exposing the expected answer.
+20. `LessonService` completes the turn, stores a lesson effectiveness signal,
+    and accepts goal completion only when backend policy accepted a
+    `propose_goal_completion` action. Otherwise `goalStatus=reached` remains a
     pending model suggestion and the lesson stays in progress.
-15. API writes the tutor turn and lesson type to `tutor_turns`.
-16. API enqueues background AI work. In batched mode, it stores a sanitized
+21. API writes the tutor turn, lesson type, and optional request id to
+    `tutor_turns`.
+22. API enqueues background AI work. In batched mode, it stores a sanitized
     tutor-turn observation with lesson type and schedules or reschedules a grouped
     `learning_window_analysis` job. In legacy mode, it enqueues per-turn
     learning-signal extraction and separate interval jobs for session summary,
     student profile refresh, teaching strategy refresh, or rare quality review.
     Enqueue failures are isolated from the immediate answer path.
-17. API returns the tutor answer with lesson lifecycle and a compact usage
-    snapshot for current lesson/day.
-18. Web client refreshes `GET /usage/me/summary`, renders the usage bar, then
+23. API returns the tutor answer with lesson lifecycle, compact usage snapshot
+    for current lesson/day, and user-visible debug facts for curriculum,
+    decision policy, and verifier result.
+24. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
+    then
     renders ordered response blocks, lesson-type badge, citations, and
     optional image actions inside the same tutor turn.
 
@@ -219,9 +256,13 @@ This file records runtime flows from current source evidence.
    - current lesson total when a lesson session exists
    - recent lesson summaries
    - per-operation details for the selected/current lesson
-5. The web tutor workspace renders a compact user-visible usage bar and an
-   expanded table with operation, assistant role, model, service tier, token
-   counts, image counts, and local estimated cost.
+   - recent Lesson Decision Agent actions and policy outcomes
+   - verified learning outcome count and cost per verified outcome when
+     mastery evidence exists
+5. The web tutor workspace renders a compact user-visible usage/debug bar and
+   an expanded table with operation, assistant role, model, service tier,
+   token counts, image counts, local estimated cost, decision tool, evidence,
+   verifier result, acceptance/rejection, fallback marker, and latency.
 6. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
    provider request ids, secrets, stack traces, or another user's rows.
 

@@ -141,6 +141,7 @@ const usageSummary = {
     items: [
       {
         id: 'usage-1',
+        correlationId: 'turn-e2e',
         lessonSessionId: 'lesson-e2e',
         conversationId: 'conv-e2e',
         lessonType: 'tutor',
@@ -160,6 +161,22 @@ const usageSummary = {
         createdAt: '2026-07-11T10:20:00.000Z',
       },
     ],
+    decisions: [
+      {
+        id: 'decision-1',
+        correlationId: 'turn-e2e',
+        toolName: 'request_student_attempt',
+        accepted: true,
+        evidenceLevel: 'agent_interpreted',
+        verifierResult: 'cannot_verify',
+        latencyMs: 18,
+        fallbackUsed: false,
+        lessonOutcome: 'in_progress',
+        createdAt: '2026-07-11T10:20:00.000Z',
+      },
+    ],
+    verifiedOutcomes: 0,
+    costPerVerifiedOutcomeUsd: null,
   },
   recentLessons: [],
 };

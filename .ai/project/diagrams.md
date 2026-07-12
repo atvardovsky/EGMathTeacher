@@ -54,6 +54,7 @@ Update the source diagram when changes affect:
 - API/proxy routing
 - external service boundaries
 - persistence ownership
+- lesson decision/tool-policy flow
 - WebRTC/media flow ownership
 - deployment shape
 - generated artifact ownership

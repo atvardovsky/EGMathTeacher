@@ -45,11 +45,26 @@ visible next actions.
   goal status, active-learning time, daily/continuous learning-limit status,
   and a progress/regression strategy signal. The POC uses configurable
   educational time-limit heuristics, not clinical fatigue diagnosis.
-- A lesson can stop when a hard learning limit is reached or when backend-
-  visible student evidence supports a model suggestion that the lesson goal is
-  reached. A raw LLM `goalStatus=reached` is treated as a pending suggestion
-  until the backend sees student completion evidence. Soft limits ask the
-  tutor to wrap up the current step instead of starting a long new topic.
+- Tutor turns run through a Lesson Decision Agent before final answer
+  generation. The decision agent selects allowed teaching actions such as
+  requesting an attempt, changing explanation strategy, suggesting visual
+  support, or proposing goal completion. Backend policy accepts or rejects
+  every proposed durable state change. The decision path can be disabled with
+  `AI_LESSON_DECISION_ENABLED=false` and has a local fallback after
+  `AI_LESSON_DECISION_TIMEOUT_MS`.
+- A lesson can stop when a hard learning limit is reached or when backend
+  policy accepts a goal-completion proposal with enough evidence for the
+  lesson type. A raw LLM `goalStatus=reached` or a self-reported phrase such
+  as "я понял" remains pending unless backend policy accepted completion.
+  Soft limits ask the tutor to wrap up the current step instead of starting a
+  long new topic.
+- A first deterministic verified learning loop exists for one vertical:
+  `algebra.linear.solve_one_variable` /
+  `ege.base.linear_equation_numeric`. The backend can generate a linear
+  equation task, verify a submitted numeric answer, store a student attempt,
+  store mastery evidence for correct answers, and allow backend policy to
+  complete practice/mistake-review goals from that proof. Other curriculum
+  skills remain routing context until their verifier contracts are implemented.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
@@ -62,7 +77,10 @@ visible next actions.
   including recent session summaries and skill progress/regression signals.
 - Authenticated users can see their own lesson usage bar in the tutor
   workspace, including today's estimate, current lesson estimate, and expanded
-  operation/model/token/image details.
+  operation/model/token/image details. The expanded bar also shows
+  action-level Lesson Decision Agent outcomes, verifier result, evidence
+  level, fallback marker, latency, verified learning outcome count, and local
+  cost per verified outcome when mastery evidence exists.
 - Tutor prompts include the stored student profile summary when available so
   explanations adapt to the teenager across compacted sessions.
 - Tutor turns enqueue delayed background AI work for learning-signal
@@ -88,14 +106,19 @@ visible next actions.
   rows for the current conversation, lesson type, or topic hint can change how
   later explanations are framed without letting unrelated topics dominate the
   current strategy.
+- Lesson decision observability stores each proposed action, backend policy
+  result, acceptance/rejection reason, evidence level, verifier result when
+  available, latency, model, local usage correlation id, fallback marker,
+  profile-delta routing marker, and outcome in `lesson_decisions`. Stored
+  decision JSON is sanitized.
 - Background assistant calls use the model-provider facade and can request
   lower-cost OpenAI Flex processing through operation-level service-tier
   policy when using the OpenAI provider.
 - Model-provider operation calls can write a local usage ledger for the
   signed-in user when usage context is present. The ledger stores provider,
   model, operation, assistant role, token/image counts, and locally estimated
-  USD cost; it does not store raw prompts, hidden instructions, provider
-  request ids, or billing credentials.
+  USD cost plus a local correlation id; it does not store raw prompts, hidden
+  instructions, provider request ids, or billing credentials.
 - Tutor, onboarding, background, quality-review, and image calls resolve
   model settings through role/operation policy before reaching the provider,
   so each assistant role can be tuned independently while provider support
@@ -115,8 +138,10 @@ visible next actions.
 - API modules:
   - `AuthModule`: local users, roles, signed session cookies.
   - `DatabaseModule`: SQLite storage and table initialization.
-  - `LessonModule`: lesson session lifecycle, goal status, learning-time
-    heuristics, and effectiveness-signal storage.
+- `LessonModule`: lesson session lifecycle, goal status, learning-time
+    heuristics, Lesson Decision Agent orchestration, backend action policy,
+    curriculum resolution, deterministic verifier V1, decision observability,
+    and effectiveness-signal storage.
   - `UsageModule`: authenticated user usage summaries backed by the local AI
     usage ledger.
   - `StudentProfileModule`: first-login profile creation, profile status, and
@@ -166,9 +191,17 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   configurable learning-limit state, turn count, and active-learning seconds.
 - `lesson_effectiveness_signals`: teaching-only signals about goal status,
   answer shape, and strategy adjustment recommendations.
+- `lesson_decisions`: per-action Lesson Decision Agent and backend policy
+  observability rows.
+- `curriculum_skills`: minimal canonical topic/skill/task-type registry for
+  lesson routing and verifier support.
+- `lesson_tasks`: backend-generated or imported tasks tied to a lesson
+  session and curriculum skill.
+- `student_attempts`: submitted answers and deterministic verifier results.
+- `mastery_evidence`: proof rows for verified learning outcomes.
 - `ai_usage_ledger`: per-operation model usage records for signed-in users,
   including operation, assistant role, model, token/image counts, local cost
-  estimate, and pricing source.
+  estimate, pricing source, and local correlation id.
 - `student_learning_signals`: sanitized teaching-useful learning signals,
   session summaries, profile-refresh evidence, strategy-refresh evidence, and
   quality-review records.

@@ -5,9 +5,18 @@ import { AiModelService } from '../ai-model/ai-model.service';
 import { AuthSession } from '../auth/auth.types';
 import { BackgroundAiService } from '../background-ai/background-ai.service';
 import { DatabaseService } from '../database/database.service';
+import { CurriculumService } from '../lesson/curriculum.service';
+import { LessonDecisionService } from '../lesson/lesson-decision.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { LessonService } from '../lesson/lesson.service';
-import type { LessonGoalStatus, LessonLifecycleDto } from '../lesson/lesson.types';
+import { MathVerifierService } from '../lesson/math-verifier.service';
+import type {
+  CurriculumContext,
+  LessonDecisionResult,
+  LessonVerifierEvidence,
+  LessonGoalStatus,
+  LessonLifecycleDto,
+} from '../lesson/lesson.types';
 import { StudentProfileService } from '../student-profile/student-profile.service';
 import { UsageService } from '../usage/usage.service';
 import type {
@@ -28,6 +37,7 @@ interface AnswerMessageOptions {
   user: AuthSession;
   message?: string;
   conversationId?: string;
+  requestId?: string;
   source: 'text' | 'voice';
   lessonType?: LessonType;
 }
@@ -153,22 +163,37 @@ export class TutorService {
     private readonly studentProfileService: StudentProfileService,
     private readonly backgroundAiService: BackgroundAiService,
     private readonly lessonService: LessonService,
+    private readonly lessonDecisionService: LessonDecisionService,
     private readonly usageService: UsageService,
+    private readonly curriculumService: CurriculumService,
+    private readonly mathVerifierService: MathVerifierService,
   ) {}
 
   async answerMessage(options: AnswerMessageOptions): Promise<TutorAnswer> {
     const message = this.normalizeMessage(options.message);
+    const requestId = this.normalizeRequestId(options.requestId);
+    const cachedAnswer = requestId ? this.getCachedTutorTurn(options.user.id, requestId) : undefined;
+    if (cachedAnswer) {
+      cachedAnswer.usage = this.usageService.getLessonUsageSnapshot(
+        options.user.id,
+        cachedAnswer.lessonLifecycle.lessonSessionId,
+      );
+      return cachedAnswer;
+    }
     const conversationId = options.conversationId?.trim() || `conv_${randomUUID()}`;
     const lessonType = this.normalizeLessonType(options.lessonType) ?? this.inferLessonType(message);
+    const curriculum = this.curriculumService.resolve(message);
+    const topicHint = curriculum.topicId;
+    const correlationId = `turn_${randomUUID()}`;
     const lifecycle = this.lessonService.beginTurn({
       userId: options.user.id,
       conversationId,
       lessonType,
-      topicHint: this.inferTopicHint(message),
+      topicHint,
     });
     if (lifecycle.shouldStop) {
       const answer = this.buildLimitStopAnswer(conversationId, lessonType, lifecycle);
-      this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer);
+      this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer, requestId);
       answer.usage = this.usageService.getLessonUsageSnapshot(
         options.user.id,
         lifecycle.lessonSessionId,
@@ -176,8 +201,34 @@ export class TutorService {
       return answer;
     }
 
+    const verifierEvidence = this.mathVerifierService.verifyPendingTaskAttempt({
+      userId: options.user.id,
+      lessonSessionId: lifecycle.lessonSessionId,
+      conversationId,
+      message,
+    });
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
     const studentProfileContext = this.studentProfileService.getTutorContext(options.user.id);
+    const decisionResult = await this.lessonDecisionService.decide({
+      userId: options.user.id,
+      userName: options.user.name,
+      conversationId,
+      lessonType,
+      lifecycle,
+      studentMessage: message,
+      source: options.source,
+      studentProfileContext,
+      topicHint,
+      curriculum,
+      verifierEvidence,
+      usageContext: {
+        userId: options.user.id,
+        conversationId,
+        lessonSessionId: lifecycle.lessonSessionId,
+        lessonType,
+        correlationId,
+      },
+    });
     const response = await this.aiModel.createOperationResponse(
       vectorStoreIds.length > 0 ? 'tutorAnswerWithRag' : 'tutorAnswer',
       this.buildTutorRequest(
@@ -188,23 +239,37 @@ export class TutorService {
         studentProfileContext,
         lessonType,
         lifecycle,
+        decisionResult,
+        curriculum,
+        verifierEvidence,
         {
           userId: options.user.id,
           conversationId,
           lessonSessionId: lifecycle.lessonSessionId,
           lessonType,
+          correlationId,
         },
       ),
     );
     const text = this.extractOutputText(response);
     const answer = this.parseTutorAnswer(text, conversationId, lessonType, lifecycle);
     answer.citations = this.extractCitations(response);
+    answer.debug = this.buildTutorDebug(curriculum, decisionResult, verifierEvidence);
+    this.mathVerifierService.ensureBackendTask({
+      userId: options.user.id,
+      lessonSessionId: lifecycle.lessonSessionId,
+      conversationId,
+      lessonType,
+      curriculum,
+      answer,
+    });
     answer.lessonLifecycle = this.lessonService.completeTurn({
       userId: options.user.id,
       studentMessage: message,
       lifecycle: answer.lessonLifecycle,
       goalStatus: answer.lessonLifecycle.goalStatus,
       finishReason: answer.lessonLifecycle.finishReason,
+      decisionPolicy: decisionResult.policy,
       answerShape: {
         tasksCount: answer.tasks.length,
         examplesCount: answer.examples.length,
@@ -215,7 +280,8 @@ export class TutorService {
       options.user.id,
       answer.lessonLifecycle.lessonSessionId,
     );
-    this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer);
+    answer.debug = this.buildTutorDebug(curriculum, decisionResult, verifierEvidence);
+    this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer, requestId);
     this.enqueueBackgroundWork(options.user, conversationId, lessonType, message, options.source, answer);
     return answer;
   }
@@ -264,6 +330,9 @@ export class TutorService {
     studentProfileContext: string | undefined,
     lessonType: LessonType,
     lifecycle: LessonLifecycleDto,
+    decisionResult: LessonDecisionResult,
+    curriculum: CurriculumContext,
+    verifierEvidence: LessonVerifierEvidence,
     usageContext: Record<string, unknown>,
   ): Record<string, unknown> {
     const tools =
@@ -290,7 +359,10 @@ export class TutorService {
                 `Имя ученика: ${user.name}`,
                 `Источник запроса: ${source === 'voice' ? 'голос' : 'текст'}`,
                 this.getLessonTypePrompt(lessonType),
+                this.getCurriculumPrompt(curriculum),
                 this.getLessonLifecyclePrompt(lifecycle),
+                this.getVerifierPrompt(verifierEvidence),
+                this.getLessonDecisionPrompt(decisionResult),
                 studentProfileContext ? studentProfileContext : 'Профиль ученика еще не создан.',
                 `Запрос ученика: ${message}`,
               ].join('\n'),
@@ -310,9 +382,11 @@ export class TutorService {
       'Если в запросе есть профиль ученика из базы данных, адаптируй тон, темп, примеры, подсказки и визуальную поддержку под него.',
       'Психолого-педагогический профиль используй только как учебную стратегию. Не ставь диагнозы, не обсуждай чувствительные личные выводы и не манипулируй учеником.',
       'Учитывай тип занятия из запроса. Тип занятия управляет целью ответа, набором блоков, уровнем диагностики и тем, какие учебные сигналы важно собрать.',
+      'Учитывай curriculum IDs и backend verifier evidence. Если verifier уже проверил попытку, опирайся на этот результат, а не на собственную оценку.',
       'Учитывай состояние lessonLifecycle: цель, критерии успеха, лимиты времени, рекомендацию перерыва и сигнал прогресса/регресса.',
+      'Учитывай Lesson Decision и backend policy: следуй accepted actions, если proposal был rejected, мягко выполни requiredAction.',
       'Если lessonLifecycle показывает soft_limit, мягко заверши текущий шаг и не начинай длинную новую тему.',
-      'Выставляй lessonLifecycle.goalStatus="reached" только как предложение завершения, когда ученик уже показал попытку, подтверждение понимания или проверяемый результат. Backend завершит урок только при наличии наблюдаемого evidence.',
+      'Не завершай урок самостоятельно. lessonLifecycle.goalStatus="reached" можно ставить только если backend policy already accepted propose_goal_completion.',
       'Если прогресс сменился регрессом, поменяй стратегию: меньше шаг, другой пример, визуальная опора или короткая проверка базы.',
       'Планируй ответ как ordered blocks: text, example, task, image. Текст должен работать даже если картинка не будет создана.',
       'Если ученик просит задачу, верни 1-3 task blocks и продублируй их в поле tasks.',
@@ -394,22 +468,41 @@ export class TutorService {
     lessonType: LessonType,
     prompt: string,
     answer: TutorAnswer,
+    requestId?: string,
   ): void {
     this.db.run(
       `INSERT INTO tutor_turns (
-         id, user_id, conversation_id, lesson_type, prompt, answer_json, created_at
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         randomUUID(),
         userId,
         conversationId,
+        requestId ?? null,
         lessonType,
         prompt,
         JSON.stringify(answer),
         new Date().toISOString(),
       ],
     );
+  }
+
+  private getCachedTutorTurn(userId: string, requestId: string): TutorAnswer | undefined {
+    const row = this.db.get<{ answer_json: string }>(
+      `SELECT answer_json
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND request_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, requestId],
+    );
+    if (!row) {
+      return undefined;
+    }
+    const parsed = this.parseJsonObject(row.answer_json);
+    return parsed ? (parsed as unknown as TutorAnswer) : undefined;
   }
 
   private enqueueBackgroundWork(
@@ -892,6 +985,33 @@ export class TutorService {
     ].join('\n');
   }
 
+  private getCurriculumPrompt(curriculum: CurriculumContext): string {
+    return [
+      'Curriculum context:',
+      `topic_id: ${curriculum.topicId}`,
+      `topic_title: ${curriculum.topicTitle}`,
+      `skill_id: ${curriculum.skillId}`,
+      `skill_title: ${curriculum.skillTitle}`,
+      `task_type_id: ${curriculum.taskTypeId}`,
+      `verifier_kind: ${curriculum.verifierKind}`,
+      `confidence: ${curriculum.confidence}`,
+    ].join('\n');
+  }
+
+  private getVerifierPrompt(evidence: LessonVerifierEvidence): string {
+    return [
+      'Backend verifier evidence:',
+      `attemptSubmitted: ${evidence.attemptSubmitted ? 'yes' : 'no'}`,
+      `result: ${evidence.result}`,
+      `masteryUpdateAllowed: ${evidence.masteryUpdateAllowed ? 'yes' : 'no'}`,
+      evidence.taskId ? `taskId: ${evidence.taskId}` : '',
+      evidence.attemptId ? `attemptId: ${evidence.attemptId}` : '',
+      evidence.errorCode ? `errorCode: ${evidence.errorCode}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
   private getLessonLifecyclePrompt(lifecycle: LessonLifecycleDto): string {
     return [
       'Состояние занятия:',
@@ -899,6 +1019,7 @@ export class TutorService {
       `Статус: ${lifecycle.status}`,
       `Статус цели: ${lifecycle.goalStatus}`,
       `Evidence статуса цели: ${lifecycle.goalStatusEvidence}`,
+      `Уровень evidence: ${lifecycle.goalEvidenceLevel}`,
       `Цель занятия: ${lifecycle.lessonGoal}`,
       `Критерии успеха: ${lifecycle.successCriteria.join('; ')}`,
       `Активное время занятия: ${Math.round(lifecycle.activeLearningSeconds / 60)} мин`,
@@ -907,6 +1028,23 @@ export class TutorService {
       `Лимит текущего занятия: ${lifecycle.continuousLimit.status}`,
       `Нужен перерыв: ${lifecycle.shouldSuggestBreak ? 'да' : 'нет'}`,
       `Сигнал стратегии: ${lifecycle.strategySignal.direction}; ${lifecycle.strategySignal.summary}; ${lifecycle.strategySignal.recommendedAdjustment}`,
+    ].join('\n');
+  }
+
+  private getLessonDecisionPrompt(decisionResult: LessonDecisionResult): string {
+    return [
+      'Lesson Decision:',
+      JSON.stringify({
+        actions: decisionResult.decision.actions,
+        evidenceLevel: decisionResult.decision.evidenceLevel,
+        confidence: decisionResult.decision.confidence,
+        reason: decisionResult.decision.reason,
+        acceptedActions: decisionResult.policy.acceptedActions,
+        rejectedActions: decisionResult.policy.rejectedActions,
+        goalCompletion: decisionResult.policy.goalCompletion,
+        recommendedNextAction: decisionResult.policy.recommendedNextAction,
+        verifierResult: decisionResult.policy.verifierResult,
+      }),
     ].join('\n');
   }
 
@@ -960,6 +1098,58 @@ export class TutorService {
       throw new BadRequestException('Message is too long');
     }
     return normalized;
+  }
+
+  private normalizeRequestId(requestId: string | undefined): string | undefined {
+    const normalized = requestId?.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    if (!/^[a-zA-Z0-9._:-]{8,120}$/.test(normalized)) {
+      throw new BadRequestException('requestId must be 8-120 safe identifier characters');
+    }
+    return normalized;
+  }
+
+  private buildTutorDebug(
+    curriculum: CurriculumContext,
+    decisionResult: LessonDecisionResult,
+    verifierEvidence: LessonVerifierEvidence,
+  ): TutorAnswer['debug'] {
+    return {
+      curriculum: {
+        topicId: curriculum.topicId,
+        topicTitle: curriculum.topicTitle,
+        skillId: curriculum.skillId,
+        skillTitle: curriculum.skillTitle,
+        taskTypeId: curriculum.taskTypeId,
+        taskTypeTitle: curriculum.taskTypeTitle,
+      },
+      decision: {
+        acceptedActions: decisionResult.debug.acceptedActions,
+        rejectedActions: decisionResult.debug.rejectedActions.map((result) => ({
+          toolName: result.toolName,
+          reason: result.reason,
+          requiredAction: result.requiredAction,
+        })),
+        evidenceLevel: decisionResult.debug.evidenceLevel,
+        verifierResult: decisionResult.debug.verifierResult,
+        recommendedNextAction: decisionResult.debug.recommendedNextAction,
+        goalCompletionAccepted: decisionResult.debug.goalCompletionAccepted,
+        goalCompletionReason: decisionResult.debug.goalCompletionReason,
+        latencyMs: decisionResult.debug.latencyMs,
+        fallbackUsed: decisionResult.debug.fallbackUsed,
+      },
+      verifier: {
+        attemptSubmitted: verifierEvidence.attemptSubmitted,
+        taskId: verifierEvidence.taskId,
+        attemptId: verifierEvidence.attemptId,
+        result: verifierEvidence.result,
+        errorCode: verifierEvidence.errorCode,
+        confidence: verifierEvidence.confidence,
+        masteryUpdateAllowed: verifierEvidence.masteryUpdateAllowed,
+      },
+    };
   }
 
   private normalizeImagePrompt(prompt: string | undefined, context: string | undefined): string {

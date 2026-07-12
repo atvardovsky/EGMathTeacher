@@ -30,7 +30,11 @@ AI job and learning-signal tables, and migration
 observation-window storage, and migration `004_session_progress_tracking`
 after adding lesson type, session-summary, and skill-progress storage, and
 migration `005_lesson_lifecycle_usage` after adding lesson sessions,
-effectiveness signals, and the AI usage ledger.
+effectiveness signals, and the AI usage ledger, migration
+`006_lesson_decision_agent` after adding decision observability, and migration
+`007_verified_learning_loop` after adding request idempotency, local
+curriculum seeds, backend lesson tasks, student attempts, mastery evidence,
+and usage/decision correlation ids.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -292,7 +296,9 @@ conversation id and lesson type; a lesson-type switch finishes the previous
 active session and starts a new one. The DTO exposes `goalStatusEvidence` so
 callers can distinguish backend-observed completion, model-suggested pending
 completion, learning-limit stops, and ordinary in-progress state without
-adding a separate SQLite column in the POC.
+adding a separate SQLite column in the POC. The DTO also exposes
+`goalEvidenceLevel`; accepted action-level evidence is stored in
+`lesson_decisions`.
 
 ### `lesson_effectiveness_signals`
 
@@ -318,11 +324,141 @@ rows relevant to the current conversation, lesson type, or inferred topic hint
 instead of all recent rows for the user. They are not grades and must not store
 sensitive non-teaching details.
 
+### `lesson_decisions`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `lesson_session_id` | `TEXT` | required, references `lesson_sessions(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `operation_key` | `TEXT` | required model operation key |
+| `operation` | `TEXT` | required normalized operation name |
+| `assistant_role` | `TEXT` | required assistant role |
+| `provider` | `TEXT` | required provider id |
+| `model` | `TEXT` | required model name resolved by operation policy |
+| `tool_name` | `TEXT` | required lesson-agent tool/action name |
+| `decision_json` | `TEXT` | required sanitized structured Lesson Decision Agent output |
+| `policy_result_json` | `TEXT` | required backend policy result for this action |
+| `accepted` | `INTEGER` | required; `0` or `1` |
+| `rejection_reason` | `TEXT` | optional backend rejection reason |
+| `evidence_level` | `TEXT` | required; `none`, `self_reported`, `agent_interpreted`, `attempt_submitted`, `deterministically_verified`, or `repeated_independent_success` |
+| `verifier_result` | `TEXT` | optional verifier status when available |
+| `latency_ms` | `INTEGER` | required local decision latency |
+| `retry_count` | `INTEGER` | required retry/fallback marker in the POC |
+| `lesson_outcome` | `TEXT` | optional compact outcome label |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `usage_correlation_id` | `TEXT` | optional local correlation id shared with `ai_usage_ledger` |
+| `fallback_used` | `INTEGER` | required; `0` or `1` decision fallback marker |
+| `profile_delta_routed` | `INTEGER` | required; `0` or `1` marker for background-routed profile hypotheses |
+
+Source owner: `apps/api/src/lesson`, `apps/api/src/ai-model`, and
+`apps/api/src/database/database.service.ts`.
+
+Lesson decision rows provide action-level observability for the agent-directed,
+backend-governed lesson loop. They store proposed tool actions and policy
+results, not raw hidden prompts, provider request ids, billing credentials, or
+clinical/student personality labels. They are debug/product evidence for
+teaching flow quality and cost-per-outcome analysis, not grades.
+
+### `curriculum_skills`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `skill_id` | `TEXT` | primary key canonical skill id |
+| `topic_id` | `TEXT` | required canonical topic id |
+| `topic_title` | `TEXT` | required human-readable topic title |
+| `skill_title` | `TEXT` | required human-readable skill title |
+| `task_type_id` | `TEXT` | required canonical task type id |
+| `task_type_title` | `TEXT` | required human-readable task type title |
+| `verifier_kind` | `TEXT` | required verifier kind, currently `linear_equation_numeric` or `unsupported` |
+| `created_at` | `TEXT` | required timestamp |
+
+Source owner: `apps/api/src/lesson/curriculum.service.ts` and
+`apps/api/src/database/database.service.ts`.
+
+The current POC seeds a minimal curriculum registry. Only
+`algebra.linear.solve_one_variable` has a deterministic verifier. Other seeded
+skills are routing context and remain unsupported for verified mastery.
+
+### `lesson_tasks`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `lesson_session_id` | `TEXT` | required, references `lesson_sessions(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `lesson_type` | `TEXT` | required lesson type |
+| `topic_id` | `TEXT` | required curriculum topic id |
+| `skill_id` | `TEXT` | required curriculum skill id |
+| `task_type_id` | `TEXT` | required curriculum task type id |
+| `prompt` | `TEXT` | required student-visible task prompt |
+| `expected_answer` | `TEXT` | required backend verifier answer, not exposed in tutor response |
+| `verifier_kind` | `TEXT` | required verifier kind |
+| `source` | `TEXT` | required; `backend_generated` or `model_imported` |
+| `status` | `TEXT` | required; `pending`, `attempted`, `verified_correct`, or `blocked` |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
+`apps/api/src/database/database.service.ts`.
+
+Backend-generated tasks are the first proof surface for deterministic practice.
+The current vertical generates a linear equation with a numeric answer.
+
+### `student_attempts`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `task_id` | `TEXT` | required, references `lesson_tasks(id)` |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `lesson_session_id` | `TEXT` | required, references `lesson_sessions(id)` |
+| `conversation_id` | `TEXT` | required tutor conversation id |
+| `answer_text` | `TEXT` | required bounded submitted answer text |
+| `verifier_result` | `TEXT` | required; `correct`, `incorrect`, `equivalent`, `partially_correct`, `invalid_format`, or `cannot_verify` |
+| `expected_answer` | `TEXT` | optional backend expected answer for audit/debug |
+| `error_code` | `TEXT` | optional compact error classification |
+| `confidence` | `TEXT` | required verifier confidence |
+| `mastery_update_allowed` | `INTEGER` | required; `0` or `1` |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
+`apps/api/src/database/database.service.ts`.
+
+Attempts are proof records for a concrete backend task. They are not grades.
+
+### `mastery_evidence`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `lesson_session_id` | `TEXT` | required, references `lesson_sessions(id)` |
+| `task_id` | `TEXT` | required, references `lesson_tasks(id)` |
+| `attempt_id` | `TEXT` | required, references `student_attempts(id)` |
+| `topic_id` | `TEXT` | required curriculum topic id |
+| `skill_id` | `TEXT` | required curriculum skill id |
+| `task_type_id` | `TEXT` | required curriculum task type id |
+| `evidence_level` | `TEXT` | required; `deterministically_verified` or `repeated_independent_success` |
+| `verifier_result` | `TEXT` | required verifier result |
+| `outcome` | `TEXT` | required compact outcome label |
+| `created_at` | `TEXT` | required ISO timestamp |
+
+Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
+`apps/api/src/database/database.service.ts`.
+
+Mastery evidence links verified attempts to a topic/skill/task type. Usage
+summaries use it to compute cost per verified learning outcome.
+
 ### `ai_usage_ledger`
 
 | Column | Type | Rule |
 | --- | --- | --- |
 | `id` | `TEXT` | primary key |
+| `correlation_id` | `TEXT` | optional local correlation id shared with decision rows |
 | `user_id` | `TEXT` | optional user reference |
 | `conversation_id` | `TEXT` | optional tutor conversation id |
 | `lesson_session_id` | `TEXT` | optional reference to `lesson_sessions(id)` |
@@ -358,6 +494,7 @@ ids, secrets, billing credentials, or another user's usage in a response.
 | `id` | `TEXT` | primary key |
 | `user_id` | `TEXT` | required, references `users(id)` |
 | `conversation_id` | `TEXT` | required |
+| `request_id` | `TEXT` | optional client request id for idempotent retry handling |
 | `lesson_type` | `TEXT` | required lesson type |
 | `prompt` | `TEXT` | required |
 | `answer_json` | `TEXT` | required serialized tutor answer |

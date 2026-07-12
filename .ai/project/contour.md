@@ -22,7 +22,9 @@ The project contour owns:
   file metadata, tutor turns, background AI jobs, background learning
   observations, background analysis windows, session summaries, skill
   progress/regression, lesson sessions, lesson effectiveness signals, AI usage
-  ledger rows, and learning signals; OpenAI owns uploaded files, vector
+  ledger rows, lesson decision rows, curriculum skill seeds, lesson tasks,
+  student attempts, mastery evidence, and learning signals; OpenAI owns
+  uploaded files, vector
   stores, model responses, profile-generation responses, background model
   responses, and generated images.
 - UI facts: the web client uses Mantine, lucide icons, browser speech
@@ -52,7 +54,8 @@ The project contour does not own:
   `.ai/project/context-map.md`, `.ai/project/source-of-truth-registry.md`,
   `.ai/project/use-cases.md`, `.ai/project/architecture.md`,
   `.ai/project/runtime-flows.md`, `.ai/project/data-model.md`,
-  `.ai/project/validation.md`, `.ai/project/gaps.md`,
+  `.ai/project/lesson-agent-tools.md`, `.ai/project/validation.md`,
+  `.ai/project/gaps.md`,
   `.ai/project/security-safety.md`,
   `.ai/project/guards.md`, `.ai/project/diagrams.md`,
   `.ai/project/ui-guidelines.md`, `.ai/project/ui-tree.md`.

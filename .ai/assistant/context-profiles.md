@@ -81,6 +81,7 @@ Required context:
 - `.ai/assistant/flows/blueprint-driven-change.flow.md`
 - `.ai/assistant/gates/checklist.md`
 - `.ai/project/blueprint.md`
+- `.ai/project/lesson-agent-tools.md`
 - `.ai/project/use-cases.md`
 - affected code, tests, docs, and diagrams
 
@@ -110,6 +111,7 @@ Required context:
 - `.ai/assistant/gates/checklist.md`
 - `.ai/project/architecture.md`
 - `.ai/project/runtime-flows.md`
+- `.ai/project/lesson-agent-tools.md`
 - `.ai/project/diagrams.md`
 - affected source files
 
@@ -134,6 +136,7 @@ Required context:
 - `.ai/framework/testing-guidance.md`
 - `.ai/assistant/gates/checklist.md`
 - `.ai/project/data-model.md`
+- `.ai/project/lesson-agent-tools.md`
 - `.ai/project/security-safety.md`
 - relevant API and web DTO source files
 

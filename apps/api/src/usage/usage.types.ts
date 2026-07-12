@@ -19,6 +19,7 @@ export interface AiUsageTotals {
 
 export interface AiUsageLedgerItem {
   id: string;
+  correlationId: string | null;
   lessonSessionId: string | null;
   conversationId: string | null;
   lessonType: LessonType | null;
@@ -39,6 +40,20 @@ export interface AiUsageLedgerItem {
   createdAt: string;
 }
 
+export interface LessonDecisionUsageItem {
+  id: string;
+  correlationId: string | null;
+  toolName: string;
+  accepted: boolean;
+  rejectionReason?: string;
+  evidenceLevel: string;
+  verifierResult?: string;
+  latencyMs: number;
+  fallbackUsed: boolean;
+  lessonOutcome?: string;
+  createdAt: string;
+}
+
 export interface LessonUsageSummary {
   lessonSessionId: string;
   conversationId: string | null;
@@ -47,6 +62,9 @@ export interface LessonUsageSummary {
   goalStatus: string | null;
   total: AiUsageTotals;
   items: AiUsageLedgerItem[];
+  decisions: LessonDecisionUsageItem[];
+  verifiedOutcomes: number;
+  costPerVerifiedOutcomeUsd: number | null;
 }
 
 export interface UserUsageSummary {
@@ -58,6 +76,7 @@ export interface UserUsageSummary {
 
 export interface AiUsageRecord {
   id: string;
+  correlation_id: string | null;
   user_id: string | null;
   conversation_id: string | null;
   lesson_session_id: string | null;

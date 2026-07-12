@@ -14,6 +14,7 @@ describe('TutorService', () => {
 
   function createService(overrides: Partial<{ response: Record<string, unknown> }> = {}) {
     const db = {
+      get: jest.fn(),
       run: jest.fn(),
     };
     const lifecycle = {
@@ -23,6 +24,7 @@ describe('TutorService', () => {
       status: 'active',
       goalStatus: 'in_progress',
       goalStatusEvidence: 'none',
+      goalEvidenceLevel: 'none',
       lessonGoal: 'Дать понятный разбор вопроса и проверить понимание.',
       successCriteria: ['объяснен главный шаг'],
       turnCount: 1,
@@ -150,8 +152,84 @@ describe('TutorService', () => {
         shouldStop: goalStatus === 'reached' || inputLifecycle.shouldStop,
       })),
     };
+    const lessonDecision = {
+      decide: jest.fn(async () => ({
+        decision: {
+          id: 'decision-1',
+          actions: [
+            {
+              name: 'request_student_attempt',
+              reason: 'Need an independent attempt.',
+              expectedEvidence: 'attempt_submitted',
+              confidence: 'medium',
+            },
+          ],
+          evidenceLevel: 'agent_interpreted',
+          confidence: 'medium',
+          reason: 'Continue lesson and request a short attempt.',
+          verifierResult: 'cannot_verify',
+        },
+        policy: {
+          decisionId: 'decision-1',
+          evidenceLevel: 'agent_interpreted',
+          actionResults: [
+            {
+              toolName: 'request_student_attempt',
+              accepted: true,
+              reason: 'Teaching action is allowed.',
+              evidenceLevel: 'agent_interpreted',
+            },
+          ],
+          acceptedActions: ['request_student_attempt'],
+          rejectedActions: [],
+          goalCompletion: {
+            proposed: false,
+            accepted: false,
+            reason: 'No goal-completion action was proposed.',
+            evidenceLevel: 'agent_interpreted',
+          },
+          shouldSuggestBreak: false,
+          goalBlocked: false,
+          recommendedNextAction: 'request_student_attempt',
+          verifierResult: 'cannot_verify',
+        },
+        debug: {
+          decisionId: 'decision-1',
+          acceptedActions: ['request_student_attempt'],
+          rejectedActions: [],
+          evidenceLevel: 'agent_interpreted',
+          verifierResult: 'cannot_verify',
+          recommendedNextAction: 'request_student_attempt',
+          goalCompletionAccepted: false,
+          goalCompletionReason: 'No goal-completion action was proposed.',
+          latencyMs: 12,
+          fallbackUsed: false,
+        },
+      })),
+    };
     const usageService = {
       getLessonUsageSnapshot: jest.fn(() => usageSnapshot),
+    };
+    const curriculum = {
+      resolve: jest.fn(() => ({
+        topicId: 'algebra.quadratic_equations',
+        topicTitle: 'Квадратные уравнения',
+        skillId: 'algebra.quadratic.discriminant',
+        skillTitle: 'Дискриминант',
+        taskTypeId: 'ege.base.quadratic_roots',
+        taskTypeTitle: 'ЕГЭ: корни квадратного уравнения',
+        verifierKind: 'unsupported',
+        confidence: 'high',
+      })),
+    };
+    const mathVerifier = {
+      verifyPendingTaskAttempt: jest.fn(() => ({
+        attemptSubmitted: false,
+        result: 'none',
+        confidence: 'unknown',
+        masteryUpdateAllowed: false,
+      })),
+      ensureBackendTask: jest.fn(),
     };
 
     return {
@@ -163,14 +241,20 @@ describe('TutorService', () => {
         studentProfile as any,
         backgroundAi as any,
         lessonService as any,
+        lessonDecision as any,
         usageService as any,
+        curriculum as any,
+        mathVerifier as any,
       ),
       db,
       aiModel,
       studentProfile,
       backgroundAi,
       lessonService,
+      lessonDecision,
       usageService,
+      curriculum,
+      mathVerifier,
       lifecycle,
     };
   }
@@ -216,6 +300,12 @@ describe('TutorService', () => {
           lessonSessionId: 'lesson-1',
         }),
       }),
+    );
+    expect(JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1])).toContain(
+      'Lesson Decision',
+    );
+    expect(JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1])).toContain(
+      'Curriculum context',
     );
     expect(backgroundAi.enqueueTutorTurnWork).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -285,6 +375,51 @@ describe('TutorService', () => {
     expect(JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1])).toContain(
       'Состояние занятия',
     );
+  });
+
+  it('adds a backend-verifiable task for supported practice turns', async () => {
+    const { service, curriculum, mathVerifier } = createService();
+    curriculum.resolve.mockReturnValueOnce({
+      topicId: 'algebra.linear_equations',
+      topicTitle: 'Линейные уравнения',
+      skillId: 'algebra.linear.solve_one_variable',
+      skillTitle: 'Решение линейного уравнения',
+      taskTypeId: 'ege.base.linear_equation_numeric',
+      taskTypeTitle: 'ЕГЭ: линейное уравнение с числовым ответом',
+      verifierKind: 'linear_equation_numeric',
+      confidence: 'high',
+    });
+    mathVerifier.ensureBackendTask.mockImplementation(({ answer }) => {
+      answer.tasks.push({
+        title: 'ЕГЭ: линейное уравнение с числовым ответом',
+        prompt: 'Реши уравнение: 2x + 3 = 15. В ответе напиши значение x.',
+        difficulty: 'base',
+      });
+    });
+
+    const result = await service.answerMessage({
+      user,
+      message: 'Дай практику по линейным уравнениям',
+      conversationId: 'conv-practice',
+      source: 'text',
+      lessonType: 'practice',
+    });
+
+    expect(mathVerifier.verifyPendingTaskAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lessonSessionId: 'lesson-1',
+        message: 'Дай практику по линейным уравнениям',
+      }),
+    );
+    expect(mathVerifier.ensureBackendTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lessonType: 'practice',
+        curriculum: expect.objectContaining({
+          verifierKind: 'linear_equation_numeric',
+        }),
+      }),
+    );
+    expect(result.tasks.some((task) => task.prompt.includes('2x + 3 = 15'))).toBe(true);
   });
 
   it('generates an image data URL', async () => {
