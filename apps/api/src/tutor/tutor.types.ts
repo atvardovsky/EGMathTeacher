@@ -2,6 +2,7 @@ export interface TutorTask {
   title: string;
   prompt: string;
   difficulty?: string;
+  hintLadder?: string[];
 }
 
 export interface TutorExample {
@@ -155,6 +156,12 @@ export interface TutorDebugVerifier {
   errorCode?: string;
   confidence: 'low' | 'medium' | 'high' | 'unknown';
   masteryUpdateAllowed: boolean;
+  masteryPolicyReason?: string;
+  masteryEvidenceLevel?: LessonEvidenceLevel;
+  verifiedSuccessCount?: number;
+  independentSuccessCount?: number;
+  requiredSuccessCount?: number;
+  nextHint?: string;
 }
 
 export interface TutorDebugCurriculum {

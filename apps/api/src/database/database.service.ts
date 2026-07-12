@@ -1078,6 +1078,71 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_knowledge_pack_sync_jobs_source
         ON knowledge_pack_sync_jobs(source_pack_version, source_path, status);
     `);
+
+    this.applyMigration('010_mastery_policy_and_task_source', `
+      PRAGMA legacy_alter_table = ON;
+
+      ALTER TABLE lesson_tasks RENAME TO lesson_tasks_old;
+
+      CREATE TABLE lesson_tasks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        expected_answer TEXT NOT NULL,
+        verifier_kind TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN (
+          'backend_generated',
+          'model_imported',
+          'task_bank_imported'
+        )),
+        status TEXT NOT NULL CHECK (status IN (
+          'pending',
+          'attempted',
+          'verified_correct',
+          'blocked'
+        )),
+        hint_ladder_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      INSERT INTO lesson_tasks (
+        id, user_id, lesson_session_id, conversation_id, lesson_type,
+        topic_id, skill_id, task_type_id, prompt, expected_answer,
+        verifier_kind, source, status, hint_ladder_json, created_at, updated_at
+      )
+      SELECT
+        id, user_id, lesson_session_id, conversation_id, lesson_type,
+        topic_id, skill_id, task_type_id, prompt, expected_answer,
+        verifier_kind,
+        CASE source
+          WHEN 'model_imported' THEN 'task_bank_imported'
+          ELSE source
+        END,
+        status,
+        NULL,
+        created_at,
+        updated_at
+      FROM lesson_tasks_old;
+
+      DROP TABLE lesson_tasks_old;
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_tasks_lesson_status
+        ON lesson_tasks(user_id, lesson_session_id, status, created_at);
+
+      ALTER TABLE student_attempts
+        ADD COLUMN mastery_policy_json TEXT;
+
+      PRAGMA legacy_alter_table = OFF;
+    `, { disableForeignKeys: true });
   }
 
   private applyMigration(

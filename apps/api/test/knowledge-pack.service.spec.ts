@@ -10,6 +10,8 @@ import { KnowledgeService } from '../src/knowledge/knowledge.service';
 function createConfig(sqlitePath: string): ConfigService {
   const values: Record<string, unknown> = {
     'app.sqlitePath': sqlitePath,
+    'app.knowledgeRagIndexWaitAttempts': 2,
+    'app.knowledgeRagIndexWaitDelayMs': 1,
     'ai.openai.vectorStoreIds': [],
   };
   return {
@@ -165,6 +167,50 @@ describe('KnowledgePackService', () => {
         ['file_2'],
       ),
     ).toEqual({ sync_status: 'superseded' });
+  });
+
+  it('does not reconcile removed RAG files when sync runs in partial mode', async () => {
+    writeText(root, 'rag-corpus/03-theory/linear-equations.md', '# Linear equations\n');
+
+    await packService.syncStudentRag({ rootPath: root });
+    rmSync(join(root, 'rag-corpus/03-theory/linear-equations.md'));
+
+    const partial = await packService.syncKnowledgePack({
+      rootPath: root,
+      syncRag: true,
+      importMode: 'partial',
+    });
+
+    expect(partial.rag?.retiredFiles).toBe(0);
+    expect(aiModel.removeFileFromVectorStore).not.toHaveBeenCalled();
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ sync_status: 'active' });
+  });
+
+  it('keeps wait-ready jobs attached when vector indexing does not complete', async () => {
+    writeText(root, 'rag-corpus/03-theory/linear-equations.md', '# Linear equations\n');
+    aiModel.listVectorStoreFiles.mockResolvedValue({
+      data: [{ id: 'file_1', status: 'queued' }],
+    });
+
+    await packService.syncStudentRag({ rootPath: root, waitUntilIndexed: true });
+
+    const job = db.get<{ status: string; metadata_json: string }>(
+      'SELECT status, metadata_json FROM knowledge_pack_sync_jobs LIMIT 1',
+    );
+    const metadata = JSON.parse(job?.metadata_json ?? '{}') as Record<string, unknown>;
+    expect(job?.status).toBe('completed');
+    expect(metadata.status).toBe('queued');
+    expect(metadata.indexWaitTimedOut).toBe(true);
+    expect(
+      db.get<{ status: string }>('SELECT status FROM knowledge_files WHERE openai_file_id = ?', [
+        'file_1',
+      ]),
+    ).toEqual({ status: 'queued' });
   });
 
   it('fails strict imports for incomplete packs and records failed sync attempts', async () => {

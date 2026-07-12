@@ -269,7 +269,7 @@ export class LessonDecisionService {
             attemptId: verifierEvidence.attemptId,
           },
           reason: 'Backend verifier accepted the current independent attempt.',
-          expectedEvidence: 'deterministically_verified',
+          expectedEvidence: verifierEvidence.masteryEvidenceLevel ?? 'deterministically_verified',
           confidence: 'high',
         });
       }
@@ -278,7 +278,7 @@ export class LessonDecisionService {
         actions,
         evidenceLevel: this.strongerEvidence(
           decision.evidenceLevel,
-          'deterministically_verified',
+          verifierEvidence.masteryEvidenceLevel ?? 'deterministically_verified',
         ),
         confidence: decision.confidence === 'low' ? 'medium' : decision.confidence,
         verifierResult: result,
@@ -654,6 +654,13 @@ export class LessonDecisionService {
       result: evidence.result,
       confidence: evidence.confidence,
       masteryUpdateAllowed: evidence.masteryUpdateAllowed,
+      masteryPolicyReason: evidence.masteryPolicyReason,
+      masteryEvidenceLevel: evidence.masteryEvidenceLevel,
+      verifiedSuccessCount: evidence.verifiedSuccessCount,
+      independentSuccessCount: evidence.independentSuccessCount,
+      requiredSuccessCount: evidence.requiredSuccessCount,
+      nextHint: evidence.nextHint,
+      hintLadder: evidence.hintLadder,
       topicId: evidence.topicId,
       skillId: evidence.skillId,
       taskTypeId: evidence.taskTypeId,

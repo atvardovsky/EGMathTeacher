@@ -677,6 +677,7 @@ export class TutorService {
           title: this.pickString(record, ['title']) ?? 'Задача',
           prompt,
           difficulty: this.pickString(record, ['difficulty']),
+          hintLadder: this.pickStringArray(record, ['hintLadder', 'hint_ladder']),
         };
       })
       .filter((task): task is TutorTask => Boolean(task));
@@ -733,6 +734,7 @@ export class TutorService {
             title: this.pickString(record, ['title']) ?? 'Задача',
             prompt,
             difficulty: this.pickString(record, ['difficulty']),
+            hintLadder: this.pickStringArray(record, ['hintLadder', 'hint_ladder']),
           };
         }
 
@@ -829,6 +831,7 @@ export class TutorService {
       title: task.title,
       prompt: task.prompt,
       difficulty: task.difficulty,
+      hintLadder: task.hintLadder,
     };
   }
 
@@ -886,6 +889,7 @@ export class TutorService {
         title: block.title,
         prompt: block.prompt,
         difficulty: block.difficulty,
+        hintLadder: block.hintLadder,
       }));
   }
 
@@ -1004,6 +1008,18 @@ export class TutorService {
       `attemptSubmitted: ${evidence.attemptSubmitted ? 'yes' : 'no'}`,
       `result: ${evidence.result}`,
       `masteryUpdateAllowed: ${evidence.masteryUpdateAllowed ? 'yes' : 'no'}`,
+      evidence.masteryPolicyReason ? `masteryPolicy: ${evidence.masteryPolicyReason}` : '',
+      evidence.masteryEvidenceLevel ? `masteryEvidenceLevel: ${evidence.masteryEvidenceLevel}` : '',
+      evidence.verifiedSuccessCount !== undefined
+        ? `verifiedSuccessCount: ${evidence.verifiedSuccessCount}`
+        : '',
+      evidence.independentSuccessCount !== undefined
+        ? `independentSuccessCount: ${evidence.independentSuccessCount}`
+        : '',
+      evidence.requiredSuccessCount !== undefined
+        ? `requiredSuccessCount: ${evidence.requiredSuccessCount}`
+        : '',
+      evidence.nextHint ? `nextHint: ${evidence.nextHint}` : '',
       evidence.taskId ? `taskId: ${evidence.taskId}` : '',
       evidence.attemptId ? `attemptId: ${evidence.attemptId}` : '',
       evidence.errorCode ? `errorCode: ${evidence.errorCode}` : '',
@@ -1148,6 +1164,12 @@ export class TutorService {
         errorCode: verifierEvidence.errorCode,
         confidence: verifierEvidence.confidence,
         masteryUpdateAllowed: verifierEvidence.masteryUpdateAllowed,
+        masteryPolicyReason: verifierEvidence.masteryPolicyReason,
+        masteryEvidenceLevel: verifierEvidence.masteryEvidenceLevel,
+        verifiedSuccessCount: verifierEvidence.verifiedSuccessCount,
+        independentSuccessCount: verifierEvidence.independentSuccessCount,
+        requiredSuccessCount: verifierEvidence.requiredSuccessCount,
+        nextHint: verifierEvidence.nextHint,
       },
     };
   }
@@ -1183,6 +1205,28 @@ export class TutorService {
       const value = source[key];
       if (typeof value === 'string' && value.trim().length > 0) {
         return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private pickStringArray(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): string[] | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      const strings = value
+        .map((item) => String(item).trim())
+        .filter((item) => item.length > 0);
+      if (strings.length > 0) {
+        return strings;
       }
     }
     return undefined;

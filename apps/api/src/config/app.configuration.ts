@@ -22,4 +22,15 @@ export default registerAs('app', () => ({
   ),
   lessonMinTurnSeconds: parseInt(process.env.LESSON_MIN_TURN_SECONDS ?? '30', 10),
   lessonMaxTurnGapSeconds: parseInt(process.env.LESSON_MAX_TURN_GAP_SECONDS ?? '900', 10),
+  taskBankRequired: ['true', '1', 'yes', 'y', 'on'].includes(
+    (process.env.TASK_BANK_REQUIRED ?? 'false').toLowerCase(),
+  ),
+  knowledgeRagIndexWaitAttempts: parseInt(
+    process.env.KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS ?? '40',
+    10,
+  ),
+  knowledgeRagIndexWaitDelayMs: parseInt(
+    process.env.KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS ?? '500',
+    10,
+  ),
 }));

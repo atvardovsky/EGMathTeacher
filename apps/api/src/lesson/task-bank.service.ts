@@ -19,6 +19,7 @@ export interface TaskBankSelection {
   sourceTaskId: string;
   prompt: string;
   expectedAnswer: string;
+  hintLadder: string[];
   task: TutorTask;
 }
 
@@ -34,18 +35,21 @@ export class TaskBankService {
     if (input.curriculum.verifierKind !== 'linear_equation_numeric') {
       return undefined;
     }
-    const row = this.selectFreshTask(input) ?? this.selectReusableTask(input.curriculum);
+    const row = this.selectFreshTask(input) ?? this.selectReusableTask(input);
     if (!row) {
       return undefined;
     }
+    const hintLadder = this.parseStringArray(row.hint_ladder_json);
     return {
       sourceTaskId: row.task_id,
       prompt: row.prompt,
       expectedAnswer: row.expected_answer,
+      hintLadder,
       task: {
         title: input.curriculum.taskTypeTitle,
         prompt: row.prompt,
         difficulty: this.toTutorDifficulty(row.difficulty),
+        hintLadder,
       },
     };
   }
@@ -91,17 +95,30 @@ export class TaskBankService {
     );
   }
 
-  private selectReusableTask(curriculum: CurriculumContext): TaskBankRow | undefined {
+  private selectReusableTask(input: {
+    userId: string;
+    lessonType: LessonType;
+    curriculum: CurriculumContext;
+  }): TaskBankRow | undefined {
     return this.db.get<TaskBankRow>(
       `SELECT task_id, topic_id, skill_id, task_type_id, difficulty, prompt,
               expected_answer, hint_ladder_json, verifier_kind
        FROM task_bank_tasks
+       LEFT JOIN (
+         SELECT prompt AS used_prompt, COUNT(*) AS use_count, MAX(created_at) AS last_used_at
+         FROM lesson_tasks
+         WHERE user_id = ?
+           AND skill_id = ?
+         GROUP BY prompt
+       ) AS task_usage ON task_usage.used_prompt = task_bank_tasks.prompt
        WHERE COALESCE(sync_status, 'active') = 'active'
          AND topic_id = ?
          AND skill_id = ?
          AND task_type_id = ?
          AND verifier_kind = ?
        ORDER BY
+         COALESCE(task_usage.use_count, 0),
+         task_usage.last_used_at,
          CASE difficulty
            WHEN 'foundation' THEN 0
            WHEN 'base' THEN 1
@@ -111,7 +128,14 @@ export class TaskBankService {
          END,
          task_id
        LIMIT 1`,
-      [curriculum.topicId, curriculum.skillId, curriculum.taskTypeId, curriculum.verifierKind],
+      [
+        input.userId,
+        input.curriculum.skillId,
+        input.curriculum.topicId,
+        input.curriculum.skillId,
+        input.curriculum.taskTypeId,
+        input.curriculum.verifierKind,
+      ],
     );
   }
 
@@ -120,5 +144,16 @@ export class TaskBankService {
       return value;
     }
     return 'base';
+  }
+
+  private parseStringArray(value: string): string[] {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.map((item) => String(item)).filter((item) => item.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
   }
 }

@@ -66,6 +66,7 @@ export interface KnowledgePackSyncOptions {
   force?: boolean;
   importMode?: KnowledgePackImportMode;
   waitUntilIndexed?: boolean;
+  reconcileRag?: boolean;
 }
 
 export interface KnowledgePackSyncSummary {
@@ -203,6 +204,7 @@ export class KnowledgePackService {
           metadata,
           dryRun: options.dryRun ?? false,
           waitUntilIndexed: options.waitUntilIndexed ?? false,
+          reconcileRemovedFiles: (options.reconcileRag ?? true) && importMode === 'strict',
         });
       }
 
@@ -313,6 +315,7 @@ export class KnowledgePackService {
     metadata?: PackMetadata;
     dryRun?: boolean;
     waitUntilIndexed?: boolean;
+    reconcileRemovedFiles?: boolean;
   }): Promise<KnowledgePackRagSyncSummary> {
     const rootPath = this.normalizePackRoot(input.rootPath);
     this.assertPackTreeWithinLimits(rootPath);
@@ -350,12 +353,14 @@ export class KnowledgePackService {
         });
       }
     }
-    const reconcileResults = await this.knowledgeService.reconcileMissingRagSourceFiles({
-      activeRelativePaths: files.map((file) => file.relativePath),
-      sourcePackVersion: packVersion,
-      dryRun: input.dryRun ?? false,
-    });
-    results.push(...reconcileResults);
+    if (input.reconcileRemovedFiles ?? true) {
+      const reconcileResults = await this.knowledgeService.reconcileMissingRagSourceFiles({
+        activeRelativePaths: files.map((file) => file.relativePath),
+        sourcePackVersion: packVersion,
+        dryRun: input.dryRun ?? false,
+      });
+      results.push(...reconcileResults);
+    }
 
     return {
       packVersion,

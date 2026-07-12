@@ -70,9 +70,10 @@ Production domain:
   support partial mode with warnings, record failed ledgers, soft-retire
   removed structured rows, and store pack schema/release/content-hash
   metadata separately. RAG sync skips unchanged files, uploads changed files,
-  detaches superseded or removed source paths, records durable sync jobs, can
-  wait for vector-store indexing, and includes a recovery command for failed
-  jobs with recoverable OpenAI file ids.
+  detaches superseded source paths, records durable sync jobs, can wait for
+  vector-store indexing, and includes a recovery command for failed jobs with
+  recoverable OpenAI file ids. Removed-path reconciliation is enabled only for
+  strict authoritative RAG sync, not partial packs.
 - Lesson runtime reads active `curriculum_skills` rows from SQLite and selects
   supported verifier tasks from imported `task_bank_tasks`; unknown topics stay
   `unknown` instead of silently falling back to the linear-equation context.
@@ -96,9 +97,11 @@ Production domain:
   and effectiveness signals. The Lesson Decision Agent proposes teaching
   actions, but backend policy controls goal completion; self-reported phrases
   such as "я понял" are not accepted as mastery evidence.
-- The first deterministic verified learning loop supports backend-generated
-  linear-equation tasks, numeric answer verification, stored attempts, mastery
-  evidence, and goal completion from backend proof for that vertical.
+- The first deterministic verified learning loop supports task-bank-backed
+  linear-equation tasks, numeric answer verification, stored attempts, hint
+  ladders, and mastery-policy-gated evidence. A correct answer is stored as an
+  attempt first; mastery evidence, progress updates, and goal completion are
+  written only when imported `curriculum_mastery_criteria` allow it.
 - User-visible lesson usage bar shows the signed-in user's own estimated
   daily and per-lesson AI expenses with operation/model/token/image details,
   decision outcomes, verifier status, verified outcome count, and cost per
@@ -135,12 +138,15 @@ are intended:
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --partial --no-reconcile-rag
 npm run knowledge:sync -- --recover-rag --wait-ready
 ```
 
 Knowledge-pack sync remains a trusted local operator workflow. Non-dry-run
 `--sync-rag` can create, upload, attach, and detach OpenAI files/vector-store
 attachments, so run it only with explicit intent and configured credentials.
+Partial RAG packs do not reconcile removed paths; use strict authoritative
+sync when the current pack should define the complete vector-store file set.
 
 GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs install,
 build, tests, lint, mocked browser E2E, diagram drift checks, and Alatyr

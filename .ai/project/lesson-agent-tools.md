@@ -44,7 +44,7 @@ complete a lesson. They should lead to a requested attempt or explanation.
 | `give_task` | Ask for a practice or diagnostic task. | None. | Any teaching context. | None in the POC. |
 | `request_student_attempt` | Ask the student to solve or apply a step independently. | None. | Used when completion evidence is missing. | None in the POC. |
 | `request_student_explanation` | Ask the student to explain in their own words. | None. | Used for concept, meeting, and reflection checks. | None in the POC. |
-| `check_student_answer` | Ask for verification of a submitted attempt. | None by itself; backend verifier writes attempts and mastery evidence. | `attempt_submitted`. | Rejected as mastery proof without backend verifier evidence. |
+| `check_student_answer` | Ask for verification of a submitted attempt. | None by itself; backend verifier writes attempts, then backend mastery policy decides whether mastery evidence is allowed. | `attempt_submitted`. | Rejected as mastery proof without backend verifier evidence and mastery-policy acceptance. |
 | `give_hint` | Provide a smaller hint. | None. | Any teaching context. | None in the POC. |
 | `change_explanation_strategy` | Change tone, step size, representation, or example strategy. | None; strategy updates are recorded through background evidence later. | `agent_interpreted` or stronger. | None in the POC. |
 | `suggest_visual_support` | Ask tutor response to include an image plan block. | None. | Any teaching context. | None in the POC. |
@@ -66,8 +66,12 @@ Minimum accepted evidence by lesson type:
 - `exam_strategy`: backend-observed `attempt_submitted` after at least two turns.
 - `visual_explanation`: backend-observed `attempt_submitted` after at least two turns.
 - `diagnostic`: `agent_interpreted` after at least two turns.
-- `practice`: `deterministically_verified` from backend verifier evidence.
-- `mistake_review`: `deterministically_verified` from backend verifier evidence.
+- `practice`: backend verifier evidence accepted by mastery policy, usually
+  `deterministically_verified` or `repeated_independent_success` depending on
+  imported criteria.
+- `mistake_review`: backend verifier evidence accepted by mastery policy,
+  usually `deterministically_verified` or `repeated_independent_success`
+  depending on imported criteria.
 
 The POC now has a deterministic verifier for one vertical task type:
 `ege.base.linear_equation_numeric` / `algebra.linear.solve_one_variable`.
@@ -80,18 +84,22 @@ until their verifier contracts are implemented.
 The first closed loop is intentionally narrow:
 
 ```text
-backend-generated linear-equation task
+task-bank-backed linear-equation task
 → student answer
 → numeric verifier
 → student_attempts row
-→ mastery_evidence row when correct
+→ MasteryPolicyService checks imported curriculum_mastery_criteria
+→ mastery_evidence row only when policy accepts the evidence sequence
 → policy can accept goal completion
 → usage summary can compute cost per verified outcome
 ```
 
 The backend, not the decision model, owns `lesson_tasks`, `student_attempts`,
-and `mastery_evidence`. The tutor model may explain, hint, or ask for a retry,
-but it does not write proof rows.
+`student_attempts.mastery_policy_json`, and `mastery_evidence`. The tutor
+model may explain, hint, or ask for a retry, but it does not write proof rows.
+If imported criteria set `single_success_can_complete=false`, one correct
+answer remains a verified attempt but does not become mastery evidence until
+the required independent success sequence is satisfied.
 
 ## Observability
 

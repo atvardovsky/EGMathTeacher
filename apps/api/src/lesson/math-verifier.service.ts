@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import type { LessonType, TutorAnswer, TutorTask } from '../tutor/tutor.types';
@@ -8,6 +9,7 @@ import {
   LessonVerifierEvidence,
   LessonVerifierResult,
 } from './lesson.types';
+import { MasteryPolicyService } from './mastery-policy.service';
 import { TaskBankService } from './task-bank.service';
 
 interface LessonTaskRecord {
@@ -22,7 +24,9 @@ interface LessonTaskRecord {
   prompt: string;
   expected_answer: string;
   verifier_kind: string;
+  source: 'backend_generated' | 'model_imported' | 'task_bank_imported';
   status: LessonTaskEvidence['status'];
+  hint_ladder_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -52,9 +56,13 @@ const EMPTY_VERIFIER_EVIDENCE: LessonVerifierEvidence = {
 
 @Injectable()
 export class MathVerifierService {
+  private readonly logger = new Logger(MathVerifierService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly taskBankService: TaskBankService,
+    private readonly masteryPolicyService: MasteryPolicyService,
+    private readonly configService: ConfigService,
   ) {}
 
   verifyPendingTaskAttempt(input: VerifyInput): LessonVerifierEvidence {
@@ -73,8 +81,8 @@ export class MathVerifierService {
     const result = this.verifyNumber(actual, expected);
     const now = new Date().toISOString();
     const attemptId = randomUUID();
-    const masteryUpdateAllowed = result === 'correct' || result === 'equivalent';
     const errorCode = this.errorCodeFor(result, actual, expected);
+    const hintLadder = this.parseStringArray(task.hint_ladder_json);
 
     this.db.run(
       `INSERT INTO student_attempts (
@@ -94,16 +102,36 @@ export class MathVerifierService {
         task.expected_answer,
         errorCode ?? null,
         'high',
-        masteryUpdateAllowed ? 1 : 0,
+        0,
         now,
       ],
+    );
+
+    const masteryPolicy = this.masteryPolicyService.evaluateVerifiedAttempt({
+      userId: input.userId,
+      lessonSessionId: input.lessonSessionId,
+      skillId: task.skill_id,
+      verifierResult: result,
+    });
+    const masteryUpdateAllowed = masteryPolicy.allowed;
+
+    this.db.run(
+      `UPDATE student_attempts
+       SET mastery_update_allowed = ?,
+           mastery_policy_json = ?
+       WHERE id = ?`,
+      [masteryUpdateAllowed ? 1 : 0, JSON.stringify(masteryPolicy), attemptId],
     );
 
     this.db.run(
       `UPDATE lesson_tasks
        SET status = ?, updated_at = ?
        WHERE id = ?`,
-      [masteryUpdateAllowed ? 'verified_correct' : 'attempted', now, task.id],
+      [
+        this.isSuccessfulVerifierResult(result) ? 'verified_correct' : 'pending',
+        now,
+        task.id,
+      ],
     );
 
     if (masteryUpdateAllowed) {
@@ -123,7 +151,9 @@ export class MathVerifierService {
           task.topic_id,
           task.skill_id,
           task.task_type_id,
-          'deterministically_verified',
+          masteryPolicy.evidenceLevel === 'repeated_independent_success'
+            ? 'repeated_independent_success'
+            : 'deterministically_verified',
           result,
           'verified_learning_outcome',
           now,
@@ -142,6 +172,13 @@ export class MathVerifierService {
       errorCode,
       confidence: 'high',
       masteryUpdateAllowed,
+      masteryPolicyReason: masteryPolicy.reason,
+      masteryEvidenceLevel: masteryPolicy.evidenceLevel,
+      verifiedSuccessCount: masteryPolicy.verifiedSuccessCount,
+      independentSuccessCount: masteryPolicy.independentSuccessCount,
+      requiredSuccessCount: masteryPolicy.requiredIndependentSuccessCount,
+      nextHint: this.pickNextHint(task.id, hintLadder, result),
+      hintLadder,
       topicId: task.topic_id,
       skillId: task.skill_id,
       taskTypeId: task.task_type_id,
@@ -162,6 +199,16 @@ export class MathVerifierService {
       lessonType: input.lessonType,
       curriculum: input.curriculum,
     });
+    if (!selectedTask && this.isTaskBankRequired()) {
+      throw new Error(
+        `Task bank task is required but no imported task matches ${input.curriculum.skillId}/${input.curriculum.taskTypeId}.`,
+      );
+    }
+    if (!selectedTask) {
+      this.logger.warn(
+        `Using generated fallback task for ${input.curriculum.skillId}/${input.curriculum.taskTypeId}; imported task bank row was not found.`,
+      );
+    }
     const generated = selectedTask ?? this.generateTask(input.curriculum);
     const taskId = `task_${randomUUID()}`;
     const now = new Date().toISOString();
@@ -169,9 +216,9 @@ export class MathVerifierService {
       `INSERT INTO lesson_tasks (
          id, user_id, lesson_session_id, conversation_id, lesson_type,
          topic_id, skill_id, task_type_id, prompt, expected_answer,
-         verifier_kind, source, status, created_at, updated_at
+         verifier_kind, source, status, hint_ladder_json, created_at, updated_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       [
         taskId,
         input.userId,
@@ -184,7 +231,8 @@ export class MathVerifierService {
         generated.prompt,
         generated.expectedAnswer,
         input.curriculum.verifierKind,
-        selectedTask ? 'model_imported' : 'backend_generated',
+        selectedTask ? 'task_bank_imported' : 'backend_generated',
+        JSON.stringify(generated.task.hintLadder ?? []),
         now,
         now,
       ],
@@ -199,6 +247,8 @@ export class MathVerifierService {
       skillId: input.curriculum.skillId,
       taskTypeId: input.curriculum.taskTypeId,
       status: 'pending',
+      source: selectedTask ? 'task_bank_imported' : 'backend_generated',
+      hintLadder: generated.task.hintLadder,
     };
   }
 
@@ -233,6 +283,7 @@ export class MathVerifierService {
         title: curriculum.taskTypeTitle,
         prompt,
         difficulty: 'base',
+        hintLadder: [],
       },
       prompt,
       expectedAnswer: '6',
@@ -251,6 +302,7 @@ export class MathVerifierService {
       title: task.title,
       prompt: task.prompt,
       difficulty: task.difficulty,
+      hintLadder: task.hintLadder,
     });
   }
 
@@ -261,7 +313,7 @@ export class MathVerifierService {
     return this.db.get<LessonTaskRecord>(
       `SELECT id, user_id, lesson_session_id, conversation_id, lesson_type,
               topic_id, skill_id, task_type_id, prompt, expected_answer,
-              verifier_kind, status, created_at, updated_at
+              verifier_kind, source, status, hint_ladder_json, created_at, updated_at
        FROM lesson_tasks
        WHERE user_id = ?
          AND lesson_session_id = ?
@@ -280,6 +332,8 @@ export class MathVerifierService {
       skillId: task.skill_id,
       taskTypeId: task.task_type_id,
       status: task.status,
+      source: task.source,
+      hintLadder: this.parseStringArray(task.hint_ladder_json),
     };
   }
 
@@ -312,6 +366,10 @@ export class MathVerifierService {
       return 'invalid_format';
     }
     return Math.abs(actual - expected) < 1e-9 ? 'correct' : 'incorrect';
+  }
+
+  private isSuccessfulVerifierResult(result: LessonVerifierResult): boolean {
+    return result === 'correct' || result === 'equivalent';
   }
 
   private errorCodeFor(
@@ -359,5 +417,39 @@ export class MathVerifierService {
         now,
       ],
     );
+  }
+
+  private pickNextHint(
+    taskId: string,
+    hintLadder: string[],
+    result: LessonVerifierResult,
+  ): string | undefined {
+    if (result === 'correct' || result === 'equivalent' || hintLadder.length === 0) {
+      return undefined;
+    }
+    const attemptCount =
+      this.db.get<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM student_attempts WHERE task_id = ?',
+        [taskId],
+      )?.count ?? 1;
+    return hintLadder[Math.min(Math.max(attemptCount - 1, 0), hintLadder.length - 1)];
+  }
+
+  private parseStringArray(value: string | null): string[] {
+    if (!value) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.map((item) => String(item)).filter((item) => item.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private isTaskBankRequired(): boolean {
+    return this.configService.get<boolean>('app.taskBankRequired') ?? false;
   }
 }

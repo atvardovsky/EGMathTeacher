@@ -26,7 +26,7 @@ EGMathTeacher is a browser-based POC with:
   profile/strategy refreshes, and rare quality reviews
 - SQLite-backed lesson lifecycle, Lesson Decision Agent observability,
   DB-backed curriculum/task-bank runtime lookups, deterministic verifier V1,
-  and usage ledger for lesson goals,
+  imported mastery-criteria policy, and usage ledger for lesson goals,
   time-limit heuristics, backend policy decisions, effectiveness signals,
   verified learning outcomes, and user-visible cost estimates
 - OpenAI Realtime for inherited realtime voice
@@ -82,12 +82,12 @@ flowchart LR
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
 | `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, and legacy per-turn background jobs. |
-| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
+| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, imported mastery-criteria policy, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
 | `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, and verified outcome counts. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
-| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, deleted-path reconciliation, sync-job recovery, optional vector-store wait-ready, archive guardrails, vector store status, and local project vector-store id persistence. |
+| `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, strict authoritative deleted-path reconciliation, sync-job recovery, optional vector-store wait-ready, archive guardrails, vector store status, and local project vector-store id persistence. |
 | `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
@@ -148,8 +148,10 @@ policy decides whether goal completion, goal blockage, profile deltas, or other
 durable changes are accepted. Action-level observability is stored in
 `lesson_decisions`. The same module owns the first deterministic verifier
 vertical for linear equations, including task-bank-backed lesson tasks,
-student attempts, and mastery evidence. A hardcoded linear task remains only
-as a POC fallback when no imported task-bank row is available.
+student attempts, mastery-policy decisions, and policy-accepted mastery
+evidence. A hardcoded linear task remains only as a logged POC fallback when
+no imported task-bank row is available, and `TASK_BANK_REQUIRED=true` disables
+that fallback.
 
 `apps/api/src/background-ai` owns local background orchestration. It persists
 jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
@@ -181,7 +183,7 @@ Local operator command:
 
 | Command | Responsibility |
 | --- | --- |
-| `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--partial] [--wait-ready]` | Import validated structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. Non-dry-run sync remains a trusted local operator workflow and live OpenAI side effect. |
+| `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--partial] [--wait-ready] [--no-reconcile-rag]` | Import validated structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. Removed-path reconciliation is for strict authoritative RAG sync. Non-dry-run sync remains a trusted local operator workflow and live OpenAI side effect. |
 
 ## Deployment Shape
 

@@ -61,6 +61,14 @@ This repository houses a NestJS orchestration service that now handles both sign
   - `LESSON_*_LIMIT_MINUTES` and `LESSON_*_TURN_SECONDS` – configurable POC
     lesson lifecycle heuristics for daily/continuous learning limits and
     active-time estimation.
+  - `TASK_BANK_REQUIRED` – when `true`, supported verifier lessons fail if no
+    imported task-bank task matches the resolved curriculum. When `false`, the
+    POC generated linear-equation task remains as an explicitly logged
+    empty-DB fallback.
+  - `KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS` and
+    `KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS` – tune how long `--wait-ready` polls
+    vector-store file indexing before leaving the sync job attached but not
+    indexed.
   - `AI_USAGE_*` – local usage-ledger settings. Prices are configured locally
     for user-visible estimates and are not provider billing proof.
   - `OPENAI_VECTOR_STORE_IDS` – optional comma-separated vector store ids.
@@ -92,6 +100,7 @@ locally:
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --import-db --sync-rag
 npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --dry-run
+npm run knowledge:sync -- --pack ./EGMathTeacher-knowledge-pack-v1.0.zip --sync-rag --partial --no-reconcile-rag
 npm run knowledge:sync -- --recover-rag --wait-ready
 ```
 
@@ -105,14 +114,21 @@ line parsing, and core cross-references before writing runtime tables.
 OpenAI vector store. RAG sync is content-hash based: unchanged files are
 skipped, changed files are uploaded, superseded files are detached, and
 Markdown paths removed from the local pack are detached during reconciliation.
-`--wait-ready` polls vector-store file status until terminal readiness;
+Reconciliation is intended for strict authoritative packs and is disabled for
+partial packs unless a future operator flow explicitly proves authority.
+`--wait-ready` polls vector-store file status until terminal readiness; jobs
+are marked `indexed` only after the remote status is actually `completed`.
+Timeouts keep the job at the attached stage with timeout metadata.
 `--dry-run` performs no OpenAI create/upload/attach/delete calls.
 `--recover-rag` retries failed sync jobs that recorded a recoverable OpenAI
 file id.
 
 The lesson runtime now reads active curriculum rows from SQLite and selects
-linear-equation verifier tasks from imported `task_bank_tasks` when available;
-the old hardcoded task remains only as an empty-DB fallback for the POC.
+linear-equation verifier tasks, including hint ladders, from imported
+`task_bank_tasks` when available. Imported mastery criteria decide whether a
+verified answer can write mastery evidence or complete a practice goal. The
+old hardcoded task remains only as an explicitly logged empty-DB fallback for
+the POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 
 ## WebRTC Flow (Browser ↔ NestJS ↔ OpenAI)
 

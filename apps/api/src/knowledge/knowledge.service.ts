@@ -262,8 +262,14 @@ export class KnowledgeService {
       const status = input.waitUntilIndexed
         ? await this.waitForVectorStoreFile(vectorStoreId, openAiFileId)
         : attachedStatus;
-      if (input.waitUntilIndexed) {
+      if (input.waitUntilIndexed && status === 'completed') {
         this.updateSyncJob(syncJob.id, 'indexed', { openAiFileId, status });
+      } else if (input.waitUntilIndexed) {
+        this.updateSyncJob(syncJob.id, 'attached', {
+          openAiFileId,
+          status,
+          indexWaitTimedOut: true,
+        });
       }
       const now = new Date().toISOString();
       const knowledgeFileId = randomUUID();
@@ -456,6 +462,15 @@ export class KnowledgeService {
         const status = waitUntilIndexed
           ? await this.waitForVectorStoreFile(job.vector_store_id, openAiFileId)
           : attachedStatus;
+        if (waitUntilIndexed && status === 'completed') {
+          this.updateSyncJob(job.id, 'indexed', { openAiFileId, status });
+        } else if (waitUntilIndexed) {
+          this.updateSyncJob(job.id, 'attached', {
+            openAiFileId,
+            status,
+            indexWaitTimedOut: true,
+          });
+        }
         const now = new Date().toISOString();
         const knowledgeFileId = randomUUID();
         this.db.transaction(() => {
@@ -566,78 +581,83 @@ export class KnowledgeService {
     jobKind: 'student_rag_file' | 'student_rag_reconcile';
     metadata: Record<string, unknown>;
   }): KnowledgePackSyncJobRow {
-    const now = new Date().toISOString();
-    const jobKey = this.ragSyncJobKey(
-      input.jobKind,
-      input.vectorStoreId,
-      input.sourcePath,
-      input.contentHash,
-    );
-    const existing = this.getSyncJob(jobKey);
-    if (existing && ['running', 'uploaded', 'attached', 'cleanup_pending'].includes(existing.status)) {
-      throw new BadRequestException(`RAG sync job is already running for ${input.sourcePath}`);
-    }
+    return this.db.transaction(() => {
+      const now = new Date().toISOString();
+      const jobKey = this.ragSyncJobKey(
+        input.jobKind,
+        input.vectorStoreId,
+        input.sourcePath,
+        input.contentHash,
+      );
+      const existing = this.getSyncJob(jobKey);
+      if (
+        existing &&
+        ['running', 'uploaded', 'attached', 'cleanup_pending'].includes(existing.status)
+      ) {
+        throw new BadRequestException(`RAG sync job is already running for ${input.sourcePath}`);
+      }
 
-    if (existing) {
-      const mergedMetadata = {
-        ...this.parseMetadata(existing.metadata_json),
-        ...input.metadata,
-      };
+      if (existing) {
+        const mergedMetadata = {
+          ...this.parseMetadata(existing.metadata_json),
+          ...input.metadata,
+        };
+        this.db.run(
+          `UPDATE knowledge_pack_sync_jobs
+           SET status = 'running',
+               attempts = attempts + 1,
+               source_pack_version = ?,
+               vector_store_id = ?,
+               source_path = ?,
+               content_hash = ?,
+               metadata_json = ?,
+               error_message = NULL,
+               claimed_at = ?,
+               completed_at = NULL,
+               updated_at = ?
+           WHERE id = ?`,
+          [
+            input.sourcePackVersion,
+            input.vectorStoreId,
+            input.sourcePath,
+            input.contentHash,
+            JSON.stringify(mergedMetadata),
+            now,
+            now,
+            existing.id,
+          ],
+        );
+        return this.getSyncJob(jobKey) ?? existing;
+      }
+
+      const id = randomUUID();
       this.db.run(
-        `UPDATE knowledge_pack_sync_jobs
-         SET status = 'running',
-             attempts = attempts + 1,
-             source_pack_version = ?,
-             vector_store_id = ?,
-             source_path = ?,
-             content_hash = ?,
-             metadata_json = ?,
-             error_message = NULL,
-             claimed_at = ?,
-             completed_at = NULL,
-             updated_at = ?
-         WHERE id = ?`,
+        `INSERT INTO knowledge_pack_sync_jobs (
+           id, job_key, source_pack_version, vector_store_id, source_path,
+           content_hash, job_kind, status, attempts, metadata_json, claimed_at,
+           created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?, ?, ?)`,
         [
+          id,
+          jobKey,
           input.sourcePackVersion,
           input.vectorStoreId,
           input.sourcePath,
           input.contentHash,
-          JSON.stringify(mergedMetadata),
+          input.jobKind,
+          JSON.stringify(input.metadata),
           now,
           now,
-          existing.id,
+          now,
         ],
       );
-      return this.getSyncJob(jobKey) ?? existing;
-    }
-
-    const id = randomUUID();
-    this.db.run(
-      `INSERT INTO knowledge_pack_sync_jobs (
-         id, job_key, source_pack_version, vector_store_id, source_path,
-         content_hash, job_kind, status, attempts, metadata_json, claimed_at,
-         created_at, updated_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?, ?, ?)`,
-      [
-        id,
-        jobKey,
-        input.sourcePackVersion,
-        input.vectorStoreId,
-        input.sourcePath,
-        input.contentHash,
-        input.jobKind,
-        JSON.stringify(input.metadata),
-        now,
-        now,
-        now,
-      ],
-    );
-    const created = this.getSyncJob(jobKey);
-    if (!created) {
-      throw new BadRequestException('Could not create RAG sync job');
-    }
-    return created;
+      const created = this.getSyncJob(jobKey);
+      if (!created) {
+        throw new BadRequestException('Could not create RAG sync job');
+      }
+      return created;
+    });
   }
 
   private getSyncJob(jobKey: string): KnowledgePackSyncJobRow | undefined {
@@ -703,7 +723,9 @@ export class KnowledgeService {
 
   private async waitForVectorStoreFile(vectorStoreId: string, openAiFileId: string): Promise<string> {
     let lastStatus = 'queued';
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    const maxAttempts = this.configService.get<number>('app.knowledgeRagIndexWaitAttempts') ?? 40;
+    const delayMs = this.configService.get<number>('app.knowledgeRagIndexWaitDelayMs') ?? 500;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const response = await this.aiModel.listVectorStoreFiles(vectorStoreId);
       const data = Array.isArray(response.data) ? (response.data as Record<string, unknown>[]) : [];
       const entry = data.find((candidate) => {
@@ -720,7 +742,7 @@ export class KnowledgeService {
       if (lastStatus === 'failed' || lastStatus === 'cancelled') {
         throw new BadRequestException(`Vector-store indexing failed for ${openAiFileId}`);
       }
-      await this.delay(250);
+      await this.delay(delayMs);
     }
     return lastStatus;
   }

@@ -233,6 +233,11 @@ describe('StudentProfileService', () => {
         '009_knowledge_pack_runtime_repair',
       ]),
     ).toEqual({ version: '009_knowledge_pack_runtime_repair' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '010_mastery_policy_and_task_source',
+      ]),
+    ).toEqual({ version: '010_mastery_policy_and_task_source' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

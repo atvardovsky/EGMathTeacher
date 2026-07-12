@@ -103,8 +103,10 @@ This file records runtime flows from current source evidence.
    the model for a new explanation.
 7. `MathVerifierService` checks the current message against the latest pending
    backend task for the lesson session when the message looks like a submitted
-   answer. It writes `student_attempts` and, for correct/equivalent supported
-   answers, writes `mastery_evidence` and a verified progress row.
+   answer. It writes `student_attempts`, asks `MasteryPolicyService` to read
+   active `curriculum_mastery_criteria`, and records the policy result on the
+   attempt. Correct/equivalent answers write `mastery_evidence` and a verified
+   progress row only when the imported evidence sequence allows mastery.
 8. `StudentProfileService` loads the stored student profile summary and
    explanation strategy when available.
 9. `LessonDecisionService` calls the `lessonDecision` model-provider
@@ -156,8 +158,9 @@ This file records runtime flows from current source evidence.
 19. If the lesson needs an independent attempt and the resolved curriculum
     vertical is supported, `MathVerifierService` asks `TaskBankService` for an
     active imported `task_bank_tasks` row, appends and stores the selected
-    verifiable task without exposing the expected answer, and only uses the
-    hardcoded linear-equation task as a POC empty-DB fallback.
+    verifiable task plus hint ladder without exposing the expected answer, and
+    only uses the hardcoded linear-equation task as an explicitly logged POC
+    empty-DB fallback. `TASK_BANK_REQUIRED=true` disables that fallback.
 20. `LessonService` completes the turn, stores a lesson effectiveness signal,
     and accepts goal completion only when backend policy accepted a
     `propose_goal_completion` action. Otherwise `goalStatus=reached` remains a
@@ -332,7 +335,8 @@ Local knowledge-pack import/sync:
    and attached to the active vector store, then the superseded vector-store
    file is detached through the model provider and marked `superseded`
    locally. Deleted or renamed source paths are reconciled against active
-   vector-store attachments and detached when absent from the current pack.
+   vector-store attachments only when the current sync is strict and
+   authoritative; partial packs do not remove absent RAG paths.
 7. `--dry-run` plans RAG changes without creating vector stores, uploading
    files, attaching files, or deleting vector-store file attachments.
 8. The active vector store id is stored in `project_ai_resources` when
@@ -340,10 +344,13 @@ Local knowledge-pack import/sync:
    that locally stored vector store id automatically through
    `KnowledgeService.getActiveVectorStoreIds()`.
 9. Remote OpenAI operations and SQLite writes are coordinated by local
-   `knowledge_pack_sync_jobs` claims for upload/attach paths. Failed imports
-   are recorded in `knowledge_pack_imports`; `--wait-ready` can poll
-   vector-store indexing readiness; `--recover-rag` retries failed jobs that
-   recorded recoverable OpenAI file ids.
+   transaction-claimed `knowledge_pack_sync_jobs` rows for upload/attach
+   paths. Failed imports are recorded in `knowledge_pack_imports`;
+   `--wait-ready` polls vector-store indexing readiness with configurable
+   attempts and delay, and marks a job `indexed` only when remote status is
+   `completed`. Timeout leaves the job attached with timeout metadata.
+   `--recover-rag` retries failed jobs that recorded recoverable OpenAI file
+   ids.
 10. Non-dry-run RAG sync remains a protected live OpenAI side effect even
     though local idempotency and recovery metadata exist.
 

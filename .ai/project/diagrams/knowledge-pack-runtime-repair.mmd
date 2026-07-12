@@ -15,15 +15,16 @@ flowchart LR
     SelectTask --> LessonTasks[(lesson_tasks)]
     LessonTasks --> Verifier[MathVerifierService]
     Verifier --> Attempts[(student_attempts)]
-    Attempts --> Mastery[(mastery_evidence)]
+    Attempts --> MasteryPolicy[MasteryPolicyService]
+    MasteryPolicy --> Mastery[(mastery_evidence)]
   end
 
   subgraph RagSync[RAG sync hardening]
     Pack --> RagPaths[Current pack Markdown paths]
-    RagPaths --> Reconcile[Reconcile active source paths]
+    RagPaths --> Reconcile[Strict authoritative source-path reconciliation]
     Reconcile --> Upload[Upload or skip changed files]
     Upload --> Attach[Attach to vector store]
-    Attach --> WaitReady[Wait for indexing ready when enabled]
+    Attach --> WaitReady[Wait-ready marks indexed only after completed]
     WaitReady --> Cleanup[Detach retired or superseded files]
     Cleanup --> KnowledgeFiles[(knowledge_files)]
   end

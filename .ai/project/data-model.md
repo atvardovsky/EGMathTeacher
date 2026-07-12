@@ -37,17 +37,22 @@ curriculum seeds, backend lesson tasks, student attempts, mastery evidence,
 and usage/decision correlation ids, and migration
 `008_knowledge_pack_ingestion` after adding knowledge-pack import ledgers,
 structured curriculum/task-bank tables, project AI resource ids, and
-source-path/content-hash RAG sync metadata.
+source-path/content-hash RAG sync metadata, migration
+`009_knowledge_pack_runtime_repair` after adding pack identity, validation,
+retirement, sync-job, and recovery metadata, and migration
+`010_mastery_policy_and_task_source` after adding mastery-policy attempt
+metadata, task-bank task source semantics, and stored hint ladders on lesson
+tasks.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
 rollback, backfill, or backup system.
 
-Planned knowledge-pack repair migrations are tracked in
-`.ai/project/knowledge-pack-runtime-repair-plan.md`. They are expected to add
-or derive pack identity metadata, import mode/warnings, failed-import evidence,
-active/retired source state, and durable sync-job/claim state before the
-knowledge-pack workflow is treated as production-like.
+Knowledge-pack repair behavior is recorded in
+`.ai/project/knowledge-pack-runtime-repair-plan.md`. The local POC schema now
+stores pack identity metadata, import mode/warnings, failed-import evidence,
+active/retired source state, durable sync-job/claim state, and
+mastery-policy attempt metadata.
 
 ### `users`
 
@@ -89,8 +94,8 @@ uses `source_kind=knowledge_pack_student_rag`, stores the source path and hash,
 skips unchanged files, and marks older synced rows `superseded` after the
 remote vector-store attachment has been detached. If remote cleanup fails, the
 row is kept visible as `cleanup_failed`. Deleted or renamed knowledge-pack
-Markdown paths are reconciled against active RAG rows and detached when absent
-from the current pack.
+Markdown paths are reconciled against active RAG rows only during strict
+authoritative sync. Partial packs do not retire absent RAG paths.
 
 ### `project_ai_resources`
 
@@ -191,7 +196,9 @@ Source owner: `apps/api/src/knowledge/knowledge.service.ts`.
 
 This table locally claims RAG upload/attach jobs before remote side effects,
 tracks state transitions, and supports `--recover-rag` for failed jobs that
-recorded a recoverable OpenAI file id.
+recorded a recoverable OpenAI file id. Claims are made inside a local SQLite
+transaction. `indexed` means the remote vector-store file status reached
+`completed`; wait-ready timeout leaves the job attached with timeout metadata.
 
 ### `student_profiles`
 
@@ -666,8 +673,9 @@ supported verifier kinds before falling back to the POC generated task.
 | `prompt` | `TEXT` | required student-visible task prompt |
 | `expected_answer` | `TEXT` | required backend verifier answer, not exposed in tutor response |
 | `verifier_kind` | `TEXT` | required verifier kind |
-| `source` | `TEXT` | required; `backend_generated` or `model_imported` |
+| `source` | `TEXT` | required; `backend_generated`, `model_imported`, or `task_bank_imported` |
 | `status` | `TEXT` | required; `pending`, `attempted`, `verified_correct`, or `blocked` |
+| `hint_ladder_json` | `TEXT` | optional serialized task-bank hint ladder |
 | `created_at` | `TEXT` | required ISO timestamp |
 | `updated_at` | `TEXT` | required ISO timestamp |
 
@@ -676,8 +684,9 @@ Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
 
 Lesson tasks are the first proof surface for deterministic practice. For the
 current verified vertical, the service selects imported `task_bank_tasks` rows
-when available and records them as `model_imported`; the hardcoded linear
-equation remains only as a POC empty-DB fallback with `backend_generated`.
+when available and records them as `task_bank_imported`; the hardcoded linear
+equation remains only as a logged POC empty-DB fallback with
+`backend_generated`. `TASK_BANK_REQUIRED=true` disables the empty-DB fallback.
 
 ### `student_attempts`
 
@@ -694,12 +703,16 @@ equation remains only as a POC empty-DB fallback with `backend_generated`.
 | `error_code` | `TEXT` | optional compact error classification |
 | `confidence` | `TEXT` | required verifier confidence |
 | `mastery_update_allowed` | `INTEGER` | required; `0` or `1` |
+| `mastery_policy_json` | `TEXT` | optional serialized `MasteryPolicyService` result for the attempt |
 | `created_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
 `apps/api/src/database/database.service.ts`.
 
-Attempts are proof records for a concrete backend task. They are not grades.
+Attempts are proof records for a concrete backend task. They are not grades,
+and they are not automatically mastery evidence. Correct/equivalent attempts
+become durable mastery only when `MasteryPolicyService` accepts the imported
+evidence criteria for the skill.
 
 ### `mastery_evidence`
 
@@ -721,8 +734,8 @@ Attempts are proof records for a concrete backend task. They are not grades.
 Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
 `apps/api/src/database/database.service.ts`.
 
-Mastery evidence links verified attempts to a topic/skill/task type. Usage
-summaries use it to compute cost per verified learning outcome.
+Mastery evidence links policy-accepted verified attempts to a topic/skill/task
+type. Usage summaries use it to compute cost per verified learning outcome.
 
 ### `ai_usage_ledger`
 

@@ -73,8 +73,9 @@ decisions.
   fallback.
 - Tutor messages can carry a request id for idempotent retry handling.
 - A first deterministic verified learning loop exists for linear equations:
-  backend-generated task, student attempt, numeric verifier, mastery evidence,
-  and cost-per-verified-outcome visibility.
+  task-bank-backed task, stored hint ladder, student attempt, numeric verifier,
+  imported mastery-criteria gate, mastery evidence only after policy
+  acceptance, and cost-per-verified-outcome visibility.
 - Accepted `mark_goal_blocked` policy now updates durable lesson goal state.
 - Profile-delta proposals from the immediate decision path are routed into
   sanitized background observations instead of mutating the profile.
@@ -154,8 +155,8 @@ Knowledge-pack runtime and sync review gaps are repaired in
 - archive guardrails bound local trusted-operator packs, but this is not a
   public web-upload workflow
 - parallel sync claims protect upload/attach paths for the same
-  pack/vector-store/source/hash tuple; global distributed locking is not
-  implemented
+  pack/vector-store/source/hash tuple inside local SQLite transactions; global
+  distributed locking is not implemented
 
 ### Pedagogical Mastery Engine
 
@@ -163,12 +164,12 @@ Remaining teaching-engine gaps:
 
 - deterministic mathematical checkers beyond the current linear-equation
   numeric-answer vertical
-- richer closed loop from verified error classification to adaptive hint,
-  retry ladder, repeated success, and mastery decay/review
+- richer closed loop from verified error classification to adaptive retry,
+  mastery decay/review, and multi-lesson spaced repetition
 - runtime-connected full curriculum/prerequisite map for topic-aware
   progression
 - richer DB-backed curriculum ID resolver beyond the current text-scored
   active-skill lookup
-- task-bank-backed practice task selection beyond imported supported verifier
-  kinds
+- adaptive/embedding-based task-bank selection beyond imported supported
+  verifier kinds and simple prior-use ordering
 - conversational first meeting still needs to replace the form-first fallback

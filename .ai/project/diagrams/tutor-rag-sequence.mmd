@@ -7,6 +7,7 @@ sequenceDiagram
   participant Curriculum as CurriculumService
   participant Lesson as LessonService
   participant Verifier as MathVerifierService
+  participant MasteryPolicy as MasteryPolicyService
   participant Decision as LessonDecisionService
   participant LessonPolicy as LessonPolicyService
   participant Profile as StudentProfileService
@@ -42,7 +43,13 @@ sequenceDiagram
     API-->>Web: Stop response and usage snapshot
   else Tutor may continue
   Tutor->>Verifier: verifyPendingTaskAttempt(message, lessonSessionId)
-  Verifier->>DB: Read pending lesson_tasks and insert student_attempts/mastery_evidence when applicable
+  Verifier->>DB: Read pending lesson_tasks and insert student_attempts
+  Verifier->>MasteryPolicy: evaluateVerifiedAttempt(skillId, verifier result)
+  MasteryPolicy->>DB: Read active curriculum_mastery_criteria and prior successes
+  MasteryPolicy-->>Verifier: Mastery policy accepted or needs more evidence
+  opt Mastery policy accepted
+    Verifier->>DB: Insert mastery_evidence and verified progress row
+  end
   DB-->>Verifier: Verifier evidence
   Verifier-->>Tutor: Backend verifier evidence
   Tutor->>Profile: getTutorContext(userId)
@@ -76,9 +83,9 @@ sequenceDiagram
   Tutor->>Verifier: ensureBackendTask(answer, curriculum)
   Verifier->>DB: Select active task_bank_tasks for supported vertical
   alt Imported task-bank task found
-    Verifier->>DB: Insert lesson_tasks from imported task
+    Verifier->>DB: Insert lesson_tasks from imported task with hint ladder
   else Empty-DB POC fallback
-    Verifier->>DB: Insert generated linear-equation lesson_tasks row
+    Verifier->>DB: Insert logged generated fallback unless TASK_BANK_REQUIRED=true
   end
   Verifier-->>Tutor: Pending backend task evidence
   Tutor->>Lesson: completeTurn(model goal suggestion, decision policy, answer shape)

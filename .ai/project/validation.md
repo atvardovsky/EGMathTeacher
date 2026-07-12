@@ -46,11 +46,14 @@ Current covered areas:
   routing
 - lesson lifecycle goal completion remains pending without accepted backend
   policy and only completes when policy accepts the completion proposal
-- deterministic linear-equation verifier, student attempts, mastery evidence,
-  and cost-per-verified-outcome summary behavior
+- deterministic linear-equation verifier, student attempts, imported
+  mastery-criteria gating, mastery evidence, task-bank hint ladders,
+  `TASK_BANK_REQUIRED` fallback behavior, and cost-per-verified-outcome summary
+  behavior
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
-  and superseded vector-store attachment cleanup
+  superseded vector-store attachment cleanup, partial-pack reconciliation
+  safety, wait-ready timeout semantics, and sync-job recovery metadata
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths
@@ -93,10 +96,13 @@ citation display, and explicit image rendering.
 - No live OpenAI smoke-test policy exists.
 - Focused API tests cover strict/partial knowledge-pack import behavior,
   failed import ledger rows, RAG deleted-path reconciliation, migration ledger
-  presence, and imported `task_bank_tasks` driving lesson task selection.
+  presence, imported `task_bank_tasks` driving lesson task selection, imported
+  mastery criteria preventing one-answer mastery, partial RAG sync skipping
+  removed-path reconciliation, and wait-ready timeout leaving jobs attached
+  rather than indexed.
 - Remaining validation gaps: no live OpenAI non-dry-run RAG sync smoke test,
-  no dedicated archive-guardrail fixture suite, no wait-ready timeout/failure
-  fixture suite, and no parallel-process concurrency stress test.
+  no dedicated archive-guardrail fixture suite, and no parallel-process
+  concurrency stress test.
 
 ## When To Run
 
@@ -121,11 +127,11 @@ citation display, and explicit image rendering.
   `--sync-rag` without explicit live OpenAI credential/spend approval.
 - Knowledge-pack runtime repair changes: add or update focused API tests for
   DB-backed curriculum routing, unknown-topic behavior, task-bank selection,
-  verifier task persistence, strict/partial import modes, failed import
-  ledger rows, structured record retirement, RAG source-path reconciliation,
-  sync recovery, wait-ready states, archive limits, and concurrent sync
-  claims. Use a temporary SQLite database and mocked OpenAI/vector-store
-  client by default.
+  verifier task persistence, imported mastery-criteria gating,
+  strict/partial import modes, failed import ledger rows, structured record
+  retirement, RAG source-path reconciliation, sync recovery, wait-ready
+  states, archive limits, and concurrent sync claims. Use a temporary SQLite
+  database and mocked OpenAI/vector-store client by default.
 - Real-pack validation after the repair should include a temporary-SQLite
   structured import smoke and a `--sync-rag --dry-run` plan against the local
   pack. Live non-dry-run RAG sync remains approval-gated.

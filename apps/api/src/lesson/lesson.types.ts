@@ -154,6 +154,8 @@ export interface LessonTaskEvidence {
   skillId: string;
   taskTypeId: string;
   status: 'pending' | 'attempted' | 'verified_correct' | 'blocked';
+  source?: 'backend_generated' | 'model_imported' | 'task_bank_imported';
+  hintLadder?: string[];
 }
 
 export interface LessonVerifierEvidence {
@@ -165,6 +167,13 @@ export interface LessonVerifierEvidence {
   errorCode?: string;
   confidence: 'low' | 'medium' | 'high' | 'unknown';
   masteryUpdateAllowed: boolean;
+  masteryPolicyReason?: string;
+  masteryEvidenceLevel?: LessonEvidenceLevel;
+  verifiedSuccessCount?: number;
+  independentSuccessCount?: number;
+  requiredSuccessCount?: number;
+  nextHint?: string;
+  hintLadder?: string[];
   topicId?: string;
   skillId?: string;
   taskTypeId?: string;

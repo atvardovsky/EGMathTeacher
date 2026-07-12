@@ -51,7 +51,7 @@ sequenceDiagram
 
   rect rgb(245,245,245)
   Note over Operator,Vectors: Local knowledge-pack import and optional RAG sync
-  Operator->>CLI: npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--wait-ready]
+  Operator->>CLI: npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--wait-ready] [--no-reconcile-rag]
   CLI->>Pack: Resolve zip or extracted root
   Pack->>Pack: Enforce archive/path/size/depth guardrails
   opt Import structured DB files
@@ -83,9 +83,9 @@ sequenceDiagram
       opt wait-ready enabled
         Knowledge->>AIModel: Poll vector store file status
         AIModel->>Vectors: List vector store files
-        Vectors-->>AIModel: indexed status
+        Vectors-->>AIModel: completed, failed, or timeout status
       end
-      Knowledge->>DB: Insert active knowledge_files row and project_ai_resources id
+      Knowledge->>DB: Insert active knowledge_files row and mark indexed only after completed
       opt Older synced file exists
         Knowledge->>AIModel: Remove old file from vector store
         AIModel->>Vectors: DELETE /vector_stores/{vector_store_id}/files/{file_id}
@@ -94,8 +94,10 @@ sequenceDiagram
       end
       Knowledge->>DB: Mark job completed or failed
     end
-    Pack->>Knowledge: reconcileMissingRagSourceFiles(current paths)
-    Knowledge->>DB: Supersede detached paths removed from pack
+    opt strict authoritative RAG sync
+      Pack->>Knowledge: reconcileMissingRagSourceFiles(current paths)
+      Knowledge->>DB: Supersede detached paths removed from pack
+    end
   end
   Pack->>DB: Insert knowledge_pack_imports summary
   Note over Pack,DB: Failed import attempts are ledgered and recovery mode retries failed jobs with remote file ids

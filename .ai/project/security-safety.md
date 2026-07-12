@@ -88,9 +88,9 @@ Current knowledge-pack sync safety posture:
   jobs that captured recoverable OpenAI file ids
 - parallel upload/attach paths are locally claimed by sync job key, but there
   is no distributed lock beyond the SQLite process boundary
-- vector-store indexing readiness is awaited when `--wait-ready` is used; the
-  service-level default remains non-waiting for testability and short local
-  runs
+- vector-store indexing readiness is polled when `--wait-ready` is used; a
+  sync job is marked `indexed` only after remote `completed`, while timeouts
+  remain attached with timeout metadata
 
 Other configured providers are stubs unless implemented later.
 

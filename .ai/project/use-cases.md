@@ -93,10 +93,11 @@ Rules from current implementation:
   mistake-review completion require backend verifier evidence.
 - For the first supported vertical, the backend resolves curriculum from
   active SQLite rows, selects an imported task-bank task when available,
-  verifies a numeric answer, writes `student_attempts`, writes
-  `mastery_evidence` for correct answers, and allows policy to complete the
-  goal from that proof. Unknown topics remain `unknown` instead of falling
-  back to linear equations.
+  carries hint ladders into lesson tasks, verifies a numeric answer, and
+  writes `student_attempts`. Correct answers become `mastery_evidence`, skill
+  progress, and goal-completion evidence only when imported mastery criteria
+  allow the evidence sequence. Unknown topics remain `unknown` instead of
+  falling back to linear equations.
 - Accepted completion sets `goalStatusEvidence=backend_observed`; unaccepted
   model-only or policy-rejected completion keeps the lesson in progress with
   `goalStatusEvidence=model_suggested_pending`.
@@ -265,13 +266,17 @@ Rules from current implementation:
   store by content hash.
 - Unchanged synced Markdown files are skipped. Changed synced Markdown files
   are uploaded and the superseded vector-store file attachment is detached.
+- Removed Markdown paths are reconciled only for strict authoritative RAG
+  sync; partial packs do not detach files simply because they are absent.
 - `--dry-run` must not perform live OpenAI create/upload/attach/delete calls.
 - Strict pack validation is default; `--partial` records warnings. Failed
   imports are ledgered, pack schema/release/content hashes are separated,
   removed structured rows are soft-retired, deleted/renamed RAG paths are
-  reconciled, sync jobs are locally claimed, `--recover-rag` retries
-  recoverable failed jobs, `--wait-ready` can wait for vector-store indexing,
-  and archive guardrails bound local pack processing.
+  reconciled only in strict authoritative mode, sync jobs are locally claimed,
+  `--recover-rag` retries
+  recoverable failed jobs, `--wait-ready` can wait for vector-store indexing
+  and records `indexed` only after remote `completed`, and archive guardrails
+  bound local pack processing.
 - Non-dry-run `--sync-rag` is a protected live OpenAI side effect.
 
 ### Use WebRTC Voice Assistant
@@ -294,7 +299,7 @@ These were not found in the repository:
 
 - packaged desktop runtime
 - runtime-connected full ЕГЭ curriculum map
-- task-bank-backed lesson task selection
+- adaptive task-bank selection beyond the supported verifier vertical
 - student progress dashboard
 - parent/teacher accounts
 - payments or subscriptions

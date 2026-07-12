@@ -41,13 +41,23 @@ Current implementation state:
   skill.
 - `MathVerifierService` asks `TaskBankService` for imported
   `task_bank_tasks` before using the POC empty-DB fallback task.
+- `TaskBankService` returns imported hint ladders and orders reusable tasks by
+  prior user exposure before deterministic difficulty/task id order.
+- `MathVerifierService` records task-bank lesson tasks as
+  `task_bank_imported`, logs the empty-DB generated fallback, and can reject
+  fallback usage with `TASK_BANK_REQUIRED=true`.
+- `MasteryPolicyService` reads imported `curriculum_mastery_criteria` and
+  gates mastery evidence, progress rows, and practice/mistake-review
+  completion. One correct answer remains only a verified attempt when the
+  imported criteria require repeated independent success.
 - Imported `curriculum_*` and `task_bank_tasks` rows are the active runtime
   source for lesson routing and supported task selection.
 - Structured import validates required files, required fields, enum-like
   verifier kinds, JSONL line parsing, and core cross references before writes.
 - Removed structured records are soft-retired with `sync_status='retired'`.
 - RAG sync is idempotent for same-path content changes and reconciles deleted
-  or renamed source paths by detaching removed active vector-store files.
+  or renamed source paths only during strict authoritative RAG sync. Partial
+  packs do not remove absent vector-store files.
 - The CLI remains a trusted local operator workflow, but now has strict/partial
   import modes, optional wait-ready, durable sync jobs, and recoverable failed
   RAG job retry.
@@ -64,7 +74,8 @@ validated knowledge pack
 -> supported verifier contract
 -> student attempt
 -> deterministic verifier
--> mastery evidence
+-> mastery policy from curriculum_mastery_criteria
+-> mastery evidence only when policy accepts the evidence sequence
 -> lesson policy completion
 ```
 
@@ -92,9 +103,14 @@ Implemented:
 - `CurriculumService.resolve()` reads active SQLite curriculum skills.
 - No-match routing returns `unknown`.
 - `TaskBankService.selectTask()` reads active `task_bank_tasks` by topic,
-  skill, task type, verifier kind, and prior task use.
+  skill, task type, verifier kind, and prior task use, and returns hint
+  ladders for tutor/verifier context.
 - `MathVerifierService.ensureBackendTask()` selects imported task-bank rows for
-  supported verifier kinds and keeps hardcoded generation only as a POC fallback.
+  supported verifier kinds, stores `task_bank_imported`, and keeps hardcoded
+  generation only as a logged POC fallback that can be disabled with
+  `TASK_BANK_REQUIRED=true`.
+- `MasteryPolicyService` enforces imported mastery criteria before
+  `mastery_evidence` or progress rows are written.
 
 Tests:
 
@@ -104,8 +120,12 @@ Tests:
   mastery;
 - task-bank task is selected and persisted to `lesson_tasks`;
 - a pending task is reused instead of generating a duplicate;
-- deterministic verifier still writes `student_attempts` and
-  `mastery_evidence` for a selected linear task.
+- deterministic verifier writes `student_attempts` for selected linear tasks;
+- imported mastery criteria can prevent one successful attempt from writing
+  `mastery_evidence`, then allow mastery after the required independent
+  success sequence;
+- `TASK_BANK_REQUIRED=true` fails instead of silently using the generated
+  fallback when no task-bank row exists.
 
 ## Phase 2: Import Validation And Metadata
 
@@ -158,7 +178,8 @@ Implemented:
 - Added a durable sync job table for knowledge-pack sync operations.
 - Uses a local SQLite claim before remote upload.
 - Reconciles current pack RAG source paths against active
-  `knowledge_files.source_path` rows:
+  `knowledge_files.source_path` rows only when the current sync is strict and
+  authoritative:
   - unchanged paths are skipped;
   - changed paths upload the new file and supersede the old attachment;
   - missing paths are detached and marked `superseded` or `retired`;
@@ -170,8 +191,10 @@ Implemented:
 - Added `--recover-rag` for failed jobs that recorded recoverable OpenAI file
   ids.
 - Added optional wait-for-index behavior that polls vector-store file status
-  until terminal `completed` or `failed`. For production-like sync, waiting
-  should be the default; dry-run never waits or calls OpenAI.
+  until terminal `completed` or `failed`. Jobs are marked `indexed` only after
+  `completed`; timeout leaves the job attached with timeout metadata. For
+  production-like sync, waiting should be the default; dry-run never waits or
+  calls OpenAI.
 - Active project vector-store ids in `project_ai_resources` are updated
   only after a successful attach or explicit existing-store reuse.
 
@@ -182,7 +205,8 @@ Tests:
 - partial upload/attach/DB failures are recoverable without duplicate active
   local rows;
 - wait-ready handles completed, failed, and timeout states;
-- concurrent sync attempts cannot both claim the same pack/vector-store job.
+- local concurrent sync attempts cannot both claim the same pack/vector-store
+  job inside SQLite transaction boundaries.
 
 ## Phase 4: Archive Guardrails
 

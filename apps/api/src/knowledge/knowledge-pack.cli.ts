@@ -21,6 +21,7 @@ interface CliOptions {
   force: boolean;
   importMode: 'strict' | 'partial';
   waitUntilIndexed?: boolean;
+  reconcileRag?: boolean;
   recoverRag: boolean;
   help: boolean;
 }
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
       force: options.force,
       importMode: options.importMode,
       waitUntilIndexed: options.waitUntilIndexed ?? (options.syncRag && !options.dryRun),
+      reconcileRag: options.reconcileRag,
     });
     console.log(JSON.stringify(summary, null, 2));
   } finally {
@@ -91,6 +93,7 @@ function parseArgs(args: string[]): CliOptions {
     force: false,
     importMode: 'strict',
     waitUntilIndexed: undefined,
+    reconcileRag: undefined,
     recoverRag: false,
     help: false,
   };
@@ -127,6 +130,12 @@ function parseArgs(args: string[]): CliOptions {
       case '--no-wait-ready':
         options.waitUntilIndexed = false;
         break;
+      case '--reconcile-rag':
+        options.reconcileRag = true;
+        break;
+      case '--no-reconcile-rag':
+        options.reconcileRag = false;
+        break;
       case '--recover-rag':
         options.recoverRag = true;
         break;
@@ -162,8 +171,11 @@ Options:
   --force         Re-import structured files even when their content hash is unchanged.
   --strict        Require all canonical structured files. Default.
   --partial       Allow missing structured files and report warnings.
-  --wait-ready    Wait until attached vector-store files are indexed.
+  --wait-ready    Poll attached vector-store files and mark indexed only after completed.
   --no-wait-ready Do not wait for vector-store indexing.
+  --reconcile-rag Detach active RAG source paths missing from this strict authoritative pack.
+  --no-reconcile-rag
+                  Keep existing RAG source paths even if absent from this pack.
   --recover-rag   Retry failed RAG sync jobs that have recoverable remote file ids.
 `);
 }
