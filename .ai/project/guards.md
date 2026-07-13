@@ -31,6 +31,8 @@ Protected endpoints:
 - `PUT /student-profile/me`
 - `POST /tutor/message`
 - `POST /tutor/image`
+- `GET /tutor/lessons`
+- `POST /tutor/lessons/:lessonSessionId/finish`
 - `GET /usage/me/summary`
 - `POST /usage/me/background/recover`
 

@@ -152,6 +152,24 @@ describe('TutorService', () => {
         status: goalStatus === 'reached' ? 'goal_reached' : inputLifecycle.status,
         shouldStop: goalStatus === 'reached' || inputLifecycle.shouldStop,
       })),
+      finishSession: jest.fn(() => ({
+        id: 'lesson-finished',
+        user_id: user.id,
+        conversation_id: 'conv-finished',
+        lesson_type: 'practice',
+        status: 'finished',
+        goal_status: 'in_progress',
+        goal_text: 'Продолжить практику.',
+        success_criteria_json: JSON.stringify(['самостоятельная попытка']),
+        finish_reason: 'student_finished_lesson',
+        active_learning_seconds: 360,
+        turn_count: 2,
+        started_at: '2026-07-12T10:00:00.000Z',
+        last_activity_at: '2026-07-12T10:10:00.000Z',
+        finished_at: '2026-07-12T10:12:00.000Z',
+        created_at: '2026-07-12T10:00:00.000Z',
+        updated_at: '2026-07-12T10:12:00.000Z',
+      })),
     };
     const lessonDecision = {
       decide: jest.fn(async () => ({
@@ -590,6 +608,45 @@ describe('TutorService', () => {
     );
   });
 
+  it('scopes lesson history into active and historical sessions', () => {
+    const { service, db } = createService();
+
+    service.getLessonHistory({ user, scope: 'active' });
+
+    expect(db.all).toHaveBeenCalledTimes(1);
+    expect(String(db.all.mock.calls[0][0])).toContain('status NOT IN');
+
+    db.all.mockClear();
+    service.getLessonHistory({ user, scope: 'history' });
+
+    expect(String(db.all.mock.calls[0][0])).toContain('status IN');
+    expect(String(db.all.mock.calls[1][0])).toContain('FROM tutor_turns latest');
+  });
+
+  it('finishes an active lesson and returns the archived history item', () => {
+    const { service, lessonService } = createService();
+
+    const finished = service.finishLesson({
+      user,
+      lessonSessionId: 'lesson-finished',
+    });
+
+    expect(lessonService.finishSession).toHaveBeenCalledWith({
+      userId: user.id,
+      lessonSessionId: 'lesson-finished',
+      reason: 'student_finished_lesson',
+    });
+    expect(finished).toEqual(
+      expect.objectContaining({
+        lessonSessionId: 'lesson-finished',
+        conversationId: 'conv-finished',
+        lessonType: 'practice',
+        status: 'finished',
+        finishReason: 'student_finished_lesson',
+      }),
+    );
+  });
+
   it('returns legacy tutor-turn conversations when no lesson session exists', () => {
     const { service, db } = createService();
     db.all
@@ -647,13 +704,14 @@ describe('TutorService', () => {
 
     const history = service.getLessonHistory({ user });
 
+    expect(String(db.all.mock.calls[1][0])).toContain('NOT EXISTS');
     expect(history.lessons).toHaveLength(1);
     expect(history.lessons[0]).toEqual(
       expect.objectContaining({
         lessonSessionId: 'legacy_conv-legacy-history',
         conversationId: 'conv-legacy-history',
         lessonType: 'tutor',
-        status: 'active',
+        status: 'finished',
         goalStatus: 'in_progress',
         lessonGoal: 'Говорили про производную как скорость изменения.',
         turnCount: 1,

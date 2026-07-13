@@ -19,6 +19,32 @@ sequenceDiagram
   participant Usage as UsageService
   participant OpenAI as OpenAI-backed model provider
 
+  Student->>Web: Open tutor workspace
+  Web->>API: GET /tutor/lessons?scope=active
+  API->>Auth: Validate session cookie
+  Auth-->>API: Authenticated user
+  API->>Tutor: getLessonHistory(scope active)
+  Tutor->>DB: Read non-terminal lesson_sessions and recent tutor_turns
+  Tutor-->>API: Active lesson records
+  API-->>Web: Resumable active lessons
+  Web->>API: GET /tutor/lessons?scope=history
+  API->>Tutor: getLessonHistory(scope history)
+  Tutor->>DB: Read terminal lesson_sessions and legacy tutor_turn records
+  Tutor-->>API: Read-only historical records
+  API-->>Web: Finished and legacy records
+  opt Student finishes active lesson
+    Student->>Web: Click finish lesson
+    Web->>API: POST /tutor/lessons/:lessonSessionId/finish
+    API->>Auth: Validate session cookie
+    Auth-->>API: Authenticated user
+    API->>Tutor: finishLesson(user, lessonSessionId)
+    Tutor->>Lesson: finishSession(userId, lessonSessionId)
+    Lesson->>DB: Mark own active lesson_sessions row finished
+    Lesson-->>Tutor: Finished lesson session
+    Tutor-->>API: Archived history item
+    API-->>Web: Open read-only record
+  end
+
   Student->>Web: Type prompt or use speech recognition
   Web->>API: POST /tutor/message with lessonType and requestId
   API->>Auth: Validate session cookie

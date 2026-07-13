@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
@@ -16,6 +16,7 @@ import type {
   LessonVerifierEvidence,
   LessonGoalStatus,
   LessonLifecycleDto,
+  LessonSessionRecord,
 } from '../lesson/lesson.types';
 import { StudentProfileService } from '../student-profile/student-profile.service';
 import { UsageService } from '../usage/usage.service';
@@ -60,7 +61,17 @@ interface LessonHistoryOptions {
   user: AuthSession;
   limit?: string;
   turnLimit?: string;
+  scope?: string;
 }
+
+interface FinishLessonOptions {
+  user: AuthSession;
+  lessonSessionId: string;
+}
+
+type LessonHistoryScope = 'all' | 'active' | 'history';
+
+const TERMINAL_LESSON_STATUSES = ['hard_limit_reached', 'goal_reached', 'finished'] as const;
 
 const LESSON_TYPE_CONFIGS: Record<LessonType, LessonTypeConfig> = {
   meeting: {
@@ -183,6 +194,16 @@ export class TutorService {
   getLessonHistory(options: LessonHistoryOptions): TutorLessonHistory {
     const limit = this.normalizePositiveInteger(options.limit, 8, 1, 12);
     const turnLimit = this.normalizePositiveInteger(options.turnLimit, 4, 1, 8);
+    const scope = this.normalizeLessonHistoryScope(options.scope);
+    const sessionFilters = ['user_id = ?'];
+    const sessionParams: unknown[] = [options.user.id];
+    if (scope === 'active') {
+      sessionFilters.push(`status NOT IN (${TERMINAL_LESSON_STATUSES.map(() => '?').join(', ')})`);
+      sessionParams.push(...TERMINAL_LESSON_STATUSES);
+    } else if (scope === 'history') {
+      sessionFilters.push(`status IN (${TERMINAL_LESSON_STATUSES.map(() => '?').join(', ')})`);
+      sessionParams.push(...TERMINAL_LESSON_STATUSES);
+    }
     const rows = this.db.all<{
       id: string;
       conversation_id: string;
@@ -202,38 +223,21 @@ export class TutorService {
               success_criteria_json, finish_reason, active_learning_seconds,
               turn_count, started_at, last_activity_at, updated_at
        FROM lesson_sessions
-       WHERE user_id = ?
+       WHERE ${sessionFilters.join(' AND ')}
        ORDER BY updated_at DESC
        LIMIT ?`,
-      [options.user.id, limit],
+      [...sessionParams, limit],
     );
 
-    const sessionLessons = rows.map((row) => {
-      const summary = this.getSessionSummary(options.user.id, row.conversation_id);
-      return {
-        lessonSessionId: row.id,
-        conversationId: row.conversation_id,
-        lessonType: this.normalizeLessonType(row.lesson_type) ?? 'tutor',
-        status: row.status,
-        goalStatus: row.goal_status,
-        lessonGoal: row.goal_text,
-        successCriteria: this.parseStringArray(row.success_criteria_json),
-        finishReason: row.finish_reason ?? undefined,
-        turnCount: row.turn_count,
-        activeLearningSeconds: row.active_learning_seconds,
-        startedAt: row.started_at,
-        lastActivityAt: row.last_activity_at,
-        updatedAt: row.updated_at,
-        summary: summary?.summary,
-        evidenceLevels: summary?.evidenceLevels,
-        turns: this.getLessonHistoryTurns(options.user.id, row.conversation_id, turnLimit),
-      };
-    });
+    const sessionLessons = rows.map((row) =>
+      this.buildLessonHistoryItem(options.user.id, row, turnLimit),
+    );
     const legacyLessons = this.getLegacyConversationHistory(
       options.user.id,
       new Set(sessionLessons.map((lesson) => lesson.conversationId)),
       limit,
       turnLimit,
+      scope,
     );
 
     return {
@@ -241,6 +245,22 @@ export class TutorService {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .slice(0, limit),
     };
+  }
+
+  finishLesson(options: FinishLessonOptions): TutorLessonHistoryItem {
+    const lessonSessionId = options.lessonSessionId.trim();
+    if (!lessonSessionId) {
+      throw new BadRequestException('lessonSessionId is required');
+    }
+    const row = this.lessonService.finishSession({
+      userId: options.user.id,
+      lessonSessionId,
+      reason: 'student_finished_lesson',
+    });
+    if (!row) {
+      throw new NotFoundException('Lesson session not found');
+    }
+    return this.buildLessonHistoryItem(options.user.id, row, 6);
   }
 
   async answerMessage(options: AnswerMessageOptions): Promise<TutorAnswer> {
@@ -606,6 +626,47 @@ export class TutorService {
     return parsed ? (parsed as unknown as TutorAnswer) : undefined;
   }
 
+  private buildLessonHistoryItem(
+    userId: string,
+    row: Pick<
+      LessonSessionRecord,
+      | 'id'
+      | 'conversation_id'
+      | 'lesson_type'
+      | 'status'
+      | 'goal_status'
+      | 'goal_text'
+      | 'success_criteria_json'
+      | 'finish_reason'
+      | 'active_learning_seconds'
+      | 'turn_count'
+      | 'started_at'
+      | 'last_activity_at'
+      | 'updated_at'
+    >,
+    turnLimit: number,
+  ): TutorLessonHistoryItem {
+    const summary = this.getSessionSummary(userId, row.conversation_id);
+    return {
+      lessonSessionId: row.id,
+      conversationId: row.conversation_id,
+      lessonType: this.normalizeLessonType(row.lesson_type) ?? 'tutor',
+      status: row.status,
+      goalStatus: row.goal_status,
+      lessonGoal: row.goal_text,
+      successCriteria: this.parseStringArray(row.success_criteria_json),
+      finishReason: row.finish_reason ?? undefined,
+      turnCount: row.turn_count,
+      activeLearningSeconds: row.active_learning_seconds,
+      startedAt: row.started_at,
+      lastActivityAt: row.last_activity_at,
+      updatedAt: row.updated_at,
+      summary: summary?.summary,
+      evidenceLevels: summary?.evidenceLevels,
+      turns: this.getLessonHistoryTurns(userId, row.conversation_id, turnLimit),
+    };
+  }
+
   private getLessonHistoryTurns(
     userId: string,
     conversationId: string,
@@ -682,7 +743,11 @@ export class TutorService {
     knownConversationIds: Set<string>,
     limit: number,
     turnLimit: number,
+    scope: LessonHistoryScope,
   ): TutorLessonHistoryItem[] {
+    if (scope === 'active') {
+      return [];
+    }
     const rows = this.db.all<{
       conversation_id: string;
       lesson_type: LessonType;
@@ -712,6 +777,12 @@ export class TutorService {
          ON stats.conversation_id = latest.conversation_id
         AND stats.updated_at = latest.created_at
        WHERE latest.user_id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM lesson_sessions sessions
+           WHERE sessions.user_id = latest.user_id
+             AND sessions.conversation_id = latest.conversation_id
+         )
        ORDER BY stats.updated_at DESC
        LIMIT ?`,
       [userId, userId, limit],
@@ -749,7 +820,7 @@ export class TutorService {
           lessonSessionId,
           conversationId: row.conversation_id,
           lessonType,
-          status,
+          status: status === 'active' ? 'finished' : status,
           goalStatus,
           lessonGoal: goal,
           successCriteria:
@@ -765,6 +836,13 @@ export class TutorService {
           turns: this.getLessonHistoryTurns(userId, row.conversation_id, turnLimit),
         };
       });
+  }
+
+  private normalizeLessonHistoryScope(scope: string | undefined): LessonHistoryScope {
+    if (scope === 'active' || scope === 'history' || scope === 'all') {
+      return scope;
+    }
+    return 'all';
   }
 
   private getTutorContinuityContext(userId: string, conversationId: string): string | undefined {

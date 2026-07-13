@@ -263,6 +263,28 @@ const lessonHistory = {
   ],
 };
 
+const finishedLessonHistory = {
+  lessons: lessonHistory.lessons.map((lesson) => ({
+    ...lesson,
+    status: 'finished',
+    goalStatus: 'reached',
+    finishReason: 'student_finished_lesson',
+    updatedAt: '2026-07-12T10:12:00.000Z',
+    turns: lesson.turns.map((turn) => ({
+      ...turn,
+      answer: {
+        ...turn.answer,
+        lessonLifecycle: {
+          ...turn.answer.lessonLifecycle,
+          status: 'finished',
+          goalStatus: 'reached',
+          finishReason: 'student_finished_lesson',
+        },
+      },
+    })),
+  })),
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('egmathteacher.locale', 'ru');
@@ -362,7 +384,12 @@ function fulfillJson(route: Route, json: unknown) {
 
 async function mockStudentSession(
   page: Page,
-  options: { needsOnboarding: boolean; lessonHistory?: unknown },
+  options: {
+    needsOnboarding: boolean;
+    lessonHistory?: unknown;
+    activeLessonHistory?: unknown;
+    historicalLessonHistory?: unknown;
+  },
 ) {
   let profileStatus = options.needsOnboarding
     ? { onboardingRequired: true, profile: null }
@@ -377,9 +404,20 @@ async function mockStudentSession(
     }
     return fulfillJson(route, profileStatus);
   });
-  await page.route('**/tutor/lessons**', (route) =>
-    fulfillJson(route, options.lessonHistory ?? { lessons: [] }),
-  );
+  await page.route('**/tutor/lessons**', (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'POST' && url.pathname.endsWith('/finish')) {
+      return fulfillJson(route, finishedLessonHistory.lessons[0]);
+    }
+    const scope = url.searchParams.get('scope');
+    if (scope === 'active') {
+      return fulfillJson(route, options.activeLessonHistory ?? options.lessonHistory ?? { lessons: [] });
+    }
+    if (scope === 'history') {
+      return fulfillJson(route, options.historicalLessonHistory ?? { lessons: [] });
+    }
+    return fulfillJson(route, options.lessonHistory ?? { lessons: [] });
+  });
   await page.route('**/usage/me/summary**', (route) => fulfillJson(route, usageSummary));
   await page.route('**/tutor/message', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -595,6 +633,46 @@ test('student sees saved lessons and continues the previous discussion', async (
     conversationId: 'conv-history',
     lessonType: 'practice',
   });
+});
+
+test('student opens finished lesson records as read-only history', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, {
+    needsOnboarding: false,
+    historicalLessonHistory: finishedLessonHistory,
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await expect(page.getByText('Продолжить практику линейных уравнений.')).toBeVisible();
+  await expect(page.getByText('завершено')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Открыть запись' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Продолжить последнее' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Открыть запись' }).click();
+
+  await expect(page.getByText('запись занятия')).toBeVisible();
+  await expect(page.getByText('Это запись завершенного занятия.')).toBeVisible();
+  await expect(page.getByPlaceholder('Запись занятия открыта только для просмотра')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Спросить' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Голосовой ввод' })).toBeDisabled();
+  await expect.poll(() => tutorRequests.length).toBe(0);
+
+  await page
+    .locator('.mantine-Alert-root')
+    .getByRole('button', { name: 'Новое занятие' })
+    .click();
+  await expect(page.getByRole('button', { name: 'Начать первое занятие' })).toBeVisible();
+
+  await page.getByLabel('Голосовой диалог').uncheck();
+  await page
+    .getByPlaceholder('Например: объясни задание 12 с производной')
+    .fill('Начнем новую практику');
+  await page.getByRole('button', { name: 'Спросить' }).click();
+
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  expect(tutorRequests[0]).toMatchObject({ lessonType: 'practice' });
+  expect(tutorRequests[0]).not.toHaveProperty('conversationId');
 });
 
 test('changing tutor lesson mode starts a fresh conversation request', async ({ page }) => {

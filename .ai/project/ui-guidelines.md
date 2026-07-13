@@ -44,19 +44,25 @@ The web UI follows this tree:
    prominent green first-lesson button and scannable lesson cards. Do not leave
    the student in a blank waiting state after setup.
 7. Show a saved-lesson continuity panel in the tutor workspace. It should
-   display recent records and resume actions when history exists, and an
-   explicit empty-history message when no lessons are saved yet. If stored
-   turns exist, the latest saved discussion should be visible without making
-   the student discover a hidden history control.
+   display active lessons separately from historical records, show resume
+   actions only for non-terminal lessons, show open-record actions for
+   read-only history, and show an explicit empty-history message when no
+   lessons are saved yet. If active stored turns exist, the latest active
+   saved discussion should be visible without making the student discover a
+   hidden history control.
 8. Tutor lesson modes expose the main POC choices in the UI: meeting, tutor,
    practice, diagnostic, and mistake review.
 9. Tutor workspace shows a compact lesson usage bar for all signed-in users.
    It can expand to safe operation/model/token/image, verifier, and
    decision-policy details, but it should not look like an admin debug
    console.
-10. Settings view for language, voice, account info, and read-only profile
+10. Active lessons must have an obvious finish action. Opening a finished or
+    legacy lesson record must make the read-only state visible and disable the
+    composer, voice input, and new image-generation actions until the student
+    starts a new lesson.
+11. Settings view for language, voice, account info, and read-only profile
    memory, including recent session summaries and skill progress/regression.
-11. Admin knowledge-materials view only for admin users.
+12. Admin knowledge-materials view only for admin users.
 
 The first screen after auth must be a usable app surface, not a marketing
 landing page.

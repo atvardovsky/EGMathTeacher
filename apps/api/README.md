@@ -177,9 +177,12 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
 
 Tutor/product API surfaces also include:
 
-- `GET /tutor/lessons` for the signed-in user's recent lessons, stored turns,
-  summaries, and legacy saved discussions so the web client can show lesson
-  records and resume a previous `conversationId`.
+- `GET /tutor/lessons?scope=active|history|all` for the signed-in user's
+  active lesson sessions, read-only historical records, stored turns, summaries,
+  and legacy saved discussions. Only non-terminal active lessons are resumable
+  with the previous `conversationId`; finished and legacy records are archived.
+- `POST /tutor/lessons/:lessonSessionId/finish` for an authenticated student to
+  explicitly finish their own active lesson session and move it to history.
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.

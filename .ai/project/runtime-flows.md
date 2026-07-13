@@ -94,29 +94,44 @@ This file records runtime flows from current source evidence.
 ## Tutor Lesson Continuity Flow
 
 1. When the authenticated tutor workspace loads, the web client calls
-   `GET /tutor/lessons?limit=8&turnLimit=6` in addition to usage refresh.
-2. The API returns the signed-in user's recent lesson sessions with
+   `GET /tutor/lessons?scope=active&limit=4&turnLimit=6` and
+   `GET /tutor/lessons?scope=history&limit=8&turnLimit=6` in addition to usage
+   refresh.
+2. The active API response returns only non-terminal lesson sessions with
    conversation id, lesson type, goal/status, active-learning time, latest
-   session summary/evidence levels, and recent stored tutor turns.
+   session summary/evidence levels, and recent stored tutor turns. The history
+   response returns terminal sessions: `hard_limit_reached`, `goal_reached`,
+   and `finished`.
 3. If older tutor discussions exist in `tutor_turns` but no matching
-   `lesson_sessions` row exists, the API returns them as legacy resumable
-   discussions with a synthetic `legacy_<conversationId>` session id. This
-   keeps pre-lifecycle conversations visible after schema/runtime upgrades.
+   `lesson_sessions` row exists, the API exposes them through history with a
+   synthetic `legacy_<conversationId>` session id and `finished` status. This
+   keeps pre-lifecycle conversations visible after schema/runtime upgrades
+   without making them endlessly resumable.
 4. The tutor workspace shows a saved-lessons panel even when history is empty.
    Empty history explicitly says no lessons have been saved yet; non-empty
    history shows recent lesson rows, last question previews, summaries or the
-   last answer, a continue-latest action, and a new-lesson action.
-5. If the latest saved lesson has stored turns and the local tutor view is
-   empty, the web client hydrates those turns immediately so the student sees
-   the previous discussion without clicking through a hidden history surface.
-6. When the student continues a saved lesson, the web client keeps the saved
-   `conversationId` and lesson type. The next `POST /tutor/message` therefore
-   reaches the same conversation boundary.
-7. `TutorService` adds DB-backed continuity context to the tutor prompt:
+   last answer, a continue-latest action for active lessons, open-record actions
+   for historical records, and a new-lesson action.
+5. If the latest active saved lesson has stored turns and the local tutor view
+   is empty, the web client hydrates those turns immediately so the student
+   sees the previous discussion without clicking through a hidden history
+   surface. Finished records can be opened as read-only records, but they do
+   not become the active conversation boundary.
+6. When the student continues an active saved lesson, the web client keeps the
+   saved `conversationId` and lesson type. The next `POST /tutor/message`
+   therefore reaches the same conversation boundary. When the student opens a
+   history record, the composer, voice input, and image generation are disabled
+   until the student starts a new lesson.
+7. The student can explicitly finish the current active lesson through
+   `POST /tutor/lessons/:lessonSessionId/finish`. The backend verifies
+   ownership, marks the session `finished`, stores
+   `finish_reason=student_finished_lesson`, and the client moves the lesson to
+   read-only history.
+8. `TutorService` adds DB-backed continuity context to the tutor prompt:
    recent turns from the active conversation plus recent session summaries.
    The tutor is instructed to continue from the previous discussion instead
    of restarting long explanations.
-8. Starting a new lesson clears the local conversation boundary and starts the
+9. Starting a new lesson clears the local conversation boundary and starts the
    next tutor request without a `conversationId`.
 
 ## Tutor Message Flow
@@ -351,9 +366,10 @@ This file records runtime flows from current source evidence.
    explanation are normalized into an image block if the model omitted one.
 2. For a fresh tutor answer whose image block has `priority=required`, the web
    client automatically starts one create-diagram request after the text answer
-   is rendered. For older saved turns, optional image blocks, or failed
+   is rendered. For active older saved turns, optional image blocks, or failed
    automatic generation, the student can still click the visible create-diagram
-   action.
+   action. Read-only history records do not trigger automatic image generation
+   and their create-diagram action is disabled.
 3. Web client calls `POST /tutor/image` with prompt/context plus optional
    conversation id, lesson session id, lesson type, tutor-turn id, and image
    block id for usage attribution and same-turn persistence.

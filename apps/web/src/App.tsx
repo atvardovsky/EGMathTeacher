@@ -861,6 +861,8 @@ function TutorWorkspace({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [activeLessonSessionId, setActiveLessonSessionId] = useState<string | undefined>();
+  const [historyRecordLessonId, setHistoryRecordLessonId] = useState<string | undefined>();
+  const [finishingLesson, setFinishingLesson] = useState(false);
   const [continuityNotice, setContinuityNotice] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -896,6 +898,7 @@ function TutorWorkspace({
       ),
     [usageSummary],
   );
+  const viewingHistoryRecord = Boolean(historyRecordLessonId);
   const launcherCards = useMemo<LessonLauncherItem[]>(
     () => [
       {
@@ -985,6 +988,9 @@ function TutorWorkspace({
   }, [speechOutputSupported]);
 
   useEffect(() => {
+    if (viewingHistoryRecord) {
+      return;
+    }
     for (const turn of turns) {
       if (!turn.answer) {
         continue;
@@ -1004,7 +1010,7 @@ function TutorWorkspace({
         void generateImage(turn, block);
       }
     }
-  }, [turns, t.tutor.imageAlt]);
+  }, [turns, t.tutor.imageAlt, viewingHistoryRecord]);
 
   async function refreshUsage(lessonSessionId?: string) {
     const query = lessonSessionId ? `?lessonSessionId=${encodeURIComponent(lessonSessionId)}` : '';
@@ -1043,10 +1049,15 @@ function TutorWorkspace({
   async function refreshLessonHistory(hydrateLatest = false) {
     setHistoryLoading(true);
     try {
-      const history = await api<TutorLessonHistory>('/tutor/lessons?limit=8&turnLimit=6');
-      setLessonHistory(history.lessons);
-      if (hydrateLatest && turns.length === 0 && history.lessons[0]?.turns.length > 0) {
-        loadLessonFromHistory(history.lessons[0], { announce: false, focus: false });
+      const [activeHistory, historicalHistory] = await Promise.all([
+        api<TutorLessonHistory>('/tutor/lessons?scope=active&limit=4&turnLimit=6'),
+        api<TutorLessonHistory>('/tutor/lessons?scope=history&limit=8&turnLimit=6'),
+      ]);
+      const lessons = [...activeHistory.lessons, ...historicalHistory.lessons];
+      setLessonHistory(lessons);
+      const latestActiveLesson = activeHistory.lessons[0];
+      if (hydrateLatest && turns.length === 0 && latestActiveLesson?.turns.length > 0) {
+        loadLessonFromHistory(latestActiveLesson, { announce: false, focus: false });
       }
     } catch {
       // Lesson continuity is helpful, but it must not block a new tutor turn.
@@ -1062,15 +1073,27 @@ function TutorWorkspace({
   ) {
     stopTutorSpeech();
     stopVoice();
-    setConversationId(lesson.conversationId);
-    setActiveLessonSessionId(lesson.lessonSessionId);
     setLessonType(lesson.lessonType);
     setDraft('');
     setVoiceInterim('');
     setTurns(lesson.turns);
+    if (isTerminalLessonStatus(lesson.status)) {
+      setConversationId(undefined);
+      setActiveLessonSessionId(undefined);
+      setHistoryRecordLessonId(lesson.lessonSessionId);
+      setUsageSummary((currentSummary) =>
+        currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
+      );
+    } else {
+      setConversationId(lesson.conversationId);
+      setActiveLessonSessionId(lesson.lessonSessionId);
+      setHistoryRecordLessonId(undefined);
+    }
     if (options.announce !== false) {
       setContinuityNotice(
-        lesson.turns.length > 0
+        isTerminalLessonStatus(lesson.status)
+          ? t.tutor.continuity.historyOpenedNotice
+          : lesson.turns.length > 0
           ? t.tutor.continuity.openedNotice
           : t.tutor.continuity.openedWithoutTurnsNotice,
       );
@@ -1091,6 +1114,7 @@ function TutorWorkspace({
   function clearLessonBoundary() {
     setConversationId(undefined);
     setActiveLessonSessionId(undefined);
+    setHistoryRecordLessonId(undefined);
     setUsageSummary((currentSummary) =>
       currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
     );
@@ -1126,6 +1150,10 @@ function TutorWorkspace({
     if (!prompt || sending) {
       return;
     }
+    if (viewingHistoryRecord) {
+      setContinuityNotice(t.tutor.continuity.historyReadOnlyNotice);
+      return;
+    }
     if (source === 'voice' && shouldConfirmVoiceTranscript(prompt)) {
       setDraft(prompt);
       setVoiceInterim('');
@@ -1157,6 +1185,7 @@ function TutorWorkspace({
       });
       setConversationId(answer.conversationId);
       setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
+      setHistoryRecordLessonId(undefined);
       autoImageTurnIdsRef.current.add(answer.turnId ?? id);
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
@@ -1171,6 +1200,37 @@ function TutorWorkspace({
       setTurns((current) => current.filter((turn) => turn.id !== id));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function finishCurrentLesson() {
+    if (!activeLessonSessionId || finishingLesson) {
+      return;
+    }
+    setFinishingLesson(true);
+    setError(null);
+    stopTutorSpeech();
+    stopVoice();
+    try {
+      const finishedLesson = await api<TutorLessonHistoryItem>(
+        `/tutor/lessons/${encodeURIComponent(activeLessonSessionId)}/finish`,
+        { method: 'POST' },
+      );
+      setConversationId(undefined);
+      setActiveLessonSessionId(undefined);
+      setHistoryRecordLessonId(finishedLesson.lessonSessionId);
+      setLessonType(finishedLesson.lessonType);
+      setTurns(finishedLesson.turns);
+      setUsageSummary((currentSummary) =>
+        currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
+      );
+      setContinuityNotice(t.tutor.continuity.finishedNotice);
+      await refreshUsage(finishedLesson.lessonSessionId);
+      await refreshLessonHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.errors.tutor);
+    } finally {
+      setFinishingLesson(false);
     }
   }
 
@@ -1359,7 +1419,7 @@ function TutorWorkspace({
   }
 
   async function generateImage(turn: TutorTurn, block: TutorImageBlock) {
-    if (!block.prompt || turn.loadingImages?.[block.id]) {
+    if (!block.prompt || turn.loadingImages?.[block.id] || viewingHistoryRecord) {
       return;
     }
     setTurns((current) =>
@@ -1427,9 +1487,29 @@ function TutorWorkspace({
             <Badge size="lg" variant="light" color={profile ? 'teal' : 'gray'}>
               {profile ? t.tutor.profileActive : t.tutor.baseMode}
             </Badge>
-            <Badge size="lg" variant="light" color={conversationId ? 'teal' : 'gray'}>
-              {conversationId ? t.tutor.conversationActive : t.tutor.newConversation}
+            <Badge
+              size="lg"
+              variant="light"
+              color={viewingHistoryRecord ? 'gray' : conversationId ? 'teal' : 'gray'}
+            >
+              {viewingHistoryRecord
+                ? t.tutor.historyRecord
+                : conversationId
+                ? t.tutor.conversationActive
+                : t.tutor.newConversation}
             </Badge>
+            {activeLessonSessionId && !viewingHistoryRecord && (
+              <Button
+                size="xs"
+                color="orange"
+                variant="light"
+                loading={finishingLesson}
+                leftSection={<Square size={14} />}
+                onClick={() => void finishCurrentLesson()}
+              >
+                {t.tutor.finishLesson}
+              </Button>
+            )}
           </Group>
         </Group>
 
@@ -1441,6 +1521,7 @@ function TutorWorkspace({
             fullWidth
             value={lessonType}
             onChange={changeLessonType}
+            disabled={viewingHistoryRecord}
             data={[
               { value: 'meeting', label: t.tutor.lessonModeOptions.meeting },
               { value: 'tutor', label: t.tutor.lessonModeOptions.tutor },
@@ -1466,8 +1547,12 @@ function TutorWorkspace({
             <Pill
               key={prompt.label}
               className="quick-pill"
-              onClick={() => useQuickPrompt(prompt.text)}
-              aria-disabled={sending || listening}
+              onClick={() => {
+                if (!viewingHistoryRecord) {
+                  useQuickPrompt(prompt.text);
+                }
+              }}
+              aria-disabled={sending || listening || viewingHistoryRecord}
             >
               {prompt.label}
             </Pill>
@@ -1490,6 +1575,17 @@ function TutorWorkspace({
         {continuityNotice && (
           <Alert color="teal" variant="light">
             {continuityNotice}
+          </Alert>
+        )}
+
+        {viewingHistoryRecord && (
+          <Alert color="gray" variant="light">
+            <Group justify="space-between" gap="sm" align="center">
+              <Text fw={700}>{t.tutor.continuity.historyReadOnlyNotice}</Text>
+              <Button size="xs" variant="light" leftSection={<PlusCircle size={14} />} onClick={startNewLesson}>
+                {t.tutor.continuity.newLesson}
+              </Button>
+            </Group>
           </Alert>
         )}
 
@@ -1518,11 +1614,15 @@ function TutorWorkspace({
                 ref={textareaRef}
                 value={listening ? voiceInterim || draft : draft}
                 onChange={(event) => setDraft(event.currentTarget.value)}
-                placeholder={t.tutor.placeholder}
+                placeholder={
+                  viewingHistoryRecord
+                    ? t.tutor.continuity.historyReadOnlyPlaceholder
+                    : t.tutor.placeholder
+                }
                 autosize
                 minRows={3}
                 maxRows={7}
-                disabled={listening}
+                disabled={listening || viewingHistoryRecord}
                 size="md"
               />
               <Group justify="space-between" gap="sm" align="center" className="voice-dialog-row">
@@ -1548,7 +1648,7 @@ function TutorWorkspace({
                       variant={listening ? 'filled' : 'light'}
                       color={listening ? 'red' : 'teal'}
                       onClick={listening ? stopVoice : () => startVoice()}
-                      disabled={!speechSupported || sending}
+                      disabled={!speechSupported || sending || viewingHistoryRecord}
                       title={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}
                     >
                       {listening ? <Square size={18} /> : <Mic size={18} />}
@@ -1559,7 +1659,7 @@ function TutorWorkspace({
                     size="md"
                     color="teal"
                     loading={sending}
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() || viewingHistoryRecord}
                     leftSection={<Send size={18} />}
                   >
                     {t.tutor.ask}
@@ -1614,6 +1714,7 @@ function TutorWorkspace({
               }}
               onStopSpeech={stopTutorSpeech}
               onGenerateImage={generateImage}
+              readOnly={viewingHistoryRecord}
             />
           ))}
         </Stack>
@@ -1723,7 +1824,7 @@ function LessonContinuityPanel({
   onNewLesson: () => void;
   onRefresh: () => void;
 }) {
-  const latestLesson = lessons[0];
+  const latestLesson = lessons.find((lesson) => !isTerminalLessonStatus(lesson.status));
   const latestLessonActive = latestLesson?.lessonSessionId === activeLessonSessionId;
   return (
     <Paper withBorder radius="md" p="md" className="lesson-continuity">
@@ -1779,6 +1880,7 @@ function LessonContinuityPanel({
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
             {lessons.slice(0, 4).map((lesson) => {
               const active = lesson.lessonSessionId === activeLessonSessionId;
+              const historical = isTerminalLessonStatus(lesson.status);
               const latestTurn = lesson.turns[0];
               return (
                 <Box
@@ -1798,6 +1900,11 @@ function LessonContinuityPanel({
                     {active && (
                       <Badge color="green" variant="filled">
                         {t.tutor.continuity.opened}
+                      </Badge>
+                    )}
+                    {historical && (
+                      <Badge color="gray" variant="light">
+                        {t.tutor.continuity.finished}
                       </Badge>
                     )}
                   </Group>
@@ -1827,11 +1934,15 @@ function LessonContinuityPanel({
                   <Button
                     fullWidth
                     mt="sm"
-                    color={active ? 'gray' : 'teal'}
-                    variant={active ? 'light' : 'filled'}
+                    color={historical || active ? 'gray' : 'teal'}
+                    variant={historical || active ? 'light' : 'filled'}
                     onClick={() => onResume(lesson)}
                   >
-                    {active ? t.tutor.continuity.goToOpened : t.tutor.continuity.resume}
+                    {historical
+                      ? t.tutor.continuity.openRecord
+                      : active
+                      ? t.tutor.continuity.goToOpened
+                      : t.tutor.continuity.resume}
                   </Button>
                 </Box>
               );
@@ -2227,6 +2338,7 @@ function TutorTurnCard({
   onSpeak,
   onStopSpeech,
   onGenerateImage,
+  readOnly,
 }: {
   t: Copy;
   turn: TutorTurn;
@@ -2235,6 +2347,7 @@ function TutorTurnCard({
   onSpeak: () => void;
   onStopSpeech: () => void;
   onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
+  readOnly: boolean;
 }) {
   return (
     <Card withBorder shadow="sm" padding="lg" className="turn-card">
@@ -2282,7 +2395,12 @@ function TutorTurnCard({
                 </Button>
               </Tooltip>
             </Group>
-            <TutorBlockList t={t} turn={turn} onGenerateImage={onGenerateImage} />
+            <TutorBlockList
+              t={t}
+              turn={turn}
+              onGenerateImage={onGenerateImage}
+              readOnly={readOnly}
+            />
 
             {turn.answer.citations.length > 0 && (
               <Box>
@@ -2353,6 +2471,12 @@ function formatGoalStatus(status: TutorLessonHistoryItem['goalStatus'], t: Copy)
   return t.tutor.usage.goalStatuses[status] ?? status;
 }
 
+function isTerminalLessonStatus(
+  status: TutorLessonHistoryItem['status'] | TutorLessonLifecycle['status'],
+): boolean {
+  return status === 'hard_limit_reached' || status === 'goal_reached' || status === 'finished';
+}
+
 function getLessonHistorySummary(lesson: TutorLessonHistoryItem, t: Copy): string {
   const summary = pickSummaryText(lesson.summary);
   if (summary) {
@@ -2387,10 +2511,12 @@ function TutorBlockList({
   t,
   turn,
   onGenerateImage,
+  readOnly,
 }: {
   t: Copy;
   turn: TutorTurn;
   onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
+  readOnly: boolean;
 }) {
   if (!turn.answer) {
     return null;
@@ -2407,6 +2533,7 @@ function TutorBlockList({
           block={block}
           showTextTitle={index === 0 && block.type === 'text'}
           onGenerateImage={onGenerateImage}
+          readOnly={readOnly}
         />
       ))}
     </Stack>
@@ -2419,12 +2546,14 @@ function TutorBlock({
   block,
   showTextTitle,
   onGenerateImage,
+  readOnly,
 }: {
   t: Copy;
   turn: TutorTurn;
   block: TutorResponseBlock;
   showTextTitle: boolean;
   onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
+  readOnly: boolean;
 }) {
   if (block.type === 'text') {
     return (
@@ -2503,7 +2632,7 @@ function TutorBlock({
           color="teal"
           leftSection={loading ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />}
           onClick={() => void onGenerateImage(turn, block)}
-          disabled={loading}
+          disabled={loading || readOnly}
         >
           {t.tutor.showImage}
         </Button>

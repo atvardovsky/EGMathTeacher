@@ -109,6 +109,36 @@ describe('LessonService', () => {
     expect(ordered[0]?.id).toBe(nextLifecycle.lessonSessionId);
   });
 
+  it('allows the student to finish an active lesson session explicitly', () => {
+    const lifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-manual-finish',
+      lessonType: 'practice',
+    });
+
+    const finished = service.finishSession({
+      userId: 'student-1',
+      lessonSessionId: lifecycle.lessonSessionId,
+      reason: 'student_finished_lesson',
+    });
+
+    expect(finished).toEqual(
+      expect.objectContaining({
+        id: lifecycle.lessonSessionId,
+        status: 'finished',
+        finish_reason: 'student_finished_lesson',
+      }),
+    );
+
+    const nextLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-manual-finish',
+      lessonType: 'practice',
+    });
+
+    expect(nextLifecycle.lessonSessionId).not.toBe(lifecycle.lessonSessionId);
+  });
+
   it('does not charge active learning time for the first turn', () => {
     const lifecycle = service.beginTurn({
       userId: 'student-1',

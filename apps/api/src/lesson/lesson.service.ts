@@ -37,6 +37,12 @@ interface CompleteTurnInput {
   };
 }
 
+interface FinishSessionInput {
+  userId: string;
+  lessonSessionId: string;
+  reason: string;
+}
+
 const TERMINAL_STATUSES: LessonSessionStatus[] = [
   'hard_limit_reached',
   'goal_reached',
@@ -259,6 +265,47 @@ export class LessonService {
         goalReached ||
         Boolean(input.decisionPolicy?.shouldSuggestBreak),
     };
+  }
+
+  finishSession(input: FinishSessionInput): LessonSessionRecord | undefined {
+    const existing = this.db.get<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE id = ?
+         AND user_id = ?
+       LIMIT 1`,
+      [input.lessonSessionId, input.userId],
+    );
+    if (!existing) {
+      return undefined;
+    }
+    if (TERMINAL_STATUSES.includes(existing.status)) {
+      return existing;
+    }
+
+    const nowIso = new Date().toISOString();
+    this.db.run(
+      `UPDATE lesson_sessions
+       SET status = 'finished',
+           finish_reason = ?,
+           finished_at = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND user_id = ?`,
+      [input.reason, nowIso, nowIso, input.lessonSessionId, input.userId],
+    );
+
+    return this.db.get<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE id = ?
+         AND user_id = ?`,
+      [input.lessonSessionId, input.userId],
+    );
   }
 
   private getOrCreateSession(input: BeginTurnInput, nowIso: string): LessonSessionRecord {

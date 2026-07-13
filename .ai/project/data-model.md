@@ -450,9 +450,11 @@ adding a separate SQLite column in the POC. The DTO also exposes
 `goalEvidenceLevel`; accepted action-level evidence is stored in
 `lesson_decisions`.
 
-`GET /tutor/lessons` reads `lesson_sessions` as the canonical saved-lesson
-record, then joins recent `tutor_turns` and the latest
-`student_session_summaries` for display/resume context.
+`GET /tutor/lessons?scope=active|history|all` reads `lesson_sessions` as the
+canonical saved-lesson record, then joins recent `tutor_turns` and the latest
+`student_session_summaries` for display context. Active scope returns only
+non-terminal sessions that can reuse their `conversation_id`; history scope
+returns terminal sessions for read-only review.
 
 ### `lesson_effectiveness_signals`
 
@@ -840,9 +842,10 @@ design.
 
 The saved-lessons endpoint also uses `tutor_turns` directly for turn previews
 and backward-compatible legacy history. When a conversation has stored turns
-but no `lesson_sessions` row, the API exposes it as a resumable discussion
-with a synthetic `legacy_<conversationId>` session id; continuing it still
-uses the original `conversation_id`.
+but no `lesson_sessions` row, the API exposes it through history as a
+read-only record with a synthetic `legacy_<conversationId>` session id. It is
+visible for review, but the client must start a new lesson before sending new
+prompts.
 
 ## In-Memory State
 

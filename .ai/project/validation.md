@@ -41,8 +41,9 @@ Current covered areas:
 - tutor structured output, required image-block normalization for explicit
   visual requests, and generated image data URL persistence into the stored
   tutor turn
-- tutor lesson-history retrieval for canonical lesson sessions, stored tutor
-  turns, prompt continuity context, and legacy tutor-turn conversations
+- tutor lesson-history retrieval for active vs historical canonical lesson
+  sessions, explicit lesson finishing, stored tutor turns, prompt continuity
+  context, and legacy tutor-turn conversations exposed as read-only history
 - AI model-provider facade delegation and role/operation policy application
   for response, lesson-decision, and image requests
 - Lesson Decision Agent policy rejection and decision observability storage
@@ -59,6 +60,9 @@ Current covered areas:
   cost-per-verified-outcome summary behavior, GPT-Image-2 output-token
   estimation when image responses omit usage, plus user-scoped background job
   result/error projection in usage summaries
+- mocked browser E2E for saved active lesson resume, read-only finished lesson
+  records, disabled archived composer/voice actions, and starting a fresh
+  lesson from history
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation

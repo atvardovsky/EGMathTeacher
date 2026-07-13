@@ -1,8 +1,13 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { TutorService } from './tutor.service';
-import type { LessonType, TutorAnswer, TutorLessonHistory } from './tutor.types';
+import type {
+  LessonType,
+  TutorAnswer,
+  TutorLessonHistory,
+  TutorLessonHistoryItem,
+} from './tutor.types';
 
 interface TutorMessageBody {
   message?: string;
@@ -32,11 +37,24 @@ export class TutorController {
     @Req() request: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('turnLimit') turnLimit?: string,
+    @Query('scope') scope?: string,
   ): TutorLessonHistory {
     return this.tutorService.getLessonHistory({
       user: request.user!,
       limit,
       turnLimit,
+      scope,
+    });
+  }
+
+  @Post('lessons/:lessonSessionId/finish')
+  finishLesson(
+    @Req() request: AuthenticatedRequest,
+    @Param('lessonSessionId') lessonSessionId: string,
+  ): TutorLessonHistoryItem {
+    return this.tutorService.finishLesson({
+      user: request.user!,
+      lessonSessionId,
     });
   }
 

@@ -41,9 +41,11 @@ App
       │  ├─ Quick prompt pills
       │  ├─ Lesson continuity panel
       │  │  ├─ Explicit empty saved-lessons state
-      │  │  ├─ Resume latest action
+      │  │  ├─ Resume latest active lesson action
       │  │  ├─ New lesson action
       │  │  └─ Recent saved lesson rows with goal, status, summary, last question
+      │  │     ├─ Continue action for active rows
+      │  │     └─ Open read-only record action for finished/legacy rows
       │  ├─ Lesson usage bar
       │  │  ├─ Today estimate
       │  │  ├─ Current lesson estimate
@@ -56,6 +58,8 @@ App
       │  ├─ Voice dialog switch
       │  ├─ Voice action
       │  ├─ Send action
+      │  ├─ Finish lesson action when an active lesson is open
+      │  ├─ Read-only history alert when a finished/legacy record is open
       │  ├─ Lesson launcher when there are no turns
       │  │  ├─ Green "start first lesson" button
       │  │  ├─ First meeting card
@@ -109,10 +113,15 @@ App
   first meeting, level check, and practice cards send starter prompts only
   after user click. Topic explanation and mistake-review cards prefill the
   composer and wait for the student to add details.
-- On load, the tutor workspace fetches saved lessons from `GET /tutor/lessons`.
-  It shows a saved-lessons panel even when no history exists. When stored
-  turns exist, the latest saved discussion is opened into the tutor turn list,
-  and continuing that lesson reuses the saved `conversationId`.
+- On load, the tutor workspace fetches active saved lessons from
+  `GET /tutor/lessons?scope=active` and archived records from
+  `GET /tutor/lessons?scope=history`. It shows a saved-lessons panel even
+  when no history exists. When active stored turns exist, the latest active
+  saved discussion is opened into the tutor turn list, and continuing that
+  lesson reuses the saved `conversationId`.
+- Finished and legacy records open as read-only history. In that state the
+  composer, voice action, and image-generation actions are disabled, and the
+  visible next step is to start a new lesson.
 - Admin users can switch to the materials view.
 - Authenticated users can switch to Settings.
 - Student users without a stored profile must complete the first meeting before

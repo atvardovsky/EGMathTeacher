@@ -27,12 +27,13 @@ visible next actions.
   cards for first meeting, level check, linear-equation practice, topic
   explanation, and mistake review.
 - Tutor-side saved lesson continuity: the workspace loads recent lessons,
-  last questions, summaries, and stored turns from `GET /tutor/lessons`,
-  shows an explicit saved-lessons/empty-history panel, auto-opens the latest
-  saved discussion when stored turns exist, and resumes with the previous
-  `conversationId` so the backend prompt can continue from DB-backed context.
-  Legacy saved `tutor_turns` without a `lesson_sessions` row are still shown
-  as resumable discussions.
+  last questions, summaries, and stored turns from scoped
+  `GET /tutor/lessons?scope=active|history` calls, shows an explicit
+  saved-lessons/empty-history panel, auto-opens the latest active saved
+  discussion when stored turns exist, and resumes with the previous
+  `conversationId` only for non-terminal lesson sessions. Students can
+  explicitly finish the active lesson; finished and legacy saved `tutor_turns`
+  without a `lesson_sessions` row are shown as read-only historical records.
 - Specialist AI profile pipeline for first-login onboarding:
   math knowledge diagnostician, tutoring-focused psychopedagogical profiler,
   and teaching strategy planner.
@@ -220,8 +221,8 @@ visible next actions.
     is still available through configuration.
   - `TutorModule`: RAG tutor response, image generation, and saved lesson
     history endpoints. Lesson history is read from `lesson_sessions` plus
-    legacy `tutor_turns` fallback so the web client can resume prior
-    discussions.
+    legacy `tutor_turns` fallback; non-terminal sessions can be resumed and
+    terminal/legacy records are archived for review.
   - `KnowledgeModule`: admin file upload, local knowledge-pack structured
     import, idempotent RAG sync, vector store status, and local project vector
     store id persistence.
@@ -296,8 +297,9 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
 - `knowledge_files`: local metadata for OpenAI file and vector store records.
 - `tutor_turns`: user prompt, conversation id, lesson type, answer JSON, and
   timestamp.
-  `GET /tutor/lessons` uses these rows for turn previews and for legacy
-  resumable discussions when a conversation predates `lesson_sessions`.
+  Scoped `GET /tutor/lessons` calls use these rows for turn previews and for
+  legacy read-only history records when a conversation predates
+  `lesson_sessions`.
 
 OpenAI stores remote files, vector stores, generated model responses, realtime
 session data, and image generation outputs. Those external objects are not

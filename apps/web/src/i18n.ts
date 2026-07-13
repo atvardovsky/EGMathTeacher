@@ -219,6 +219,8 @@ export const TEXT = {
       baseMode: 'базовый режим',
       conversationActive: 'диалог активен',
       newConversation: 'новый диалог',
+      historyRecord: 'запись занятия',
+      finishLesson: 'Завершить занятие',
       lessonMode: 'Тип занятия',
       lessonModes: {
         meeting: 'Встреча',
@@ -310,8 +312,10 @@ export const TEXT = {
         subtitle: 'Здесь видны сохраненные занятия и последние обсуждения.',
         resumeLatest: 'Продолжить последнее',
         resume: 'Продолжить',
+        openRecord: 'Открыть запись',
         goToOpened: 'К открытому занятию',
         opened: 'открыто',
+        finished: 'завершено',
         newLesson: 'Новое занятие',
         turns: 'ходов',
         lastQuestion: 'Последний вопрос',
@@ -321,6 +325,12 @@ export const TEXT = {
         openedNotice: 'Сохраненное занятие открыто. Продолжай в поле вопроса ниже.',
         openedWithoutTurnsNotice:
           'Занятие открыто, но сохраненных сообщений в нем пока нет. Начни с нового вопроса.',
+        historyOpenedNotice:
+          'Открыта запись завершенного занятия. Ее можно читать, но новые вопросы нужно начинать в новом занятии.',
+        historyReadOnlyNotice:
+          'Это запись завершенного занятия. Чтобы задать новый вопрос, начни новое занятие.',
+        historyReadOnlyPlaceholder: 'Запись занятия открыта только для просмотра',
+        finishedNotice: 'Занятие завершено и перенесено в историю.',
       },
       thinking: 'Репетитор думает',
       explanation: 'Разбор',
@@ -540,6 +550,8 @@ export const TEXT = {
       baseMode: 'base mode',
       conversationActive: 'dialog active',
       newConversation: 'new dialog',
+      historyRecord: 'lesson record',
+      finishLesson: 'Finish lesson',
       lessonMode: 'Lesson type',
       lessonModes: {
         meeting: 'Meeting',
@@ -631,8 +643,10 @@ export const TEXT = {
         subtitle: 'Saved lessons and recent discussions are visible here.',
         resumeLatest: 'Continue latest',
         resume: 'Continue',
+        openRecord: 'Open record',
         goToOpened: 'Go to open lesson',
         opened: 'open',
+        finished: 'finished',
         newLesson: 'New lesson',
         turns: 'turns',
         lastQuestion: 'Last question',
@@ -642,6 +656,12 @@ export const TEXT = {
         openedNotice: 'The saved lesson is open. Continue in the question field below.',
         openedWithoutTurnsNotice:
           'The lesson is open, but it has no saved messages yet. Start with a new question.',
+        historyOpenedNotice:
+          'A finished lesson record is open. You can read it, but new questions should start a new lesson.',
+        historyReadOnlyNotice:
+          'This is a finished lesson record. Start a new lesson to ask another question.',
+        historyReadOnlyPlaceholder: 'Lesson record is read-only',
+        finishedNotice: 'The lesson is finished and moved to history.',
       },
       thinking: 'Tutor is thinking',
       explanation: 'Walkthrough',

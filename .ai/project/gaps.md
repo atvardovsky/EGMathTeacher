@@ -82,10 +82,12 @@ decisions.
 - Accepted `mark_goal_blocked` policy now updates durable lesson goal state.
 - Profile-delta proposals from the immediate decision path are routed into
   sanitized background observations instead of mutating the profile.
-- Tutor-side lesson continuity now shows saved lessons, previous questions,
-  summaries or last answers, an explicit empty-history state, and a resume
-  action. The latest saved discussion is loaded when stored turns exist, and
-  legacy `tutor_turns` without `lesson_sessions` remain resumable.
+- Tutor-side lesson continuity now shows active saved lessons, read-only
+  historical records, previous questions, summaries or last answers, an
+  explicit empty-history state, resume/open-record actions, and an explicit
+  finish action for the active lesson. The latest active saved discussion is
+  loaded when stored turns exist; legacy `tutor_turns` without
+  `lesson_sessions` remain visible only as read-only history.
 
 ## Remaining Gaps By Logical Set
 

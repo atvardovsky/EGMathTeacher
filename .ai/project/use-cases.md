@@ -84,17 +84,20 @@ Rules from current implementation:
   button plus cards for first meeting, level check, linear-equation practice,
   topic explanation, and mistake review.
 - The tutor workspace also shows saved lesson continuity. It calls
-  `GET /tutor/lessons`, displays recent lesson records, last questions,
-  summaries or last answers, and a continue action. If no lesson has been
-  saved, it shows an explicit empty-history message rather than a blank area.
-- When stored turns exist, the latest saved discussion is loaded into the
-  tutor view on page load, so the student can see where the previous session
-  ended.
-- Continuing a saved lesson reuses its `conversationId` and lesson type. The
-  backend adds recent turns and session summaries from SQLite to the tutor
-  prompt so the answer can continue from the prior discussion.
-- Legacy saved `tutor_turns` without a matching `lesson_sessions` row remain
-  visible as resumable discussions.
+  `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
+  displays active lesson records, read-only historical records, last questions,
+  summaries or last answers, and clear continue/open-record actions. If no
+  lesson has been saved, it shows an explicit empty-history message rather
+  than a blank area.
+- When active stored turns exist, the latest active saved discussion is loaded
+  into the tutor view on page load, so the student can see where the previous
+  session ended.
+- Continuing an active saved lesson reuses its `conversationId` and lesson
+  type. The backend adds recent turns and session summaries from SQLite to the
+  tutor prompt so the answer can continue from the prior discussion.
+- The student can finish the current active lesson explicitly. Finished
+  sessions and legacy saved `tutor_turns` without a matching `lesson_sessions`
+  row remain visible as read-only historical records.
 - Starting a launcher lesson is a deliberate user action. The web client does
   not call the tutor model automatically on page load or immediately after
   setup completion.
@@ -163,8 +166,9 @@ Rules from current implementation:
 - If the student explicitly asks for a drawing, diagram, graph, image, or
   visual explanation, the API must return an image block even if the model
   omitted it. Fresh required image blocks can auto-start one image-generation
-  request after the text answer is visible; older saved turns and optional
-  blocks keep the explicit image-generation action visible.
+  request after the text answer is visible; active older saved turns and
+  optional blocks keep the explicit image-generation action visible. Read-only
+  historical records must not trigger new image-generation spend.
 - The tutor prompt instructs the model to answer in Russian, explain step by
   step, check understanding, and avoid returning only the final answer.
 - If RAG vector stores exist, the OpenAI-backed model provider uses file

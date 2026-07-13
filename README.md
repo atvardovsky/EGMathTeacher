@@ -48,9 +48,14 @@ Production domain:
 - First-login meeting for students before the normal tutor workspace, followed
   by a lesson launcher with a green first-lesson button and lesson cards.
 - Saved lesson continuity in the tutor workspace: the client loads
-  `GET /tutor/lessons`, shows recent lessons and last questions, auto-opens
-  the latest saved discussion when turns exist, and sends the same
-  `conversationId` when the student continues.
+  `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
+  shows active lessons separately from read-only historical records, auto-opens
+  the latest active saved discussion when turns exist, and sends the same
+  `conversationId` only when the student continues a non-terminal lesson.
+  Students can explicitly finish an active lesson with
+  `POST /tutor/lessons/:lessonSessionId/finish`; finished and legacy records
+  can be opened for review but cannot accept new prompts or image-generation
+  actions.
 - DB-backed student profile memory with knowledge state, learning preferences,
   tutoring-focused psychopedagogical profile, and explanation strategy.
 - Specialist AI profile pipeline for first-login onboarding: math knowledge
@@ -102,8 +107,9 @@ Production domain:
 - The tutor prompt includes DB-backed continuity context for the active
   conversation, plus recent session summaries, so a resumed lesson can pick up
   from the previous discussion instead of starting from zero. Older saved
-  `tutor_turns` without a `lesson_sessions` row are still listed as resumable
-  legacy discussions.
+  `tutor_turns` without a `lesson_sessions` row are still listed as read-only
+  historical records so pre-lifecycle discussions remain visible without
+  creating endless resumable conversations.
 - Tutor answers return ordered response blocks for text, examples, tasks, and
   optional image plans while preserving legacy `answer`, `tasks`, `examples`,
   `needsImage`, and `imagePrompt` fields.

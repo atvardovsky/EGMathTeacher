@@ -24,11 +24,21 @@ flowchart TB
   Tutor --> TutorStatus[Profile and conversation badges]
   Tutor --> LessonMode[Lesson mode segmented control]
   Tutor --> LessonHistory[Saved lesson continuity panel]
-  LessonHistory --> HistoryApi[GET /tutor/lessons]
+  LessonHistory --> ActiveHistoryApi[GET /tutor/lessons scope active]
+  LessonHistory --> ArchivedHistoryApi[GET /tutor/lessons scope history]
   LessonHistory --> EmptyHistory[Explicit empty saved-lessons state]
-  LessonHistory --> ResumeLatest[Continue latest saved lesson]
+  LessonHistory --> ResumeLatest[Continue latest active lesson]
+  LessonHistory --> FinishLesson[Finish active lesson]
+  FinishLesson --> FinishApi[POST /tutor/lessons/:id/finish]
   LessonHistory --> HistoryRows[Recent lesson rows: goal, summary, last question]
+  HistoryRows --> ContinueActive[Continue active row]
+  HistoryRows --> OpenRecord[Open read-only finished or legacy record]
   ResumeLatest --> Composer
+  ContinueActive --> Composer
+  OpenRecord --> ReadOnlyState[Read-only history state]
+  ReadOnlyState --> DisabledComposer[Composer, voice, and image generation disabled]
+  ReadOnlyState --> NewLessonFromHistory[Start new lesson]
+  NewLessonFromHistory --> Composer
   Tutor --> LessonLauncher[Lesson launcher when no turns]
   LessonLauncher --> StartFirst[Green start first lesson button]
   LessonLauncher --> MeetingCard[First meeting card]
@@ -70,6 +80,7 @@ flowchart TB
   TurnCard --> Citations[Citation badges]
   ImageBlock --> AutoImage[Auto-generate required fresh image]
   ImageBlock --> ImageAction[Optional image action]
+  ReadOnlyState --> ImageDisabled[Image actions disabled]
   AutoImage --> ImageApi
   ImageAction --> ImageApi[POST /tutor/image]
 

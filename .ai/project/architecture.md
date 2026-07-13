@@ -175,7 +175,8 @@ configuration.
 | `GET /auth/me` | none | Return current cookie session or null. |
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
 | `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile. |
-| `GET /tutor/lessons` | authenticated | Return signed-in user's recent lesson sessions, summaries, stored turns, and legacy saved tutor-turn discussions for resume UI. |
+| `GET /tutor/lessons?scope=active\|history\|all` | authenticated | Return signed-in user's active resumable lesson sessions and read-only historical/legacy lesson records with summaries and stored turns. |
+| `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session and move it to read-only history. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. |
 | `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context and optionally persist the generated POC data URL into the matching tutor-turn image block. |
 | `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
