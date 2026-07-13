@@ -37,7 +37,10 @@ The web UI follows this tree:
 
 1. Auth check loading.
 2. Auth screen with login/register and language switch.
-3. Student first-meeting screen when profile onboarding is required.
+3. Student first-meeting screen when profile onboarding is required. This
+   screen is voice-first: a green start button begins the AI-led meeting,
+   tutor speech is enabled when the browser supports it, the mic reopens in
+   voice-dialog mode, and text input is only a fallback.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
 6. When the tutor workspace has no turns, show a lesson launcher with a
@@ -91,6 +94,9 @@ landing page.
   choice, not a command. Changing the mode starts a fresh lesson/conversation
   boundary so meeting, tutor, practice, diagnostic, and mistake-review state do
   not drift into each other.
+- The first-login meeting must not be a static questionnaire as the primary
+  path. Gather profile facts through the AI-led `meeting` dialog and create
+  the profile from the stored conversation.
 - Use a green primary button for the first lesson launcher action. The launcher
   may start meeting, diagnostic, or practice only after a user click; it must
   not trigger model calls automatically on page load.

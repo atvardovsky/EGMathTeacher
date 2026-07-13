@@ -40,21 +40,20 @@ describe('LessonService', () => {
     db.onModuleDestroy();
   });
 
-  it('starts a new lesson session when the lesson type changes on the same conversation', () => {
+  it('rejects lesson type changes on the same conversation after closing the old session', () => {
     const tutorLifecycle = service.beginTurn({
       userId: 'student-1',
       conversationId: 'conv-1',
       lessonType: 'tutor',
     });
 
-    const practiceLifecycle = service.beginTurn({
-      userId: 'student-1',
-      conversationId: 'conv-1',
-      lessonType: 'practice',
-    });
-
-    expect(practiceLifecycle.lessonType).toBe('practice');
-    expect(practiceLifecycle.lessonSessionId).not.toBe(tutorLifecycle.lessonSessionId);
+    expect(() =>
+      service.beginTurn({
+        userId: 'student-1',
+        conversationId: 'conv-1',
+        lessonType: 'practice',
+      }),
+    ).toThrow('Finished lesson conversations cannot be reopened');
 
     const oldSession = db.get<{ status: string; finish_reason: string | null }>(
       'SELECT status, finish_reason FROM lesson_sessions WHERE id = ?',
@@ -109,7 +108,7 @@ describe('LessonService', () => {
     expect(ordered[0]?.id).toBe(nextLifecycle.lessonSessionId);
   });
 
-  it('allows the student to finish an active lesson session explicitly', () => {
+  it('allows the student to finish an active lesson session explicitly without reopening it', () => {
     const lifecycle = service.beginTurn({
       userId: 'student-1',
       conversationId: 'conv-manual-finish',
@@ -130,13 +129,38 @@ describe('LessonService', () => {
       }),
     );
 
-    const nextLifecycle = service.beginTurn({
+    expect(() =>
+      service.beginTurn({
+        userId: 'student-1',
+        conversationId: 'conv-manual-finish',
+        lessonType: 'practice',
+      }),
+    ).toThrow('Finished lesson conversations cannot be reopened');
+  });
+
+  it('closes an active lesson type drift but requires a fresh conversation boundary', () => {
+    const tutorLifecycle = service.beginTurn({
       userId: 'student-1',
-      conversationId: 'conv-manual-finish',
-      lessonType: 'practice',
+      conversationId: 'conv-type-drift',
+      lessonType: 'tutor',
     });
 
-    expect(nextLifecycle.lessonSessionId).not.toBe(lifecycle.lessonSessionId);
+    expect(() =>
+      service.beginTurn({
+        userId: 'student-1',
+        conversationId: 'conv-type-drift',
+        lessonType: 'practice',
+      }),
+    ).toThrow('Finished lesson conversations cannot be reopened');
+
+    const oldSession = db.get<{ status: string; finish_reason: string | null }>(
+      'SELECT status, finish_reason FROM lesson_sessions WHERE id = ?',
+      [tutorLifecycle.lessonSessionId],
+    );
+    expect(oldSession).toEqual({
+      status: 'finished',
+      finish_reason: 'lesson_type_changed_to_practice',
+    });
   });
 
   it('does not charge active learning time for the first turn', () => {

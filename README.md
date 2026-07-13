@@ -45,8 +45,13 @@ Production domain:
 
 - Local registration/login with SQLite and signed HTTP-only cookies.
 - First registered user becomes `admin`; later users are `student`.
-- First-login meeting for students before the normal tutor workspace, followed
-  by a lesson launcher with a green first-lesson button and lesson cards.
+- Voice-first first-login meeting for students before the normal tutor
+  workspace. The AI asks onboarding questions in a `meeting` lesson, the web
+  client speaks tutor answers and reopens the mic when browser support allows
+  it, and the stored conversation is converted into the student profile. After
+  successful profile creation, the meeting lesson is closed and moved to
+  history. After setup, the tutor workspace opens with a lesson launcher and
+  a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
   shows active lessons separately from read-only historical records, auto-opens
@@ -55,14 +60,17 @@ Production domain:
   Students can explicitly finish an active lesson with
   `POST /tutor/lessons/:lessonSessionId/finish`; finished and legacy records
   can be opened for review but cannot accept new prompts or image-generation
-  actions.
+  actions. If an old client sends `POST /tutor/message` with a finished
+  lesson's `conversationId`, the API rejects it and requires a new lesson
+  boundary.
 - DB-backed student profile memory with knowledge state, learning preferences,
   tutoring-focused psychopedagogical profile, and explanation strategy.
-- Specialist AI profile pipeline for first-login onboarding: math knowledge
-  diagnostician, psychopedagogical profiler, and teaching strategy planner.
+- Specialist AI profile pipeline for first-login onboarding: meeting
+  conversation extractor, math knowledge diagnostician, psychopedagogical
+  profiler, and teaching strategy planner.
 - SQLite-backed background AI worker for delayed learning-signal extraction,
-  session summaries, profile refreshes, strategy refreshes, and rare quality
-  review after tutor turns.
+  session summaries, profile refreshes, strategy refreshes, lesson-closure
+  conversation review, and rare quality review after tutor turns.
 - Optional background batching stores sanitized tutor-turn observations locally
   and sends grouped analysis windows by count, idle timeout, or quality
   trigger instead of calling the signal extractor after every turn. Set
@@ -102,8 +110,11 @@ Production domain:
   topic explanation, and mistake-review choices. Starting a launcher lesson is
   user-triggered, not an automatic model call on page load. Switching the
   visible lesson mode starts a fresh conversation/session boundary, and the
-  API also protects older clients by finishing an active session when the
-  lesson type changes.
+  API also protects older clients by finishing an active session and rejecting
+  the reused conversation id when the lesson type changes.
+- Lesson finish paths enqueue background closure review so the stored
+  conversation can produce a compact session summary and profile/strategy
+  hints for teaching the student better.
 - The tutor prompt includes DB-backed continuity context for the active
   conversation, plus recent session summaries, so a resumed lesson can pick up
   from the previous discussion instead of starting from zero. Older saved

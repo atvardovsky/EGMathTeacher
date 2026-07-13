@@ -15,6 +15,7 @@ export type AiOperationKey =
   | 'tutorAnswer'
   | 'tutorAnswerWithRag'
   | 'tutorImage'
+  | 'onboardingConversationExtraction'
   | 'onboardingKnowledgeDiagnosis'
   | 'onboardingPsychopedagogicalProfile'
   | 'onboardingStrategyPlan'

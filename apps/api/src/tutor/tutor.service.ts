@@ -260,6 +260,7 @@ export class TutorService {
     if (!row) {
       throw new NotFoundException('Lesson session not found');
     }
+    this.enqueueLessonClosureReview(options.user, row, row.finish_reason ?? 'student_finished_lesson');
     return this.buildLessonHistoryItem(options.user.id, row, 6);
   }
 
@@ -279,15 +280,30 @@ export class TutorService {
     const curriculum = this.curriculumService.resolve(message);
     const topicHint = curriculum.topicId;
     const correlationId = `turn_${randomUUID()}`;
-    const lifecycle = this.lessonService.beginTurn({
-      userId: options.user.id,
+    const closureCandidates = this.getLessonSessionsClosedByNewBoundary(
+      options.user.id,
       conversationId,
       lessonType,
-      topicHint,
-    });
+    );
+    let lifecycle: LessonLifecycleDto;
+    try {
+      lifecycle = this.lessonService.beginTurn({
+        userId: options.user.id,
+        conversationId,
+        lessonType,
+        topicHint,
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        this.enqueueLessonClosureReviews(options.user, closureCandidates, conversationId, lessonType);
+      }
+      throw error;
+    }
+    this.enqueueLessonClosureReviews(options.user, closureCandidates, conversationId, lessonType);
     if (lifecycle.shouldStop) {
       const answer = this.buildLimitStopAnswer(conversationId, lessonType, lifecycle);
       this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer, requestId);
+      this.enqueueTerminalLessonReview(options.user, answer.lessonLifecycle);
       answer.usage = this.usageService.getLessonUsageSnapshot(
         options.user.id,
         lifecycle.lessonSessionId,
@@ -379,6 +395,7 @@ export class TutorService {
     answer.debug = this.buildTutorDebug(curriculum, decisionResult, verifierEvidence);
     this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer, requestId);
     this.enqueueBackgroundWork(options.user, conversationId, lessonType, message, options.source, answer);
+    this.enqueueTerminalLessonReview(options.user, answer.lessonLifecycle);
     return answer;
   }
 
@@ -953,6 +970,102 @@ export class TutorService {
       });
     } catch {
       // Background adaptation must never block the immediate tutor answer path.
+    }
+  }
+
+  private getLessonSessionsClosedByNewBoundary(
+    userId: string,
+    conversationId: string,
+    lessonType: LessonType,
+  ): LessonSessionRecord[] {
+    return this.db.all<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND status NOT IN (${TERMINAL_LESSON_STATUSES.map(() => '?').join(', ')})
+         AND (
+           conversation_id != ?
+           OR (conversation_id = ? AND lesson_type != ?)
+         )
+       ORDER BY updated_at DESC`,
+      [
+        userId,
+        ...TERMINAL_LESSON_STATUSES,
+        conversationId,
+        conversationId,
+        lessonType,
+      ],
+    );
+  }
+
+  private enqueueLessonClosureReviews(
+    user: AuthSession,
+    sessions: LessonSessionRecord[],
+    nextConversationId: string,
+    nextLessonType: LessonType,
+  ): void {
+    for (const session of sessions) {
+      const finishReason =
+        session.conversation_id === nextConversationId
+          ? `lesson_type_changed_to_${nextLessonType}`
+          : 'superseded_by_new_lesson_session';
+      this.enqueueLessonClosureReview(user, session, finishReason);
+    }
+  }
+
+  private enqueueTerminalLessonReview(
+    user: AuthSession,
+    lifecycle: LessonLifecycleDto,
+  ): void {
+    if (!this.isTerminalLessonStatus(lifecycle.status)) {
+      return;
+    }
+
+    this.enqueueLessonClosureReview(
+      user,
+      {
+        id: lifecycle.lessonSessionId,
+        user_id: user.id,
+        conversation_id: lifecycle.conversationId,
+        lesson_type: lifecycle.lessonType,
+        status: lifecycle.status,
+        goal_status: lifecycle.goalStatus,
+        goal_text: lifecycle.lessonGoal,
+        success_criteria_json: JSON.stringify(lifecycle.successCriteria),
+        finish_reason: lifecycle.finishReason ?? null,
+        active_learning_seconds: lifecycle.activeLearningSeconds,
+        turn_count: lifecycle.turnCount,
+        started_at: '',
+        last_activity_at: '',
+        finished_at: null,
+        created_at: '',
+        updated_at: '',
+      },
+      lifecycle.finishReason,
+    );
+  }
+
+  private isTerminalLessonStatus(status: string): boolean {
+    return (TERMINAL_LESSON_STATUSES as readonly string[]).includes(status);
+  }
+
+  private enqueueLessonClosureReview(
+    user: AuthSession,
+    session: LessonSessionRecord,
+    finishReason?: string,
+  ): void {
+    try {
+      this.backgroundAiService.enqueueLessonClosureReview({
+        userId: user.id,
+        conversationId: session.conversation_id,
+        lessonSessionId: session.id,
+        lessonType: session.lesson_type,
+        finishReason: finishReason ?? session.finish_reason ?? undefined,
+      });
+    } catch {
+      // Background adaptation must never block lesson lifecycle operations.
     }
   }
 

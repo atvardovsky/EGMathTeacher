@@ -143,6 +143,7 @@ describe('TutorService', () => {
     };
     const backgroundAi = {
       enqueueTutorTurnWork: jest.fn(),
+      enqueueLessonClosureReview: jest.fn(),
     };
     const lessonService = {
       beginTurn: jest.fn(() => lifecycle),
@@ -623,8 +624,8 @@ describe('TutorService', () => {
     expect(String(db.all.mock.calls[1][0])).toContain('FROM tutor_turns latest');
   });
 
-  it('finishes an active lesson and returns the archived history item', () => {
-    const { service, lessonService } = createService();
+  it('finishes an active lesson, queues closure analysis, and returns the archived history item', () => {
+    const { service, lessonService, backgroundAi } = createService();
 
     const finished = service.finishLesson({
       user,
@@ -635,6 +636,13 @@ describe('TutorService', () => {
       userId: user.id,
       lessonSessionId: 'lesson-finished',
       reason: 'student_finished_lesson',
+    });
+    expect(backgroundAi.enqueueLessonClosureReview).toHaveBeenCalledWith({
+      userId: user.id,
+      conversationId: 'conv-finished',
+      lessonSessionId: 'lesson-finished',
+      lessonType: 'practice',
+      finishReason: 'student_finished_lesson',
     });
     expect(finished).toEqual(
       expect.objectContaining({
@@ -844,5 +852,12 @@ describe('TutorService', () => {
     expect(result.answer).toContain('дневной лимит');
     expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
     expect(backgroundAi.enqueueTutorTurnWork).not.toHaveBeenCalled();
+    expect(backgroundAi.enqueueLessonClosureReview).toHaveBeenCalledWith({
+      userId: user.id,
+      conversationId: 'conv-hard',
+      lessonSessionId: 'lesson-hard',
+      lessonType: 'tutor',
+      finishReason: 'daily_learning_limit_reached',
+    });
   });
 });

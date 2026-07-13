@@ -211,6 +211,28 @@ export const TEXT = {
       freeformPlaceholder:
         'Например: быстро устаю от длинных объяснений, люблю сначала видеть пример',
       submit: 'Настроить репетитора',
+      meetingStatus: 'AI сам задаст вопросы и соберет профиль обучения.',
+      readyBadge: 'можно создать профиль',
+      inProgressBadge: 'идет встреча',
+      voiceTitle: 'Голосовая встреча',
+      voiceBody: 'Ответь как в обычном диалоге. Репетитор будет задавать короткие вопросы по одному.',
+      voiceStart: 'Начать голосовую встречу',
+      restartMeeting: 'Начать заново',
+      voiceStartPrompt:
+        'Начни первую голосовую встречу с учеником для AI-репетитора ЕГЭ по математике. Задавай по одному короткому вопросу. Сначала узнай цель, класс или экзамен, как сейчас с математикой и какой формат объяснения удобнее. Не проводи анкету списком. После 2-3 ответов дай одну очень короткую учебную мини-ситуацию или вопрос для диагностики. Говори по-русски простыми фразами для подростка 14-16 лет.',
+      startedTranscript: 'Начинаем первую встречу',
+      completeFromConversation: 'Создать профиль из разговора',
+      needMoreConversation:
+        'Ответь хотя бы на пару вопросов репетитора. После этого можно создать профиль обучения.',
+      conversationReady:
+        'Данных уже достаточно для предварительного профиля. Можно продолжить разговор или создать профиль.',
+      textFallbackPlaceholder: 'Можно ответить голосом или написать здесь',
+      sendFallback: 'Ответить',
+      transcriptTitle: 'Разговор первой встречи',
+      studentLabel: 'Ты',
+      assistantLabel: 'Репетитор',
+      emptyTranscriptTitle: 'Разговор еще не начат',
+      emptyTranscriptBody: 'Нажми зеленую кнопку, и репетитор начнет задавать вопросы голосом.',
     },
     tutor: {
       title: 'ЕГЭ математика',
@@ -542,6 +564,28 @@ export const TEXT = {
       freeformPlaceholder:
         'For example: long explanations tire me quickly; I like seeing an example first',
       submit: 'Tune the tutor',
+      meetingStatus: 'The AI will ask questions and build the learning profile.',
+      readyBadge: 'profile can be created',
+      inProgressBadge: 'meeting in progress',
+      voiceTitle: 'Voice meeting',
+      voiceBody: 'Answer like in a normal dialog. The tutor will ask short questions one by one.',
+      voiceStart: 'Start voice meeting',
+      restartMeeting: 'Start over',
+      voiceStartPrompt:
+        'Start the first voice meeting with a student for an EGE math AI tutor. Ask one short question at a time. First learn the goal, grade or exam, how math feels now, and which explanation format is comfortable. Do not run a questionnaire as a list. After 2-3 student replies, give one very short learning situation or diagnostic question. Speak in simple language for a 14-16 year old teenager.',
+      startedTranscript: 'Starting the first meeting',
+      completeFromConversation: 'Create profile from conversation',
+      needMoreConversation:
+        'Answer at least a couple of tutor questions. After that the learning profile can be created.',
+      conversationReady:
+        'There is enough information for a preliminary profile. You can keep talking or create the profile.',
+      textFallbackPlaceholder: 'You can answer by voice or type here',
+      sendFallback: 'Answer',
+      transcriptTitle: 'First meeting conversation',
+      studentLabel: 'You',
+      assistantLabel: 'Tutor',
+      emptyTranscriptTitle: 'The conversation has not started yet',
+      emptyTranscriptBody: 'Press the green button and the tutor will start asking questions by voice.',
     },
     tutor: {
       title: 'EGE math',

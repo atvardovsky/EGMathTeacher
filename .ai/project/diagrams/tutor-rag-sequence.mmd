@@ -41,6 +41,7 @@ sequenceDiagram
     Tutor->>Lesson: finishSession(userId, lessonSessionId)
     Lesson->>DB: Mark own active lesson_sessions row finished
     Lesson-->>Tutor: Finished lesson session
+    Tutor->>Background: enqueueLessonClosureReview(lesson_finished)
     Tutor-->>API: Archived history item
     API-->>Web: Open read-only record
   end
@@ -60,11 +61,15 @@ sequenceDiagram
   Curriculum->>DB: Read active curriculum_skills
   Curriculum-->>Tutor: topicId, skillId, taskTypeId, verifierKind
   Tutor->>Lesson: beginTurn(userId, conversationId, lessonType, topicId)
-  Lesson->>DB: Upsert lesson_sessions scoped by conversation and lesson type, compute limits
+  Lesson->>DB: Touch non-terminal lesson and reject terminal reuse
   DB-->>Lesson: Scoped progress/regression rows
   Lesson-->>Tutor: Lesson lifecycle and strategy signal
+  opt New boundary closed old active lessons
+    Tutor->>Background: enqueueLessonClosureReview(superseded or type drift)
+  end
   alt Hard learning limit reached
     Tutor->>DB: Insert local stop tutor_turn
+    Tutor->>Background: enqueueLessonClosureReview(hard limit)
     Tutor-->>API: TutorAnswer with stop lifecycle
     API-->>Web: Stop response and usage snapshot
   else Tutor may continue
@@ -122,6 +127,9 @@ sequenceDiagram
   Lesson->>DB: Accept goal only through backend policy, update lesson_sessions and insert lesson_effectiveness_signals
   Tutor->>DB: Insert tutor_turn with requestId and lesson_type
   Tutor->>Background: enqueueTutorTurnWork()
+  opt Lesson became terminal
+    Tutor->>Background: enqueueLessonClosureReview(goal reached)
+  end
   alt Background batching enabled
     Background->>DB: Insert background_learning_observations with lesson_type
     Background->>DB: Schedule or reschedule learning_window_analysis job
@@ -138,7 +146,7 @@ sequenceDiagram
   API-->>Web: Usage/debug summary with safe background job previews
   end
   end
-  Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, or quality trigger
+  Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, quality trigger, or lesson closure
   Background->>DB: Recover stale queued observations and running jobs
   Background->>DB: Read pending observations and job queue
   Background->>DB: Mark selected observations queued

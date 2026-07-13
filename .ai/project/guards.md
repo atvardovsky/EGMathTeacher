@@ -29,6 +29,7 @@ Protected endpoints:
 
 - `GET /student-profile/me`
 - `PUT /student-profile/me`
+- `POST /student-profile/me/from-conversation`
 - `POST /tutor/message`
 - `POST /tutor/image`
 - `GET /tutor/lessons`

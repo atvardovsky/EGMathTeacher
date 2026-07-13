@@ -48,6 +48,14 @@ export interface TutorTurnBackgroundInput {
   };
 }
 
+export interface LessonClosureBackgroundInput {
+  userId: string;
+  conversationId: string;
+  lessonSessionId: string;
+  lessonType: LessonType;
+  finishReason?: string;
+}
+
 export interface BackgroundAiStatus {
   pending: number;
   running: number;

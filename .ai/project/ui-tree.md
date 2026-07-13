@@ -15,12 +15,16 @@ App
 ├─ FirstMeetingScreen
 │  ├─ LanguageSwitch
 │  ├─ Logout
-│  ├─ Progress/status strip
-│  ├─ Step chips
-│  ├─ Step 1: exam, grade, score goal, motivation
-│  ├─ Step 2: current level, feeling, feedback style
-│  ├─ Step 3: weak topics, explanation style, pace, visuals, practice, interests
-│  └─ Step 4: short diagnostic answers and freeform context
+│  ├─ Meeting status strip
+│  ├─ Green voice-meeting start/restart action
+│  ├─ Voice dialog switch
+│  ├─ Mic action
+│  ├─ Text fallback composer
+│  ├─ Create-profile-from-conversation action
+│  ├─ Voice status and readiness alerts
+│  └─ First-meeting transcript list
+│     ├─ Student prompt bubble
+│     └─ Tutor answer bubble with speak/stop action
 └─ Authenticated AppShell
    ├─ Header
    │  ├─ Mobile menu burger
@@ -121,12 +125,16 @@ App
   lesson reuses the saved `conversationId`.
 - Finished and legacy records open as read-only history. In that state the
   composer, voice action, and image-generation actions are disabled, and the
-  visible next step is to start a new lesson.
+  visible next step is to start a new lesson. The backend also rejects terminal
+  lesson `conversationId` reuse, so the read-only state is enforced beyond the
+  browser UI.
 - Admin users can switch to the materials view.
 - Authenticated users can switch to Settings.
 - Student users without a stored profile must complete the first meeting before
-  the tutor workspace. After setup, the tutor workspace starts at the lesson
-  launcher rather than a blank state.
+  the tutor workspace. The first meeting starts as an AI-led voice dialog; the
+  profile is created from stored `meeting` turns, not from a static form. After
+  setup, the tutor workspace starts at the lesson launcher rather than a blank
+  state.
 - The language switch changes static UI copy immediately and persists locally.
 - Browser speech recognition language follows the selected UI locale.
 - Browser speech synthesis can speak tutor answers aloud in the tutor

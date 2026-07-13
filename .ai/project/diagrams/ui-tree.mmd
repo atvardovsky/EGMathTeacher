@@ -6,14 +6,21 @@ flowchart TB
   Auth --> AuthVisual[Math visual and proof points]
 
   App --> FirstMeeting{Student profile required?}
-  FirstMeeting -->|yes| Meeting[First meeting]
+  FirstMeeting -->|yes| Meeting[Voice-first meeting]
   Meeting --> MeetingLang[Language switch]
-  Meeting --> MeetingProgress[Progress and step chips]
-  Meeting --> Goal[Goal and motivation]
-  Meeting --> Learning[Learning state and feedback style]
-  Meeting --> Preferences[Topics, pace, visuals, practice, interests]
-  Meeting --> Diagnostics[Short diagnostic answers]
-  Diagnostics --> ProfileApi[PUT /student-profile/me]
+  Meeting --> MeetingStatus[Meeting status and readiness badge]
+  Meeting --> VoiceStart[Green start voice meeting button]
+  Meeting --> MeetingVoice[Voice dialog switch, mic action, voice status]
+  MeetingVoice --> MeetingSpeech[Browser speech synthesis]
+  MeetingSpeech --> MeetingAutoMic[Auto-start mic after tutor speech]
+  Meeting --> TextFallback[Text fallback composer]
+  Meeting --> MeetingTranscript[Stored meeting transcript list]
+  MeetingTranscript --> StudentBubble[Student prompt bubble]
+  MeetingTranscript --> TutorBubble[Tutor answer bubble with speak or stop action]
+  VoiceStart --> MeetingTutorApi[POST /tutor/message lessonType meeting]
+  TextFallback --> MeetingTutorApi
+  MeetingAutoMic --> MeetingTutorApi
+  Meeting --> ProfileApi[POST /student-profile/me/from-conversation]
 
   FirstMeeting -->|no| Shell[Authenticated AppShell]
   Shell --> Header[Header: burger, brand, role, language]

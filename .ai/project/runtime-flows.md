@@ -45,31 +45,48 @@ This file records runtime flows from current source evidence.
 1. After auth, the web client calls `GET /student-profile/me`.
 2. If the authenticated user is a student without a stored profile, the web
    client shows the first meeting instead of the normal tutor workspace.
-3. The first meeting gathers tutoring-relevant context:
-   - exam and target score
-   - current math confidence and emotional relation to math
-   - weak topics and short diagnostic answers
-   - explanation style, pacing, hint/practice preference, visual preference,
-     and interests for analogies
-4. The web client submits answers to `PUT /student-profile/me`.
-5. `StudentProfileService` normalizes answers, drops non-teaching sensitive
-   details, and reads active vector store ids.
-6. `AiModelService` resolves role/operation policy and runs three specialist
+3. The first meeting is a voice-oriented app surface, not a multi-step form.
+   The student clicks a green start button, and the web client sends a
+   user-triggered starter prompt to `POST /tutor/message` with
+   `lessonType=meeting`.
+4. Browser speech synthesis speaks visible tutor answers when available; in
+   voice-dialog mode the mic reopens after the tutor finishes speaking.
+   Browser text input remains a fallback for unavailable or stopped speech
+   recognition.
+5. The meeting gathers tutoring-relevant context through the AI dialog:
+   exam/goal context, current math confidence and emotional relation to math,
+   weak topics, explanation style, pacing, hint/practice/visual preference,
+   interests for analogies, and at least one short diagnostic or learning
+   situation when the dialog reaches that point.
+6. When enough stored `meeting` turns exist, the web client calls
+   `POST /student-profile/me/from-conversation` with the `conversationId`.
+   The API reads `tutor_turns` for the authenticated user and conversation;
+   it does not trust frontend-submitted profile facts.
+7. `StudentProfileService` runs `onboardingConversationExtraction` to convert
+   the stored meeting transcript into the existing onboarding answer shape.
+   The extractor ignores technical starter prompts, does not invent missing
+   facts, and drops non-teaching sensitive details.
+8. `StudentProfileService` normalizes extracted answers, drops non-teaching
+   sensitive details, and reads active vector store ids.
+9. `AiModelService` resolves role/operation policy and runs three specialist
    model calls:
    - math knowledge diagnostician creates `knowledgeState`
    - tutoring-focused psychopedagogical profiler creates `learningPreferences`
      and `psychologicalProfile`
    - teaching strategy planner creates `explanationStrategy` and compact
      `aiSummary`
-7. Specialist prompts ask for confidence and evidence for meaningful profile
+10. Specialist prompts ask for confidence and evidence for meaningful profile
    inferences when possible.
-8. RAG is used only for shared AI knowledge such as questionnaire strategy,
+11. RAG is used only for shared AI knowledge such as questionnaire strategy,
    diagnostic rubrics, task strategy, and teaching playbooks.
-9. SQLite stores only teaching-useful personal profile signals in
-   `student_profiles`.
-10. Future tutor requests reload the DB profile so context compaction does not
+12. SQLite stores only teaching-useful personal profile signals in
+    `student_profiles`.
+13. After successful conversation-based profile creation, the corresponding
+    non-terminal `meeting` lesson session is marked `finished`,
+    `goal_status=reached`, and `finish_reason=profile_created_from_meeting`.
+14. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
-11. After profile creation, the web client opens the normal tutor workspace
+15. After profile creation, the web client opens the normal tutor workspace
     with a lesson launcher instead of a blank waiting state. The launcher shows
     a green first-lesson button and cards for first meeting, level check,
     linear-equation practice, topic explanation, and mistake review. No tutor
@@ -125,8 +142,8 @@ This file records runtime flows from current source evidence.
 7. The student can explicitly finish the current active lesson through
    `POST /tutor/lessons/:lessonSessionId/finish`. The backend verifies
    ownership, marks the session `finished`, stores
-   `finish_reason=student_finished_lesson`, and the client moves the lesson to
-   read-only history.
+   `finish_reason=student_finished_lesson`, enqueues lesson-closure background
+   review, and the client moves the lesson to read-only history.
 8. `TutorService` adds DB-backed continuity context to the tutor prompt:
    recent turns from the active conversation plus recent session summaries.
    The tutor is instructed to continue from the previous discussion instead
@@ -158,13 +175,16 @@ This file records runtime flows from current source evidence.
    `ege.base.linear_equation_numeric`; unsupported skills remain routing
    context but cannot produce verified mastery.
 5. `LessonService` creates or touches the active `lesson_sessions` row for the
-   conversation and lesson type. If an older client reuses a conversation id
-   with a different lesson type, the previous active session is finished and a
-   new session is created. When a new conversation boundary starts, other
-   non-terminal lesson sessions for the same signed-in student are finished as
-   superseded. The first turn adds no active-learning seconds; later quick
-   turns use the configured minimum-turn heuristic. The service updates turn
-   count, active-learning heuristic seconds, daily and continuous learning-limit
+   conversation and lesson type. A finished, goal-reached, or hard-limit
+   conversation id is rejected; terminal lesson records cannot be reopened. If
+   an older client reuses an active conversation id with a different lesson
+   type, the previous active session is finished and the reused id is rejected
+   so the client must start a fresh lesson boundary. When a new conversation
+   boundary starts, other non-terminal lesson sessions for the same signed-in
+   student are finished as superseded and queued for lesson-closure review. The
+   first turn adds no active-learning seconds; later quick turns use the
+   configured minimum-turn heuristic. The service updates turn count,
+   active-learning heuristic seconds, daily and continuous learning-limit
    state, goal status, and the current scoped progress/regression strategy
    signal.
 6. If a hard daily or continuous learning limit is reached, `TutorService`
@@ -250,21 +270,24 @@ This file records runtime flows from current source evidence.
     learning-signal extraction and separate interval jobs for session summary,
     student profile refresh, teaching strategy refresh, or rare quality review.
     Enqueue failures are isolated from the immediate answer path.
-24. API returns the tutor answer with lesson lifecycle, compact usage snapshot
+24. If the turn made the lesson terminal through hard limit or backend-accepted
+    goal completion, `TutorService` also enqueues lesson-closure background
+    review for the stored conversation.
+25. API returns the tutor answer with lesson lifecycle, compact usage snapshot
     for current lesson/day, and user-visible debug facts for curriculum,
     decision policy, and verifier result.
-25. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
+26. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
     then renders ordered response blocks, lesson-type badge, citations, and
     optional image actions inside the same tutor turn. If the freshly returned
     answer contains a required image block from an explicit visual request, the
     web client starts one `POST /tutor/image` call for that block after the text
     response is visible. Historical saved turns with missing image URLs keep the
     manual create-diagram action.
-26. If browser speech synthesis is supported and the student has voice dialog
+27. If browser speech synthesis is supported and the student has voice dialog
     enabled, the web client speaks the visible tutor answer locally. The spoken
     text is derived from the ordered response blocks, capped for length, and is
     not sent to the API or stored as generated audio.
-27. After the spoken tutor answer ends, the web client automatically starts
+28. After the spoken tutor answer ends, the web client automatically starts
     browser speech recognition for the next student turn when voice dialog is
     still enabled and speech-recognition support is available.
 
@@ -322,21 +345,26 @@ This file records runtime flows from current source evidence.
 6. A successful grouped learning-window job can enqueue one
    `profile_strategy_refresh` job when the configured profile refresh turn
    interval is reached.
-7. Background jobs call `AiModelService` with role/operation policy and
+7. Lesson-closure review enqueues an immediate `session_summary` and
+   `profile_strategy_refresh` job. In batched mode it also pulls any pending
+   observations for that conversation into an immediate
+   `learning_window_analysis` job. If no pending observations exist, the
+   session summary still analyzes the stored `tutor_turns` transcript.
+8. Background jobs call `AiModelService` with role/operation policy and
    task-specific specialist prompts: `learning-window-analyzer`,
    `profile-strategy-background-refresher`, `learning-signal-extractor`,
    `session-summarizer`, `student-profile-background-refresher`,
    `teaching-strategy-background-planner`, and
    `tutor-quality-background-reviewer`.
-8. When the OpenAI provider is used, background operation service-tier policy
+9. When the OpenAI provider is used, background operation service-tier policy
    can include `service_tier=flex`; per-operation tier overrides fall back to
    `OPENAI_BACKGROUND_SERVICE_TIER`.
-9. Background jobs include user/conversation usage context, and lesson-session
+10. Background jobs include user/conversation usage context, and lesson-session
    context when it was captured from the tutor turn or grouped observation, so
    delayed background costs can appear in the same usage ledger.
-10. Batched background calls can include a hashed `prompt_cache_key` when
+11. Batched background calls can include a hashed `prompt_cache_key` when
    `AI_BACKGROUND_PROMPT_CACHE_KEY_ENABLED=true`.
-11. Layered learning memory is stored as:
+12. Layered learning memory is stored as:
     - L0 limited raw turn data in `tutor_turns`
     - L1 sanitized observations in `background_learning_observations`
     - L2 session summaries in `student_session_summaries`
@@ -344,18 +372,18 @@ This file records runtime flows from current source evidence.
       `student_learning_signals`
     - L4 topic/skill progress or regression in `student_skill_progress`
     - L5 strategy hints consumed by profile/strategy refresh jobs
-12. Profile refresh jobs merge sanitized patches into `student_profiles` using
+13. Profile refresh jobs merge sanitized patches into `student_profiles` using
     recent learning signals, session summaries, and skill progress rows.
-13. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
+14. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
     stay visible in `background_ai_jobs` and appear as safe error previews in
     the signed-in user's expanded usage panel.
-14. A signed-in user can requeue a small number of their own final failed jobs
+15. A signed-in user can requeue a small number of their own final failed jobs
     from the usage panel through `POST /usage/me/background/recover`. The API
     scopes recovery to the authenticated user, supports optional conversation
     and job-type filters, resets attempts, and only requeues safe background job
     types. Recovery schedules future worker execution; it does not run the
     OpenAI call synchronously in the request.
-15. Background work must not store non-teaching sensitive details and must not
+16. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow

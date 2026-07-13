@@ -93,3 +93,8 @@ export interface StudentProfileRequestContext {
   user: AuthSession;
   answers: StudentOnboardingAnswers;
 }
+
+export interface StudentProfileConversationContext {
+  user: AuthSession;
+  conversationId?: string;
+}

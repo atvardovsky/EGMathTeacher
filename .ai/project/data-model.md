@@ -279,7 +279,11 @@ Source owner: `apps/api/src/background-ai` and
 Legacy mode uses per-turn `learning_signal_extraction` plus separate
 `student_profile_refresh` and `teaching_strategy_refresh` jobs. Batched mode
 uses `learning_window_analysis` and `profile_strategy_refresh` to reduce
-model calls while preserving eventually consistent profile updates.
+model calls while preserving eventually consistent profile updates. Lesson
+closure review uses `session_summary`, `profile_strategy_refresh`, and, in
+batched mode, an immediate `learning_window_analysis` job with
+`triggerReason=lesson_finished` so completed conversations can still update
+teaching strategy from stored data.
 Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
 before each drain: jobs with retry attempts left return to `pending`, and
 exhausted jobs become `failed`.
@@ -442,13 +446,15 @@ Lesson sessions are DB memory for the current student. They track lesson goal
 state, configurable daily/continuous learning-time heuristic status, and
 goal-based stopping. The time-limit fields are product heuristics for pacing
 and breaks, not clinical fatigue assessment. Active sessions are scoped by
-conversation id and lesson type; a lesson-type switch finishes the previous
-active session and starts a new one. The DTO exposes `goalStatusEvidence` so
-callers can distinguish backend-observed completion, model-suggested pending
-completion, learning-limit stops, and ordinary in-progress state without
-adding a separate SQLite column in the POC. The DTO also exposes
-`goalEvidenceLevel`; accepted action-level evidence is stored in
-`lesson_decisions`.
+conversation id and lesson type. A lesson-type switch on a reused active
+conversation id finishes the previous active session and rejects the reused
+id; clients must start a new conversation boundary. Terminal sessions
+(`finished`, `goal_reached`, `hard_limit_reached`) cannot be reopened through
+`POST /tutor/message`. The DTO exposes `goalStatusEvidence` so callers can
+distinguish backend-observed completion, model-suggested pending completion,
+learning-limit stops, and ordinary in-progress state without adding a separate
+SQLite column in the POC. The DTO also exposes `goalEvidenceLevel`; accepted
+action-level evidence is stored in `lesson_decisions`.
 
 `GET /tutor/lessons?scope=active|history|all` reads `lesson_sessions` as the
 canonical saved-lesson record, then joins recent `tutor_turns` and the latest

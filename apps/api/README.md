@@ -38,7 +38,8 @@ This repository houses a NestJS orchestration service that now handles both sign
     providers are stubs in this POC.
   - `AI_OPERATION_*_MODEL` – optional per-role/per-operation model overrides
     for lesson decisions, tutor answers, RAG tutor answers, onboarding
-    specialists, background assistants, quality review, and image generation.
+    conversation extraction and specialists, background assistants, quality
+    review, and image generation.
     Empty values fall back to `OPENAI_RESPONSES_MODEL`, `OPENAI_IMAGE_MODEL`,
     or the background model defaults.
   - `AI_OPERATION_*_SERVICE_TIER` – optional per-operation service-tier
@@ -181,8 +182,11 @@ Tutor/product API surfaces also include:
   active lesson sessions, read-only historical records, stored turns, summaries,
   and legacy saved discussions. Only non-terminal active lessons are resumable
   with the previous `conversationId`; finished and legacy records are archived.
+  Terminal lesson conversations are rejected by `POST /tutor/message` instead
+  of being reopened.
 - `POST /tutor/lessons/:lessonSessionId/finish` for an authenticated student to
-  explicitly finish their own active lesson session and move it to history.
+  explicitly finish their own active lesson session, enqueue closure review,
+  and move it to history.
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.
@@ -207,7 +211,9 @@ Tutor/product API surfaces also include:
   provider uses `AI_PROVIDER`.
 - Background profile/signal assistant jobs also go through the `AiModelService`
   facade. In batched mode, sanitized tutor observations are stored in SQLite
-  first, then grouped into learning windows before model calls; legacy
+  first, then grouped into learning windows before model calls. Lesson finish
+  can pull pending observations into an immediate closure analysis window while
+  also scheduling session-summary and profile/strategy refresh jobs; legacy
   per-turn extraction remains available through configuration.
 - Audio is forwarded as Opus RTP frames end-to-end. Data channel events are processed in-process and persisted into conversation transcripts/token usage through `WebRtcProviderEventService`.
 - In translator mode, the bridge waits for completed transcription events and requests translation against the transcribed text to reduce free-form assistant replies.

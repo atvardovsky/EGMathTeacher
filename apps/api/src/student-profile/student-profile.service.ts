@@ -8,6 +8,7 @@ import {
   DiagnosticAnswer,
   StudentOnboardingAnswers,
   StudentProfileDto,
+  StudentProfileConversationContext,
   StudentProfileRecord,
   StudentProfileRequestContext,
   StudentProfileStatus,
@@ -32,6 +33,14 @@ interface ProfileSpecialistRequest {
   vectorStoreIds: string[];
   useRag: boolean;
   failureMessage: string;
+}
+
+interface OnboardingConversationTurn {
+  id: string;
+  prompt: string;
+  answer_json: string;
+  lesson_type: string;
+  created_at: string;
 }
 
 @Injectable()
@@ -137,6 +146,34 @@ export class StudentProfileService {
     );
 
     return this.getStatus(context.user);
+  }
+
+  async completeOnboardingFromConversation(
+    context: StudentProfileConversationContext,
+  ): Promise<StudentProfileStatus> {
+    const conversationId =
+      this.cleanString(context.conversationId, 160) ??
+      this.getLatestMeetingConversationId(context.user.id);
+    if (!conversationId) {
+      throw new BadRequestException('First meeting conversation is missing');
+    }
+
+    const turns = this.getMeetingConversationTurns(context.user.id, conversationId);
+    if (turns.length < 2) {
+      throw new BadRequestException('First meeting conversation needs at least two tutor turns');
+    }
+
+    const answers = await this.extractOnboardingAnswersFromConversation(
+      context.user,
+      conversationId,
+      turns,
+    );
+    const status = await this.completeOnboarding({
+      user: context.user,
+      answers,
+    });
+    this.finishMeetingLessonAfterProfileCreation(context.user.id, conversationId);
+    return status;
   }
 
   private async generateProfile(
@@ -250,6 +287,63 @@ export class StudentProfileService {
     return parsed;
   }
 
+  private async extractOnboardingAnswersFromConversation(
+    user: AuthSession,
+    conversationId: string,
+    turns: OnboardingConversationTurn[],
+  ): Promise<StudentOnboardingAnswers> {
+    const response = await this.aiModel.createOperationResponse(
+      'onboardingConversationExtraction',
+      {
+        instructions: this.getConversationExtractionInstructions(),
+        usageContext: {
+          userId: user.id,
+          conversationId,
+          lessonType: 'meeting',
+        },
+        metadata: {
+          profile_specialist: 'first-meeting-conversation-extractor',
+        },
+        input: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: [
+                  `Имя ученика: ${user.name}`,
+                  `Conversation ID: ${conversationId}`,
+                  'Сохраненный transcript первой встречи:',
+                  this.formatMeetingTranscript(turns),
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+      },
+    );
+    const parsed = this.parseJsonObject(this.extractOutputText(response));
+    if (!parsed) {
+      throw new BadRequestException('Could not extract first meeting answers');
+    }
+    const extracted = this.pickObject(parsed, [
+      'answers',
+      'onboardingAnswers',
+      'studentOnboardingAnswers',
+    ]);
+    const rawAnswers =
+      Object.keys(extracted).length > 0
+        ? extracted
+        : parsed;
+    const answers = this.toTeachingOnlyAnswers(
+      this.normalizeAnswers(rawAnswers as unknown as StudentOnboardingAnswers),
+    );
+    if (!this.hasOnboardingEvidence(answers)) {
+      throw new BadRequestException('First meeting did not contain enough teaching signals');
+    }
+    return answers;
+  }
+
   private buildProfileRequest(
     request: ProfileSpecialistRequest,
   ): Record<string, unknown> {
@@ -288,6 +382,20 @@ export class StudentProfileService {
       tools,
       include: useFileSearch ? ['file_search_call.results'] : undefined,
     };
+  }
+
+  private getConversationExtractionInstructions(): string {
+    return [
+      'Ты извлекаешь ответы первой встречи для AI-репетитора ЕГЭ по математике из естественного голосового/текстового диалога.',
+      'Сохраняй только учебно полезные сведения: цель, класс, экзамен, стартовую самооценку, отношение к математике, сложные темы, предпочтительный темп, формат объяснений, подсказки, практику, визуальные опоры и диагностические ответы.',
+      'Не выдумывай отсутствующие факты. Если сведений нет, используй пустые массивы или пропусти поле.',
+      'Первый student prompt может быть технической командой приложения начать встречу. Не считай такую команду ответом ученика.',
+      'Игнорируй и не повторяй чувствительные, медицинские, семейные, контактные, политические, религиозные и травматические сведения.',
+      'Не ставь диагнозы и не присваивай тип личности. Формулируй только нейтральные учебные сигналы.',
+      'Диагностические ответы добавляй только когда ученик реально отвечал на учебный вопрос или задачу.',
+      'Верни только валидный JSON без Markdown и без текста вокруг.',
+      'Формат JSON: {"answers":{"exam":"...","grade":"...","examYear":"...","targetScore":80,"currentLevel":"...","confidence":"...","mathFeeling":"...","motivation":"...","weakTopics":["..."],"explanationStyle":"...","pacing":"...","visualPreference":true,"hintPreference":"...","practicePreference":"...","feedbackStyle":"...","analogyInterests":["..."],"diagnosticAnswers":[{"prompt":"...","answer":"..."}],"freeform":"..."}}.',
+    ].join(' ');
   }
 
   private getKnowledgeDiagnosticInstructions(hasRag: boolean): string {
@@ -331,6 +439,126 @@ export class StudentProfileService {
       'Верни только валидный JSON без Markdown и без текста вокруг.',
       'Формат JSON: {"explanationStrategy":{"pacing":"...","structure":"...","visualSupport":"...","hintPolicy":"...","answerLength":"...","checkpointFrequency":"...","practiceMode":"...","analogyPolicy":"...","avoid":[...],"profileUpdateSignals":[...]},"aiSummary":"короткое русское резюме для будущего prompt"}.',
     ].join(' ');
+  }
+
+  private getLatestMeetingConversationId(userId: string): string | undefined {
+    const session = this.db.get<{ conversation_id: string }>(
+      `SELECT conversation_id
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND lesson_type = 'meeting'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+    if (session?.conversation_id) {
+      return session.conversation_id;
+    }
+
+    return this.db.get<{ conversation_id: string }>(
+      `SELECT conversation_id
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND lesson_type = 'meeting'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId],
+    )?.conversation_id;
+  }
+
+  private finishMeetingLessonAfterProfileCreation(userId: string, conversationId: string): void {
+    const now = new Date().toISOString();
+    this.db.run(
+      `UPDATE lesson_sessions
+       SET status = 'finished',
+           goal_status = 'reached',
+           finish_reason = ?,
+           finished_at = ?,
+           updated_at = ?
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND lesson_type = 'meeting'
+         AND status NOT IN ('hard_limit_reached', 'goal_reached', 'finished')`,
+      ['profile_created_from_meeting', now, now, userId, conversationId],
+    );
+  }
+
+  private getMeetingConversationTurns(
+    userId: string,
+    conversationId: string,
+  ): OnboardingConversationTurn[] {
+    return this.db.all<OnboardingConversationTurn>(
+      `SELECT id, prompt, answer_json, lesson_type, created_at
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND lesson_type = 'meeting'
+       ORDER BY created_at ASC
+       LIMIT 16`,
+      [userId, conversationId],
+    );
+  }
+
+  private formatMeetingTranscript(turns: OnboardingConversationTurn[]): string {
+    return turns
+      .map((turn, index) => {
+        const answer = this.parseJsonObject(turn.answer_json) ?? {};
+        return [
+          `Turn ${index + 1} (${turn.created_at})`,
+          `Student: ${this.sanitizeTeachingString(turn.prompt, 1_200) ?? ''}`,
+          `Tutor: ${this.extractAnswerText(answer)}`,
+        ].join('\n');
+      })
+      .join('\n\n');
+  }
+
+  private extractAnswerText(answer: Record<string, unknown>): string {
+    const direct = this.sanitizeTeachingString(
+      this.pickString(answer, ['answer', 'text', 'summary']),
+      1_500,
+    );
+    if (direct) {
+      return direct;
+    }
+    const blocks = answer.blocks;
+    if (!Array.isArray(blocks)) {
+      return '';
+    }
+    const texts = blocks
+      .map((block) => {
+        if (!block || typeof block !== 'object') {
+          return undefined;
+        }
+        const item = block as Record<string, unknown>;
+        return this.sanitizeTeachingString(
+          this.pickString(item, ['text', 'explanation', 'prompt', 'caption']),
+          600,
+        );
+      })
+      .filter((item): item is string => Boolean(item));
+    return texts.slice(0, 5).join('\n');
+  }
+
+  private hasOnboardingEvidence(answers: StudentOnboardingAnswers): boolean {
+    const textFields = [
+      answers.exam,
+      answers.grade,
+      answers.currentLevel,
+      answers.confidence,
+      answers.mathFeeling,
+      answers.motivation,
+      answers.explanationStyle,
+      answers.pacing,
+      answers.hintPreference,
+      answers.practicePreference,
+      answers.feedbackStyle,
+    ];
+    return (
+      textFields.some((value) => Boolean(value)) ||
+      answers.weakTopics.length > 0 ||
+      answers.analogyInterests.length > 0 ||
+      answers.diagnosticAnswers.length > 0
+    );
   }
 
   private normalizeAnswers(raw: StudentOnboardingAnswers): StudentOnboardingAnswers {

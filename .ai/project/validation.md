@@ -31,19 +31,22 @@ Jest tests live under `apps/api/test`.
 Current covered areas:
 
 - auth registration/login/session token behavior
-- student profile onboarding requirement, AI profile storage, and tutor context
-  summary behavior, including specialist profile pipeline calls
+- student profile onboarding requirement, stored meeting-conversation
+  extraction, AI profile storage, and tutor context summary behavior,
+  including specialist profile pipeline calls
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
   storage, profile/strategy refresh merging, failed window observation release,
-  stale queued/running state recovery, and signed-in-user-scoped failed-job
+  stale queued/running state recovery, lesson-closure review fanout, closed
+  lesson-type preservation in summaries, and signed-in-user-scoped failed-job
   requeue behavior
 - tutor structured output, required image-block normalization for explicit
   visual requests, and generated image data URL persistence into the stored
   tutor turn
 - tutor lesson-history retrieval for active vs historical canonical lesson
-  sessions, explicit lesson finishing, stored tutor turns, prompt continuity
-  context, and legacy tutor-turn conversations exposed as read-only history
+  sessions, explicit lesson finishing with closure-review enqueueing, terminal
+  conversation reopen rejection, stored tutor turns, prompt continuity context,
+  and legacy tutor-turn conversations exposed as read-only history
 - AI model-provider facade delegation and role/operation policy application
   for response, lesson-decision, and image requests
 - Lesson Decision Agent policy rejection and decision observability storage

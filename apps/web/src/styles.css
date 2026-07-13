@@ -293,6 +293,43 @@ textarea {
   min-height: 64px;
 }
 
+.onboarding-voice-panel {
+  background: #f6fbf8;
+  border-color: #b7e4c7;
+}
+
+.onboarding-text-fallback {
+  flex: 1;
+  min-width: min(100%, 320px);
+}
+
+.onboarding-transcript {
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.onboarding-turn {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+.onboarding-student-bubble,
+.onboarding-assistant-bubble {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.onboarding-student-bubble {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.onboarding-assistant-bubble {
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+}
+
 .lesson-continuity {
   background: #ffffff;
   border-color: var(--line);

@@ -56,8 +56,12 @@ decisions.
 ### Lesson Lifecycle Contract Cleanup
 
 - Lesson mode switching now starts a fresh web conversation/session boundary.
-- The API also finishes an active lesson session when an older client reuses a
-  conversation id with a different lesson type.
+- The API also finishes an active lesson session and rejects the reused
+  conversation id when an older client sends a different lesson type.
+- Finished, goal-reached, and hard-limit lesson conversations cannot be
+  reopened through `POST /tutor/message`.
+- Lesson finish paths now enqueue background closure review for stored
+  conversation summaries and teaching-strategy/profile hints.
 - First tutor turn no longer immediately adds active-learning seconds, and the
   default minimum turn heuristic is 30 seconds instead of 120 seconds.
 - Model-suggested `goalStatus=reached` no longer completes a lesson by itself;
@@ -182,7 +186,6 @@ Remaining teaching-engine gaps:
   active-skill lookup
 - adaptive/embedding-based task-bank selection beyond imported supported
   verifier kinds and simple prior-use ordering
-- conversational first meeting still needs to replace the form-first fallback
 - real cross-browser audio playback quality, Russian stress, and emotional
   prosody remain POC concerns; current automated E2E checks browser
   speech-synthesis handoff and automatic mic restart, but not real audio

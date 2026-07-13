@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
@@ -309,24 +309,7 @@ export class LessonService {
   }
 
   private getOrCreateSession(input: BeginTurnInput, nowIso: string): LessonSessionRecord {
-    const existing = this.db.get<LessonSessionRecord>(
-      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
-              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
-              started_at, last_activity_at, finished_at, created_at, updated_at
-       FROM lesson_sessions
-       WHERE user_id = ?
-         AND conversation_id = ?
-         AND lesson_type = ?
-         AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [input.userId, input.conversationId, input.lessonType, ...TERMINAL_STATUSES],
-    );
-    if (existing) {
-      return existing;
-    }
-
-    const differentActiveSession = this.db.get<LessonSessionRecord>(
+    const activeConversationSession = this.db.get<LessonSessionRecord>(
       `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
               success_criteria_json, finish_reason, active_learning_seconds, turn_count,
               started_at, last_activity_at, finished_at, created_at, updated_at
@@ -338,9 +321,32 @@ export class LessonService {
        LIMIT 1`,
       [input.userId, input.conversationId, ...TERMINAL_STATUSES],
     );
-    if (differentActiveSession && differentActiveSession.lesson_type !== input.lessonType) {
-      this.finishSessionForLessonTypeChange(differentActiveSession, input.lessonType, nowIso);
+    if (activeConversationSession) {
+      if (activeConversationSession.lesson_type !== input.lessonType) {
+        this.finishSessionForLessonTypeChange(activeConversationSession, input.lessonType, nowIso);
+      } else {
+        return activeConversationSession;
+      }
     }
+
+    const terminalConversationSession = this.db.get<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND status IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})
+       ORDER BY COALESCE(finished_at, updated_at, created_at) DESC
+       LIMIT 1`,
+      [input.userId, input.conversationId, ...TERMINAL_STATUSES],
+    );
+    if (terminalConversationSession) {
+      throw new BadRequestException(
+        'Finished lesson conversations cannot be reopened. Start a new lesson.',
+      );
+    }
+
     this.finishSupersededActiveSessions(input, nowIso);
 
     const defaults = LESSON_GOALS[input.lessonType];

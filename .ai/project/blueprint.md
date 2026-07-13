@@ -20,12 +20,15 @@ visible next actions.
 - Registration and login with name/password.
 - The first registered user becomes `admin`; later users become `student`.
 - Signed HTTP-only cookie sessions.
-- First-login student meeting that gathers learning, motivation, confidence,
-  weak-topic, diagnostic, and explanation-preference signals before the normal
-  tutor workspace. After setup, the tutor workspace starts with a lesson
-  launcher instead of a blank state: a prominent green first-lesson button plus
-  cards for first meeting, level check, linear-equation practice, topic
-  explanation, and mistake review.
+- First-login student meeting is voice-first. A prominent green button starts
+  an AI-led `meeting` lesson; the tutor asks short questions one at a time,
+  speaks responses when browser speech synthesis is available, reopens the
+  mic in voice-dialog mode, and keeps a text fallback for browser voice
+  issues. The student profile is created from the authenticated user's stored
+  meeting transcript, not from a frontend questionnaire payload. After setup,
+  the tutor workspace starts with a lesson launcher instead of a blank state:
+  a prominent green first-lesson button plus cards for first meeting, level
+  check, linear-equation practice, topic explanation, and mistake review.
 - Tutor-side saved lesson continuity: the workspace loads recent lessons,
   last questions, summaries, and stored turns from scoped
   `GET /tutor/lessons?scope=active|history` calls, shows an explicit
@@ -34,9 +37,11 @@ visible next actions.
   `conversationId` only for non-terminal lesson sessions. Students can
   explicitly finish the active lesson; finished and legacy saved `tutor_turns`
   without a `lesson_sessions` row are shown as read-only historical records.
-- Specialist AI profile pipeline for first-login onboarding:
-  math knowledge diagnostician, tutoring-focused psychopedagogical profiler,
-  and teaching strategy planner.
+- Specialist AI profile pipeline for first-login onboarding: conversation
+  extraction from stored `meeting` turns, math knowledge diagnostician,
+  tutoring-focused psychopedagogical profiler, and teaching strategy planner.
+  After successful conversation-based profile creation, the `meeting` lesson
+  session is marked `finished` with goal reached.
 - DB-backed student profile memory with onboarding answers, knowledge state,
   learning preferences, tutoring-focused psychopedagogical profile, explanation
   strategy, and compact AI summary.
@@ -61,16 +66,19 @@ visible next actions.
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
   exposes meeting, tutor, practice, diagnostic, and mistake-review modes and
   the API infers a safe default for older clients. Switching the lesson mode in the
-  UI starts a new conversation boundary, and the API finishes any active
-  session if an older client sends a different lesson type for the same
-  conversation id.
+  UI starts a new conversation boundary. If an older client sends a different
+  lesson type for the same active conversation id, the API finishes the old
+  session and rejects the reused id so the client must start a fresh lesson
+  boundary.
 - Tutor turns are attached to a lesson session with a goal, success criteria,
   goal status, active-learning time, daily/continuous learning-limit status,
   and a progress/regression strategy signal. The POC uses configurable
   educational time-limit heuristics, not clinical fatigue diagnosis. Starting a
   new conversation boundary finishes other active lesson sessions for the same
   signed-in student so stale sessions do not remain active after UI or voice
-  routing drift.
+  routing drift. Finished, goal-reached, and hard-limit lesson conversations
+  cannot be reopened through `POST /tutor/message`; terminal lesson records are
+  history only.
 - Tutor turns run through a Lesson Decision Agent before final answer
   generation. The decision agent selects allowed teaching actions such as
   requesting an attempt, changing explanation strategy, suggesting visual
@@ -137,6 +145,11 @@ visible next actions.
   extraction, session summaries, student profile refreshes, teaching strategy
   refreshes, and rare quality review. These updates are eventually consistent
   and do not block the immediate tutor answer.
+- Explicit lesson finish, hard-limit stop, backend-accepted goal completion,
+  and auto-closed superseded lessons enqueue lesson-closure background review.
+  Closure review produces or refreshes a compact session summary and
+  profile/strategy hints from the stored conversation so future explanations
+  can better fit the student.
 - Optional background batching stores sanitized tutor-turn observations in
   SQLite and sends grouped learning-window analysis after a configured
   observation count, idle timeout, or quality trigger. When batching is

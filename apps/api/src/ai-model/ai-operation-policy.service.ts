@@ -53,6 +53,21 @@ const OPERATION_DEFINITIONS: Record<AiOperationKey, AiOperationDefinition> = {
     modelPaths: ['ai.operationModels.tutorImage', 'ai.openai.imageModel'],
     fallbackModel: 'gpt-image-2',
   },
+  onboardingConversationExtraction: {
+    operation: 'onboarding.extract_conversation_answers',
+    role: 'onboarding_diagnostician',
+    responseFormat: 'json',
+    modelPaths: [
+      'ai.operationModels.onboardingConversationExtraction',
+      'ai.operationModels.onboardingKnowledgeDiagnosis',
+      'ai.openai.responsesModel',
+    ],
+    fallbackModel: 'gpt-5.5',
+    serviceTierPaths: [
+      'ai.operationServiceTiers.onboardingConversationExtraction',
+      'ai.operationServiceTiers.onboardingKnowledgeDiagnosis',
+    ],
+  },
   onboardingKnowledgeDiagnosis: {
     operation: 'onboarding.assess_math_level',
     role: 'onboarding_diagnostician',

@@ -8,21 +8,16 @@ import {
   Burger,
   Button,
   Card,
-  Checkbox,
   Container,
   Divider,
   FileInput,
   Group,
   Image,
-  MultiSelect,
   NavLink,
-  NumberInput,
   Paper,
   PasswordInput,
   Pill,
-  Progress,
   SegmentedControl,
-  Select,
   SimpleGrid,
   Stack,
   Switch,
@@ -61,20 +56,16 @@ import {
 import { api } from './api';
 import {
   Copy,
-  DIAGNOSTIC_PROMPTS,
   Locale,
   LOCALE_STORAGE_KEY,
-  OPTION_SETS,
   QUICK_PROMPTS,
   TEXT,
   getInitialLocale,
-  localizeOptions,
 } from './i18n';
 import {
   KnowledgeStatus,
   BackgroundRecoveryResult,
   LessonType,
-  StudentOnboardingAnswers,
   StudentProfile,
   StudentProfileStatus,
   TutorAnswer,
@@ -497,336 +488,583 @@ function FirstMeetingScreen({
   onComplete: (status: StudentProfileStatus) => void;
   onLogout: () => Promise<void>;
 }) {
-  const [step, setStep] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [turns, setTurns] = useState<TutorTurn[]>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [activeLessonSessionId, setActiveLessonSessionId] = useState<string | undefined>();
+  const [sending, setSending] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<StudentOnboardingAnswers>({
-    exam: 'ЕГЭ',
-    weakTopics: [],
-    analogyInterests: [],
-    diagnosticAnswers: DIAGNOSTIC_PROMPTS.map((prompt) => ({ prompt, answer: '' })),
-    visualPreference: true,
-  });
-  const optionData = useMemo(
-    () => ({
-      exam: localizeOptions(OPTION_SETS.exam, locale),
-      grade: localizeOptions(OPTION_SETS.grade, locale),
-      level: localizeOptions(OPTION_SETS.level, locale),
-      feeling: localizeOptions(OPTION_SETS.feeling, locale),
-      feedback: localizeOptions(OPTION_SETS.feedback, locale),
-      topics: localizeOptions(OPTION_SETS.topics, locale),
-      explanation: localizeOptions(OPTION_SETS.explanation, locale),
-      pacing: localizeOptions(OPTION_SETS.pacing, locale),
-      practice: localizeOptions(OPTION_SETS.practice, locale),
-      interests: localizeOptions(OPTION_SETS.interests, locale),
-    }),
-    [locale],
+  const [listening, setListening] = useState(false);
+  const [voiceInterim, setVoiceInterim] = useState('');
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(
+    () => window.localStorage.getItem(VOICE_OUTPUT_STORAGE_KEY) !== 'false',
+  );
+  const [speakingTurnId, setSpeakingTurnId] = useState<string | null>(null);
+  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const conversationIdRef = useRef<string | undefined>(conversationId);
+  const voiceOutputEnabledRef = useRef(voiceOutputEnabled);
+  const autoListenAfterSpeechRef = useRef(false);
+  const manualVoiceStopRef = useRef(false);
+  const autoVoiceRestartCountRef = useRef(0);
+
+  const speechSupported = useMemo(
+    () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
+    [],
+  );
+  const speechOutputSupported = useMemo(
+    () => Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance),
+    [],
+  );
+  const answeredTurnCount = turns.filter((turn) => turn.answer).length;
+  const canBuildProfile = Boolean(conversationId && answeredTurnCount >= 2 && !sending);
+
+  useEffect(
+    () => () => {
+      autoListenAfterSpeechRef.current = false;
+      recognitionRef.current?.stop();
+      window.speechSynthesis?.cancel();
+    },
+    [],
   );
 
-  const stepCount = 4;
-  const progressValue = ((step + 1) / stepCount) * 100;
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
-  function update<K extends keyof StudentOnboardingAnswers>(
-    key: K,
-    value: StudentOnboardingAnswers[K],
+  useEffect(() => {
+    voiceOutputEnabledRef.current = voiceOutputEnabled;
+  }, [voiceOutputEnabled]);
+
+  useEffect(() => {
+    if (!speechOutputSupported) {
+      return undefined;
+    }
+    const loadVoices = () => setSpeechVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+  }, [speechOutputSupported]);
+
+  function startMeeting() {
+    if (sending) {
+      return;
+    }
+    stopMeetingSpeech();
+    stopVoice();
+    setTurns([]);
+    conversationIdRef.current = undefined;
+    setConversationId(undefined);
+    setActiveLessonSessionId(undefined);
+    void sendMeetingMessage(
+      t.onboarding.voiceStartPrompt,
+      'text',
+      true,
+      t.onboarding.startedTranscript,
+    );
+  }
+
+  async function sendMeetingMessage(
+    rawPrompt = draft,
+    source: 'text' | 'voice' = 'text',
+    forceNewConversation = false,
+    displayPrompt?: string,
   ) {
-    setAnswers((current) => ({ ...current, [key]: value }));
-  }
-
-  function updateDiagnostic(index: number, answer: string) {
-    setAnswers((current) => ({
-      ...current,
-      diagnosticAnswers: current.diagnosticAnswers.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, answer } : item,
-      ),
-    }));
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+    const prompt = rawPrompt.trim();
+    if (!prompt || sending) {
+      return;
+    }
+    if (source === 'voice' && shouldConfirmVoiceTranscript(prompt)) {
+      setDraft(prompt);
+      setVoiceInterim('');
+      setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.confirmTranscript });
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+      return;
+    }
+    setSending(true);
     setSubmitError(null);
+    setDraft('');
+    setVoiceInterim('');
+    setVoiceStatus(null);
+    const id = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    const currentConversationId = forceNewConversation ? undefined : conversationIdRef.current;
+    setTurns((current) => [
+      {
+        id,
+        prompt: displayPrompt ?? prompt,
+        source,
+        lessonType: 'meeting',
+      },
+      ...current,
+    ]);
     try {
-      const result = await api<StudentProfileStatus>('/student-profile/me', {
-        method: 'PUT',
-        body: JSON.stringify(answers),
+      const answer = await api<TutorAnswer>('/tutor/message', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: prompt,
+          conversationId: currentConversationId,
+          requestId,
+          source,
+          lessonType: 'meeting',
+        }),
+      });
+      conversationIdRef.current = answer.conversationId;
+      setConversationId(answer.conversationId);
+      setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
+      setTurns((current) =>
+        current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
+      );
+      if (voiceOutputEnabled) {
+        speakMeetingAnswer(id, answer, true);
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : t.errors.tutor);
+      setTurns((current) => current.filter((turn) => turn.id !== id));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function finalizeFromConversation() {
+    if (!conversationId || finalizing) {
+      return;
+    }
+    setFinalizing(true);
+    setSubmitError(null);
+    stopMeetingSpeech();
+    stopVoice();
+    try {
+      const result = await api<StudentProfileStatus>('/student-profile/me/from-conversation', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId }),
       });
       onComplete(result);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : t.errors.onboardingSave);
     } finally {
-      setBusy(false);
+      setFinalizing(false);
     }
+  }
+
+  function startVoice(auto = false) {
+    if (listening || recognitionRef.current) {
+      return;
+    }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) {
+      if (!auto) {
+        setSubmitError(t.errors.speechUnsupported);
+      }
+      setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.unsupported });
+      return;
+    }
+    manualVoiceStopRef.current = false;
+    const recognition = new Recognition();
+    recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
+    recognition.continuous = voiceOutputEnabledRef.current;
+    recognition.interimResults = true;
+    let finalText = '';
+    let latestError: string | undefined;
+    let completed = false;
+    const finishRecognition = () => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      setListening(false);
+      setVoiceInterim('');
+      recognitionRef.current = null;
+      const spoken = finalText.trim();
+      if (spoken) {
+        autoVoiceRestartCountRef.current = 0;
+        setVoiceStatus(null);
+        void sendMeetingMessage(spoken, 'voice');
+        return;
+      }
+      if (manualVoiceStopRef.current) {
+        manualVoiceStopRef.current = false;
+        autoVoiceRestartCountRef.current = 0;
+        setVoiceStatus(null);
+        return;
+      }
+      const canRetry =
+        auto &&
+        voiceOutputEnabledRef.current &&
+        speechSupported &&
+        shouldRetryVoiceInput(latestError) &&
+        autoVoiceRestartCountRef.current < VOICE_MAX_AUTO_RESTARTS;
+      if (canRetry) {
+        autoVoiceRestartCountRef.current += 1;
+        setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.retrying });
+        window.setTimeout(() => startVoice(true), VOICE_AUTO_RESTART_DELAY_MS);
+        return;
+      }
+      autoVoiceRestartCountRef.current = 0;
+      setVoiceStatus({ tone: 'warning', text: getVoiceStopMessage(latestError, t) });
+    };
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) {
+          finalText += ` ${transcript}`;
+        } else {
+          interim += transcript;
+        }
+      }
+      setVoiceInterim(interim.trim());
+      setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
+    };
+    recognition.onerror = (event) => {
+      const errorCode = (event as { error?: unknown }).error;
+      latestError = typeof errorCode === 'string' ? errorCode : undefined;
+      if (!auto && !isExpectedSpeechSilence(latestError)) {
+        setSubmitError(t.errors.speechFailed);
+      }
+      finishRecognition();
+    };
+    recognition.onend = () => {
+      finishRecognition();
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    setVoiceStatus({
+      tone: 'listening',
+      text: auto ? t.tutor.voiceStatus.autoListening : t.tutor.voiceStatus.listening,
+    });
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      if (!auto) {
+        setSubmitError(t.errors.speechFailed);
+      }
+      setVoiceStatus({
+        tone: 'warning',
+        text: auto ? t.tutor.voiceStatus.restartBlocked : t.tutor.voiceStatus.browserStopped,
+      });
+    }
+  }
+
+  function stopVoice() {
+    manualVoiceStopRef.current = true;
+    autoVoiceRestartCountRef.current = 0;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+    setVoiceStatus(null);
+  }
+
+  function toggleVoiceOutput(checked: boolean) {
+    setVoiceOutputEnabled(checked);
+    window.localStorage.setItem(VOICE_OUTPUT_STORAGE_KEY, checked ? 'true' : 'false');
+    if (!checked) {
+      stopMeetingSpeech();
+    }
+  }
+
+  function speakMeetingAnswer(turnId: string, answer: TutorAnswer, continueDialog = false) {
+    if (!speechOutputSupported) {
+      setSubmitError(t.errors.speechOutputUnsupported);
+      return;
+    }
+    const speechText = getTutorSpeechText(answer, t.tutor.imageAlt, locale);
+    if (!speechText) {
+      return;
+    }
+    autoListenAfterSpeechRef.current = false;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    utterance.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
+    utterance.voice = selectSpeechVoice(speechVoices, locale);
+    utterance.rate = locale === 'ru' ? 0.9 : 0.96;
+    utterance.pitch = locale === 'ru' ? 1.04 : 1;
+    autoListenAfterSpeechRef.current = continueDialog;
+    utterance.onend = () => {
+      setSpeakingTurnId((current) => (current === turnId ? null : current));
+      if (autoListenAfterSpeechRef.current && voiceOutputEnabledRef.current && speechSupported) {
+        autoListenAfterSpeechRef.current = false;
+        window.setTimeout(() => startVoice(true), 250);
+      }
+    };
+    utterance.onerror = () => {
+      autoListenAfterSpeechRef.current = false;
+      setSpeakingTurnId((current) => (current === turnId ? null : current));
+      setSubmitError(t.errors.speechOutputFailed);
+    };
+    setSpeakingTurnId(turnId);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopMeetingSpeech() {
+    autoListenAfterSpeechRef.current = false;
+    window.speechSynthesis?.cancel();
+    setSpeakingTurnId(null);
   }
 
   return (
     <div className="onboarding-layout">
       <Card className="onboarding-card" withBorder shadow="xl" padding="xl">
-        <form onSubmit={submit}>
-          <Stack gap="lg">
-            <Group justify="space-between" align="flex-start">
-              <Box>
-                <Badge color="teal" variant="light" mb="xs">
-                  {t.onboarding.badge}
-                </Badge>
-                <Title order={1}>{t.onboarding.title}</Title>
-                <Text c="dimmed">{t.onboarding.subtitle}</Text>
-              </Box>
-              <Group gap="xs">
-                <LanguageSwitch locale={locale} t={t} onChange={onLocaleChange} />
-                <Button
-                  type="button"
-                  variant="default"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    void onLogout();
-                  }}
-                >
-                  {t.common.logout}
-                </Button>
-              </Group>
-            </Group>
-
-            <Paper withBorder radius="md" p="sm" className="meeting-status">
-              <Group justify="space-between" mb="xs">
-                <Group gap="xs">
-                  <ThemeIcon variant="light" color="indigo">
-                    <Brain size={16} />
-                  </ThemeIcon>
-                  <Text fw={800}>{user.name}</Text>
-                </Group>
-                <Text size="sm" c="dimmed">
-                  {t.onboarding.stepLabel(step + 1, stepCount)}
-                </Text>
-              </Group>
-              <Progress
-                value={progressValue}
-                radius="xl"
-                color="teal"
-                aria-label={t.onboarding.progressLabel}
-              />
-            </Paper>
-
-            <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="xs">
-              {t.onboarding.stepTitles.map((title, index) => (
-                <Paper
-                  key={title}
-                  withBorder
-                  radius="md"
-                  p="sm"
-                  className={index === step ? 'step-chip active' : 'step-chip'}
-                >
-                  <Text fw={800} ta="center" size="sm">
-                    {title}
-                  </Text>
-                </Paper>
-              ))}
-            </SimpleGrid>
-
-            {error && (
-              <Alert color="yellow" variant="light">
-                {error}
-              </Alert>
-            )}
-
-            {step === 0 && (
-              <Stack>
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-                  <Select
-                    label={t.onboarding.exam}
-                    data={optionData.exam}
-                    value={answers.exam}
-                    onChange={(value) => update('exam', value ?? undefined)}
-                  />
-                  <Select
-                    label={t.onboarding.grade}
-                    data={optionData.grade}
-                    value={answers.grade}
-                    onChange={(value) => update('grade', value ?? undefined)}
-                  />
-                  <NumberInput
-                    label={t.onboarding.targetScore}
-                    min={0}
-                    max={100}
-                    clampBehavior="strict"
-                    value={answers.targetScore}
-                    onChange={(value) =>
-                      update('targetScore', typeof value === 'number' ? value : undefined)
-                    }
-                  />
-                </SimpleGrid>
-                <TextInput
-                  label={t.onboarding.motivation}
-                  placeholder={t.onboarding.motivationPlaceholder}
-                  value={answers.motivation ?? ''}
-                  onChange={(event) => update('motivation', event.currentTarget.value)}
-                />
-              </Stack>
-            )}
-
-            {step === 1 && (
-              <Stack>
-                <SegmentedQuestion
-                  label={t.onboarding.currentLevel}
-                  value={answers.currentLevel ?? 'средне'}
-                  data={optionData.level}
-                  onChange={(value) => update('currentLevel', value)}
-                />
-                <SegmentedQuestion
-                  label={t.onboarding.mathFeeling}
-                  value={answers.mathFeeling ?? 'спокойно'}
-                  data={optionData.feeling}
-                  onChange={(value) => update('mathFeeling', value)}
-                />
-                <SegmentedQuestion
-                  label={t.onboarding.feedbackStyle}
-                  value={answers.feedbackStyle ?? 'спокойно и прямо'}
-                  data={optionData.feedback}
-                  onChange={(value) => update('feedbackStyle', value)}
-                />
-              </Stack>
-            )}
-
-            {step === 2 && (
-              <Stack>
-                <Checkbox.Group
-                  label={t.onboarding.weakTopics}
-                  value={answers.weakTopics}
-                  onChange={(value) => update('weakTopics', value)}
-                >
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
-                    {optionData.topics.map((topic) => (
-                      <Checkbox key={topic.value} value={topic.value} label={topic.label} />
-                    ))}
-                  </SimpleGrid>
-                </Checkbox.Group>
-
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                  <Select
-                    label={t.onboarding.explanationStyle}
-                    data={optionData.explanation}
-                    value={answers.explanationStyle}
-                    onChange={(value) => update('explanationStyle', value ?? undefined)}
-                  />
-                  <Select
-                    label={t.onboarding.pacing}
-                    data={optionData.pacing}
-                    value={answers.pacing}
-                    onChange={(value) => update('pacing', value ?? undefined)}
-                  />
-                </SimpleGrid>
-
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                  <Switch
-                    label={t.onboarding.visualPreference}
-                    checked={Boolean(answers.visualPreference)}
-                    onChange={(event) => update('visualPreference', event.currentTarget.checked)}
-                  />
-                  <Select
-                    label={t.onboarding.practicePreference}
-                    data={optionData.practice}
-                    value={answers.practicePreference}
-                    onChange={(value) => update('practicePreference', value ?? undefined)}
-                  />
-                </SimpleGrid>
-
-                <MultiSelect
-                  label={t.onboarding.analogyInterests}
-                  data={optionData.interests}
-                  value={answers.analogyInterests}
-                  onChange={(value) => update('analogyInterests', value)}
-                  clearable
-                />
-              </Stack>
-            )}
-
-            {step === 3 && (
-              <Stack>
-                <Alert color="teal" variant="light">
-                  {t.onboarding.diagnosticsNotice}
-                </Alert>
-                {answers.diagnosticAnswers.map((item, index) => (
-                  <Textarea
-                    key={item.prompt}
-                    label={t.onboarding.diagnosticPrompts[index] ?? item.prompt}
-                    placeholder={t.onboarding.diagnosticPlaceholder}
-                    value={item.answer}
-                    onChange={(event) => updateDiagnostic(index, event.currentTarget.value)}
-                    autosize
-                    minRows={2}
-                  />
-                ))}
-                <Textarea
-                  label={t.onboarding.freeform}
-                  placeholder={t.onboarding.freeformPlaceholder}
-                  value={answers.freeform ?? ''}
-                  onChange={(event) => update('freeform', event.currentTarget.value)}
-                  autosize
-                  minRows={2}
-                />
-              </Stack>
-            )}
-
-            {submitError && (
-              <Alert color="red" variant="light">
-                {submitError}
-              </Alert>
-            )}
-
-            <Group justify="space-between">
+        <Stack gap="lg">
+          <Group justify="space-between" align="flex-start">
+            <Box>
+              <Badge color="teal" variant="light" mb="xs">
+                {t.onboarding.badge}
+              </Badge>
+              <Title order={1}>{t.onboarding.title}</Title>
+              <Text c="dimmed">{t.onboarding.subtitle}</Text>
+            </Box>
+            <Group gap="xs">
+              <LanguageSwitch locale={locale} t={t} onChange={onLocaleChange} />
               <Button
                 type="button"
                 variant="default"
-                disabled={step === 0 || busy}
-                onClick={(event) => {
-                  event.preventDefault();
-                  setStep((current) => Math.max(0, current - 1));
+                onClick={() => {
+                  void onLogout();
                 }}
               >
-                {t.common.back}
+                {t.common.logout}
               </Button>
-              {step < stepCount - 1 ? (
+            </Group>
+          </Group>
+
+          <Paper withBorder radius="md" p="md" className="meeting-status">
+            <Group justify="space-between" gap="md" align="center">
+              <Group gap="xs">
+                <ThemeIcon variant="light" color="teal">
+                  <Brain size={16} />
+                </ThemeIcon>
+                <Box>
+                  <Text fw={900}>{user.name}</Text>
+                  <Text size="sm" c="dimmed">
+                    {t.onboarding.meetingStatus}
+                  </Text>
+                </Box>
+              </Group>
+              <Badge color={canBuildProfile ? 'green' : 'gray'} variant="light">
+                {canBuildProfile ? t.onboarding.readyBadge : t.onboarding.inProgressBadge}
+              </Badge>
+            </Group>
+          </Paper>
+
+          {error && (
+            <Alert color="yellow" variant="light">
+              {error}
+            </Alert>
+          )}
+
+          <Paper withBorder radius="md" p="lg" className="onboarding-voice-panel">
+            <Stack gap="md">
+              <Group justify="space-between" align="center" gap="md">
+                <Group gap="sm" align="center">
+                  <ThemeIcon size="xl" radius="md" color="green" variant="light">
+                    <Mic size={24} />
+                  </ThemeIcon>
+                  <Box>
+                    <Text fw={900}>{t.onboarding.voiceTitle}</Text>
+                    <Text size="sm" c="dimmed">
+                      {t.onboarding.voiceBody}
+                    </Text>
+                  </Box>
+                </Group>
                 <Button
-                  type="button"
-                  color="teal"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setStep((current) => current + 1);
-                  }}
+                  size="lg"
+                  color="green"
+                  className="lesson-start-button"
+                  leftSection={<PlayCircle size={20} />}
+                  loading={sending && turns.length === 0}
+                  onClick={startMeeting}
                 >
-                  {t.common.next}
+                  {turns.length === 0 ? t.onboarding.voiceStart : t.onboarding.restartMeeting}
                 </Button>
-              ) : (
-                <Button type="submit" color="teal" loading={busy} leftSection={<Send size={18} />}>
-                  {t.onboarding.submit}
-                </Button>
+              </Group>
+
+              <Group justify="space-between" gap="sm" align="center" className="voice-dialog-row">
+                <Tooltip
+                  label={
+                    speechOutputSupported
+                      ? t.tutor.voiceOutputHelp
+                      : t.tutor.voiceOutputUnavailable
+                  }
+                >
+                  <Switch
+                    label={t.tutor.voiceOutput}
+                    checked={voiceOutputEnabled && speechOutputSupported}
+                    onChange={(event) => toggleVoiceOutput(event.currentTarget.checked)}
+                    disabled={!speechOutputSupported}
+                    size="md"
+                  />
+                </Tooltip>
+                <Group justify="flex-end" gap="sm">
+                  <Tooltip label={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}>
+                    <ActionIcon
+                      size="xl"
+                      variant={listening ? 'filled' : 'light'}
+                      color={listening ? 'red' : 'teal'}
+                      onClick={listening ? stopVoice : () => startVoice()}
+                      disabled={!speechSupported || sending || turns.length === 0}
+                      title={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}
+                    >
+                      {listening ? <Square size={18} /> : <Mic size={18} />}
+                    </ActionIcon>
+                  </Tooltip>
+                  <Button
+                    color="teal"
+                    loading={finalizing}
+                    disabled={!canBuildProfile}
+                    leftSection={<Sparkles size={18} />}
+                    onClick={() => void finalizeFromConversation()}
+                  >
+                    {t.onboarding.completeFromConversation}
+                  </Button>
+                </Group>
+              </Group>
+
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendMeetingMessage();
+                }}
+              >
+                <Group align="flex-end" gap="sm">
+                  <Textarea
+                    ref={textareaRef}
+                    className="onboarding-text-fallback"
+                    value={listening ? voiceInterim || draft : draft}
+                    onChange={(event) => setDraft(event.currentTarget.value)}
+                    placeholder={t.onboarding.textFallbackPlaceholder}
+                    autosize
+                    minRows={2}
+                    maxRows={5}
+                    disabled={listening || turns.length === 0}
+                  />
+                  <Button
+                    type="submit"
+                    color="teal"
+                    loading={sending && turns.length > 0}
+                    disabled={!draft.trim() || turns.length === 0}
+                    leftSection={<Send size={18} />}
+                  >
+                    {t.onboarding.sendFallback}
+                  </Button>
+                </Group>
+              </form>
+
+              {voiceStatus && (
+                <Group
+                  gap="xs"
+                  className={`voice-status voice-status-${voiceStatus.tone}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Mic size={14} />
+                  <Text size="sm" fw={700}>
+                    {voiceStatus.text}
+                  </Text>
+                </Group>
+              )}
+
+              <Alert color={canBuildProfile ? 'green' : 'teal'} variant="light">
+                {canBuildProfile ? t.onboarding.conversationReady : t.onboarding.needMoreConversation}
+              </Alert>
+            </Stack>
+          </Paper>
+
+          {submitError && (
+            <Alert color="red" variant="light">
+              {submitError}
+            </Alert>
+          )}
+
+          <Stack gap="sm" className="onboarding-transcript">
+            <Group justify="space-between" gap="sm">
+              <Text fw={900}>{t.onboarding.transcriptTitle}</Text>
+              {activeLessonSessionId && (
+                <Badge color="gray" variant="light">
+                  {t.tutor.lessonModes.meeting}
+                </Badge>
               )}
             </Group>
+            {turns.length === 0 ? (
+              <Paper withBorder radius="md" p="md" className="lesson-history-empty">
+                <Text fw={900}>{t.onboarding.emptyTranscriptTitle}</Text>
+                <Text size="sm" c="dimmed">
+                  {t.onboarding.emptyTranscriptBody}
+                </Text>
+              </Paper>
+            ) : (
+              turns.map((turn) => (
+                <Paper key={turn.id} withBorder radius="md" p="md" className="onboarding-turn">
+                  <Stack gap="xs">
+                    <Group gap="xs">
+                      <Badge color={turn.source === 'voice' ? 'teal' : 'gray'} variant="light">
+                        {turn.source === 'voice' ? t.common.voice : t.common.text}
+                      </Badge>
+                      {speakingTurnId === turn.id && (
+                        <Badge color="green" variant="light">
+                          {t.tutor.stopSpeaking}
+                        </Badge>
+                      )}
+                    </Group>
+                    <Box className="onboarding-student-bubble">
+                      <Text size="xs" c="dimmed" fw={800}>
+                        {t.onboarding.studentLabel}
+                      </Text>
+                      <Text className="break-anywhere">{turn.prompt}</Text>
+                    </Box>
+                    {turn.answer ? (
+                      <Box className="onboarding-assistant-bubble">
+                        <Group justify="space-between" gap="sm">
+                          <Text size="xs" c="dimmed" fw={800}>
+                            {t.onboarding.assistantLabel}
+                          </Text>
+                          {speechOutputSupported && (
+                            <ActionIcon
+                              variant="subtle"
+                              color={speakingTurnId === turn.id ? 'red' : 'teal'}
+                              onClick={() =>
+                                speakingTurnId === turn.id
+                                  ? stopMeetingSpeech()
+                                  : speakMeetingAnswer(turn.id, turn.answer!, voiceOutputEnabled)
+                              }
+                              title={
+                                speakingTurnId === turn.id
+                                  ? t.tutor.stopSpeaking
+                                  : t.tutor.speakAnswer
+                              }
+                            >
+                              {speakingTurnId === turn.id ? (
+                                <VolumeX size={16} />
+                              ) : (
+                                <Volume2 size={16} />
+                              )}
+                            </ActionIcon>
+                          )}
+                        </Group>
+                        <Text className="prewrap">
+                          {getTutorSpeechText(turn.answer, t.tutor.imageAlt, locale)}
+                        </Text>
+                      </Box>
+                    ) : (
+                      <Group gap="xs" c="dimmed">
+                        <Loader2 size={16} className="spin" />
+                        <Text size="sm">{t.tutor.thinking}</Text>
+                      </Group>
+                    )}
+                  </Stack>
+                </Paper>
+              ))
+            )}
           </Stack>
-        </form>
+        </Stack>
       </Card>
     </div>
-  );
-}
-
-function SegmentedQuestion({
-  label,
-  value,
-  data,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  data: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Box>
-      <Text fw={800} mb={6}>
-        {label}
-      </Text>
-      <SegmentedControl fullWidth value={value} onChange={onChange} data={data} />
-    </Box>
   );
 }
 
@@ -867,6 +1105,7 @@ function TutorWorkspace({
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lessonFocusRef = useRef<HTMLDivElement | null>(null);
+  const conversationIdRef = useRef<string | undefined>(conversationId);
   const voiceOutputEnabledRef = useRef(voiceOutputEnabled);
   const autoListenAfterSpeechRef = useRef(false);
   const manualVoiceStopRef = useRef(false);
@@ -962,6 +1201,10 @@ function TutorWorkspace({
     },
     [],
   );
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   useEffect(() => {
     voiceOutputEnabledRef.current = voiceOutputEnabled;
@@ -1078,6 +1321,7 @@ function TutorWorkspace({
     setVoiceInterim('');
     setTurns(lesson.turns);
     if (isTerminalLessonStatus(lesson.status)) {
+      conversationIdRef.current = undefined;
       setConversationId(undefined);
       setActiveLessonSessionId(undefined);
       setHistoryRecordLessonId(lesson.lessonSessionId);
@@ -1085,6 +1329,7 @@ function TutorWorkspace({
         currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
       );
     } else {
+      conversationIdRef.current = lesson.conversationId;
       setConversationId(lesson.conversationId);
       setActiveLessonSessionId(lesson.lessonSessionId);
       setHistoryRecordLessonId(undefined);
@@ -1112,6 +1357,7 @@ function TutorWorkspace({
   }
 
   function clearLessonBoundary() {
+    conversationIdRef.current = undefined;
     setConversationId(undefined);
     setActiveLessonSessionId(undefined);
     setHistoryRecordLessonId(undefined);
@@ -1170,7 +1416,7 @@ function TutorWorkspace({
     const id = crypto.randomUUID();
     const requestId = crypto.randomUUID();
     const currentLessonType = overrideLessonType ?? lessonType;
-    const currentConversationId = forceNewConversation ? undefined : conversationId;
+    const currentConversationId = forceNewConversation ? undefined : conversationIdRef.current;
     setTurns((current) => [{ id, prompt, source, lessonType: currentLessonType }, ...current]);
     try {
       const answer = await api<TutorAnswer>('/tutor/message', {
@@ -1183,6 +1429,7 @@ function TutorWorkspace({
           lessonType: currentLessonType,
         }),
       });
+      conversationIdRef.current = answer.conversationId;
       setConversationId(answer.conversationId);
       setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
       setHistoryRecordLessonId(undefined);
@@ -1216,6 +1463,7 @@ function TutorWorkspace({
         `/tutor/lessons/${encodeURIComponent(activeLessonSessionId)}/finish`,
         { method: 'POST' },
       );
+      conversationIdRef.current = undefined;
       setConversationId(undefined);
       setActiveLessonSessionId(undefined);
       setHistoryRecordLessonId(finishedLesson.lessonSessionId);

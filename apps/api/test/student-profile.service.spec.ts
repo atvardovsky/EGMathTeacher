@@ -187,6 +187,201 @@ describe('StudentProfileService', () => {
     expect(service.getTutorContext(user.id)).toContain('учебно полезных сигналов');
   });
 
+  it('creates an AI-made tutoring profile from a stored meeting conversation', async () => {
+    aiModel.createOperationResponse.mockReset();
+    aiModel.createOperationResponse
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          answers: {
+            exam: 'ЕГЭ',
+            grade: '10',
+            currentLevel: 'средне',
+            mathFeeling: 'тревожно',
+            weakTopics: ['производная'],
+            motivation: 'поступить на инженерное направление',
+            explanationStyle: 'сначала пример',
+            pacing: 'медленно',
+            visualPreference: true,
+            analogyInterests: ['техника'],
+            diagnosticAnswers: [
+              {
+                prompt: 'Реши 2x + 5 = 17',
+                answer: 'x = 6',
+              },
+            ],
+            freeform: 'мне сложно слушать длинные объяснения',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          knowledgeState: {
+            overallLevel: {
+              value: 'medium',
+              confidence: 'medium',
+              evidence: ['решила линейное уравнение'],
+            },
+            priorityTopics: ['производная'],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          learningPreferences: {
+            explanationStyle: 'examples_first',
+            visualSupport: true,
+          },
+          psychologicalProfile: {
+            confidenceWithMath: {
+              value: 'low',
+              confidence: 'medium',
+              evidence: ['просит медленный темп'],
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          explanationStrategy: {
+            pacing: 'slow',
+            structure: 'example_then_rule',
+          },
+          aiSummary: 'Лучше начинать с короткого примера и затем давать правило.',
+        }),
+      });
+
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-1';
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+         success_criteria_json, active_learning_seconds, turn_count, started_at,
+         last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 2, ?, ?, ?, ?)`,
+      [
+        'lesson-meeting-1',
+        user.id,
+        conversationId,
+        'Понять стартовый учебный контекст ученика.',
+        JSON.stringify(['получены ответы о цели']),
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-meeting-1',
+        user.id,
+        conversationId,
+        'request-meeting-1',
+        'meeting',
+        'Хочу подготовиться к ЕГЭ, мне сложны производные',
+        JSON.stringify({
+          answer: 'Понял. Расскажи, как тебе легче: сначала правило или пример?',
+        }),
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-meeting-2',
+        user.id,
+        conversationId,
+        'request-meeting-2',
+        'meeting',
+        'Сначала пример, медленно. В задаче 2x + 5 = 17 получается x = 6',
+        JSON.stringify({
+          blocks: [
+            {
+              type: 'text',
+              text: 'Хорошо, я буду начинать с примера и проверять маленькими шагами.',
+            },
+          ],
+        }),
+        now,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(status.profile?.onboardingAnswers.weakTopics).toEqual(['производная']);
+    expect(status.profile?.onboardingAnswers.diagnosticAnswers).toEqual([
+      { prompt: 'Реши 2x + 5 = 17', answer: 'x = 6' },
+    ]);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    const operationNames = (aiModel.createOperationResponse as jest.Mock).mock.calls.map(
+      ([operation]) => operation,
+    );
+    expect(operationNames).toEqual([
+      'onboardingConversationExtraction',
+      'onboardingKnowledgeDiagnosis',
+      'onboardingPsychopedagogicalProfile',
+      'onboardingStrategyPlan',
+    ]);
+    const extractionPayload = (aiModel.createOperationResponse as jest.Mock).mock.calls[0][1];
+    expect(extractionPayload.usageContext).toMatchObject({
+      userId: user.id,
+      conversationId,
+      lessonType: 'meeting',
+    });
+    expect(extractionPayload.input[0].content[0].text).toContain(
+      'Хочу подготовиться к ЕГЭ',
+    );
+    expect(
+      db.get<{ status: string; goal_status: string; finish_reason: string | null }>(
+        'SELECT status, goal_status, finish_reason FROM lesson_sessions WHERE id = ?',
+        ['lesson-meeting-1'],
+      ),
+    ).toEqual({
+      status: 'finished',
+      goal_status: 'reached',
+      finish_reason: 'profile_created_from_meeting',
+    });
+  });
+
+  it('rejects a conversation profile when the first meeting is too short', async () => {
+    aiModel.createOperationResponse.mockReset();
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-short-meeting',
+        user.id,
+        'meeting-conv-short',
+        'request-short-meeting',
+        'meeting',
+        'Привет',
+        JSON.stringify({ answer: 'Привет. Что хочешь улучшить в математике?' }),
+        new Date().toISOString(),
+      ],
+    );
+
+    await expect(
+      service.completeOnboardingFromConversation({
+        user,
+        conversationId: 'meeting-conv-short',
+      }),
+    ).rejects.toThrow('First meeting conversation needs at least two tutor turns');
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+  });
+
   it('records the initial SQLite migration version', () => {
     expect(
       db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [

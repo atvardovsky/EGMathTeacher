@@ -33,6 +33,10 @@ export default registerAs('ai', () => {
         process.env.AI_OPERATION_TUTOR_ANSWER_MODEL ??
         responsesModel,
       tutorImage: process.env.AI_OPERATION_TUTOR_IMAGE_MODEL ?? imageModel,
+      onboardingConversationExtraction:
+        process.env.AI_OPERATION_ONBOARDING_CONVERSATION_EXTRACTION_MODEL ??
+        process.env.AI_OPERATION_ONBOARDING_KNOWLEDGE_MODEL ??
+        responsesModel,
       onboardingKnowledgeDiagnosis:
         process.env.AI_OPERATION_ONBOARDING_KNOWLEDGE_MODEL ?? responsesModel,
       onboardingPsychopedagogicalProfile:
@@ -66,6 +70,10 @@ export default registerAs('ai', () => {
       tutorAnswer: process.env.AI_OPERATION_TUTOR_ANSWER_SERVICE_TIER ?? '',
       tutorAnswerWithRag:
         process.env.AI_OPERATION_TUTOR_ANSWER_WITH_RAG_SERVICE_TIER ?? '',
+      onboardingConversationExtraction:
+        process.env.AI_OPERATION_ONBOARDING_CONVERSATION_EXTRACTION_SERVICE_TIER ??
+        process.env.AI_OPERATION_ONBOARDING_KNOWLEDGE_SERVICE_TIER ??
+        '',
       onboardingKnowledgeDiagnosis:
         process.env.AI_OPERATION_ONBOARDING_KNOWLEDGE_SERVICE_TIER ?? '',
       onboardingPsychopedagogicalProfile:

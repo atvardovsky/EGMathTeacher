@@ -81,8 +81,8 @@ flowchart LR
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
-| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
-| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
+| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, lesson-closure conversation review, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
+| `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, terminal-conversation reopening guard, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
 | `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, verified outcome counts, and safe background job status/result/error projections. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
@@ -162,8 +162,10 @@ jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
 an interval, and calls the model provider from delayed jobs instead of the
 immediate tutor request path. Batched mode groups observations by configured
 window size, idle timeout, or quality trigger, then can run a combined
-profile/strategy refresh. Legacy per-turn extraction remains available through
-configuration.
+profile/strategy refresh. Lesson closure paths enqueue immediate transcript
+summary and profile/strategy review jobs so finished conversations can still
+improve the student's future teaching strategy. Legacy per-turn extraction
+remains available through configuration.
 
 ## Endpoint Map
 
@@ -174,10 +176,11 @@ configuration.
 | `POST /auth/logout` | none | Clear session cookie. |
 | `GET /auth/me` | none | Return current cookie session or null. |
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
-| `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile. |
+| `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile from trusted structured answers. |
+| `POST /student-profile/me/from-conversation` | authenticated | Create or replace the student profile from the signed-in user's stored AI-led `meeting` conversation. |
 | `GET /tutor/lessons?scope=active\|history\|all` | authenticated | Return signed-in user's active resumable lesson sessions and read-only historical/legacy lesson records with summaries and stored turns. |
-| `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session and move it to read-only history. |
-| `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. |
+| `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session, enqueue closure review, and move it to read-only history. |
+| `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. Terminal lesson `conversationId` values are rejected instead of reopened. |
 | `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context and optionally persist the generated POC data URL into the matching tutor-turn image block. |
 | `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
 | `POST /usage/me/background/recover` | authenticated | Requeue one or a few recoverable failed background jobs scoped to the signed-in user, without exposing raw job payloads or running provider calls synchronously. |

@@ -293,6 +293,43 @@ describe('BackgroundAiService', () => {
     expect(profile?.ai_summary).toContain('скорость');
   });
 
+  it('queues a lesson-closure review and preserves the closed lesson type', async () => {
+    service.enqueueLessonClosureReview({
+      userId: 'student-1',
+      conversationId: 'conv-1',
+      lessonSessionId: 'lesson-closure-1',
+      lessonType: 'practice',
+      finishReason: 'student_finished_lesson',
+    });
+
+    const jobs = db.all<{ type: string; payload_json: string }>(
+      'SELECT type, payload_json FROM background_ai_jobs ORDER BY created_at ASC',
+    );
+    expect(jobs.map((job) => job.type)).toEqual([
+      'learning_window_analysis',
+      'session_summary',
+      'profile_strategy_refresh',
+    ]);
+    expect(jobs.map((job) => JSON.parse(job.payload_json).lessonType)).toEqual([
+      'practice',
+      'practice',
+      'practice',
+    ]);
+
+    await expect(service.drainPending()).resolves.toBe(3);
+
+    expect((aiModel.createOperationResponse as jest.Mock).mock.calls.map(([operation]) => operation)).toEqual([
+      'backgroundSessionSummary',
+      'backgroundProfileStrategyRefresh',
+    ]);
+    expect(
+      db.get<{ lesson_type: string }>(
+        'SELECT lesson_type FROM student_session_summaries WHERE conversation_id = ?',
+        ['conv-1'],
+      ),
+    ).toEqual({ lesson_type: 'practice' });
+  });
+
   it('keeps the legacy per-turn background job mode when batching is disabled', async () => {
     aiModel.createOperationResponse.mockReset();
     aiModel.createOperationResponse

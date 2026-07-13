@@ -13,6 +13,7 @@ import {
   BackgroundAiJobType,
   BackgroundAiStatus,
   BackgroundLearningObservationRecord,
+  LessonClosureBackgroundInput,
   TutorTurnBackgroundInput,
 } from './background-ai.types';
 
@@ -162,6 +163,54 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     this.enqueueLegacyTutorTurnWork(input, basePayload, now);
   }
 
+  enqueueLessonClosureReview(input: LessonClosureBackgroundInput): void {
+    if (!this.isEnabled()) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const payload = {
+      triggerReason: 'lesson_finished',
+      reason: 'lesson_finished',
+      lessonSessionId: input.lessonSessionId,
+      lessonType: input.lessonType,
+      finishReason: this.cleanString(input.finishReason, 160),
+      capturedAt: now,
+    };
+
+    if (this.isBatchingEnabled()) {
+      this.enqueueLearningWindowJob({
+        userId: input.userId,
+        conversationId: input.conversationId,
+        scheduledAt: now,
+        triggerReason: 'lesson_finished',
+        observationCount: this.countPendingLearningObservations(
+          input.userId,
+          input.conversationId,
+        ),
+        dueNow: true,
+        lessonSessionId: input.lessonSessionId,
+        lessonType: input.lessonType,
+      });
+    }
+
+    this.enqueueJob({
+      type: 'session_summary',
+      userId: input.userId,
+      conversationId: input.conversationId,
+      payload,
+      dedupePending: true,
+    });
+
+    this.enqueueJob({
+      type: 'profile_strategy_refresh',
+      userId: input.userId,
+      conversationId: input.conversationId,
+      payload,
+      dedupePending: true,
+    });
+  }
+
   private enqueueLegacyTutorTurnWork(
     input: TutorTurnBackgroundInput,
     basePayload: Record<string, unknown>,
@@ -253,6 +302,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       observationCount: pendingCount,
       dueNow,
       lessonSessionId: input.lessonSessionId,
+      lessonType: input.lessonType,
     });
   }
 
@@ -314,13 +364,14 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
 
   private async extractLearningSignals(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
     const payload = this.parsePayload(job);
+    const lessonType = this.normalizeLessonType(payload.lessonType) ?? 'tutor';
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundLearningSignal',
       specialist: 'learning-signal-extractor',
       userId: job.user_id,
       conversationId: job.conversation_id ?? undefined,
       lessonSessionId: this.pickString(payload, ['lessonSessionId', 'lesson_session_id']),
-      lessonType: this.normalizeLessonType(payload.lessonType),
+      lessonType,
       instructions: this.getLearningSignalInstructions(),
       inputText: [
         'Один учебный ход ученика и ответ репетитора:',
@@ -331,7 +382,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     this.persistSkillProgressSignals(
       job,
       parsed,
-      this.normalizeLessonType(payload.lessonType),
+      lessonType,
     );
     this.persistLearningSignal(job, 'turn_signal', parsed);
     return parsed;
@@ -430,8 +481,8 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       return { skipped: 'no_turns' };
     }
 
-    const lessonType = this.pickTurnLessonType(turns);
     const payload = this.parsePayload(job);
+    const lessonType = this.normalizeLessonType(payload.lessonType) ?? this.pickTurnLessonType(turns);
     const parsed = await this.createBackgroundJsonResponse({
       operation: 'backgroundSessionSummary',
       specialist: 'session-summarizer',
@@ -850,6 +901,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     observationCount: number;
     dueNow: boolean;
     lessonSessionId?: string;
+    lessonType?: LessonType;
   }): void {
     const existing = this.db.get<{ id: string; status: BackgroundAiJobStatus; scheduled_at: string }>(
       `SELECT id, status, scheduled_at
@@ -867,6 +919,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       triggerReason: options.triggerReason,
       observationCount: options.observationCount,
       lessonSessionId: options.lessonSessionId,
+      lessonType: options.lessonType,
       capturedAt: new Date().toISOString(),
     };
 
@@ -1376,8 +1429,8 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return 'tutor';
   }
 
-  private normalizeLessonType(value: unknown): LessonType {
-    return typeof value === 'string' && this.isLessonType(value) ? value : 'tutor';
+  private normalizeLessonType(value: unknown): LessonType | undefined {
+    return typeof value === 'string' && this.isLessonType(value) ? value : undefined;
   }
 
   private isLessonType(value: string): value is LessonType {

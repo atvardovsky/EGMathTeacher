@@ -97,7 +97,10 @@ Rules from current implementation:
   tutor prompt so the answer can continue from the prior discussion.
 - The student can finish the current active lesson explicitly. Finished
   sessions and legacy saved `tutor_turns` without a matching `lesson_sessions`
-  row remain visible as read-only historical records.
+  row remain visible as read-only historical records. Finished,
+  goal-reached, and hard-limit lesson conversations cannot be reopened through
+  `POST /tutor/message`; the client must start a new lesson without the old
+  `conversationId`.
 - Starting a launcher lesson is a deliberate user action. The web client does
   not call the tutor model automatically on page load or immediately after
   setup completion.
@@ -107,9 +110,9 @@ Rules from current implementation:
 - Lesson type controls the goal of the response, expected block mix, and which
   background learning signals should be emphasized.
 - Switching the lesson mode in the web UI starts a new conversation/session
-  boundary. If an older client reuses a conversation id with a different
-  lesson type, the API finishes the previous active lesson session and creates
-  a new one for the requested lesson type.
+  boundary. If an older client reuses an active conversation id with a
+  different lesson type, the API finishes the previous active lesson session
+  and rejects the reused id so the client must start a fresh lesson boundary.
 - Each tutor turn belongs to a lesson session with a lesson goal, success
   criteria, current goal status, active-learning seconds, and daily/continuous
   learning-limit state.
@@ -191,6 +194,13 @@ Rules from current implementation:
     number of user turns in batched mode, or as split jobs in legacy mode
   - quality review is included in grouped trigger analysis in batched mode or
     runs as a rare separate job in legacy mode
+- When a lesson is explicitly finished, stopped by hard limit, completed by
+  backend-accepted goal evidence, or auto-closed by a new lesson boundary, the
+  API enqueues lesson-closure background review. Closure review schedules a
+  compact session summary and a profile/strategy refresh; in batched mode it
+  also pulls pending observations into an immediate learning-window analysis.
+  These jobs analyze stored lesson conversation data to find teaching-useful
+  information about the student.
 - Background analysis stores layered teaching evidence:
   - L0 raw turn data stays limited to `tutor_turns`
   - L1 sanitized turn observations stay in `background_learning_observations`
@@ -224,13 +234,23 @@ lesson launcher so the next teaching action is visible.
 Rules from current implementation:
 
 - Profile status is loaded through `GET /student-profile/me`.
-- Student profile creation uses `PUT /student-profile/me`.
+- The default student profile creation path uses
+  `POST /student-profile/me/from-conversation` after an AI-led `meeting`
+  lesson has stored enough turns. The legacy `PUT /student-profile/me`
+  contract remains available for trusted fallback/import use.
 - Admin users do not require onboarding by default.
-- The meeting asks for exam context, target score, confidence, emotional
-  relation to math, weak topics, explanation preferences, pacing, visual
-  preference, analogy interests, and short diagnostic answers.
-- The wording avoids presenting the diagnostic as a school test.
+- The meeting screen is voice-first: a green start button begins the AI-led
+  conversation, tutor answers are spoken when browser speech synthesis is
+  available, voice-dialog mode reopens the mic after each spoken answer, and
+  text input remains a fallback.
+- The AI-led meeting asks short questions one at a time to learn exam/goal
+  context, confidence, emotional relation to math, weak topics, explanation
+  preferences, pacing, visual preference, analogy interests, and short
+  diagnostic answers.
+- The wording avoids presenting the diagnostic as a school test or static
+  questionnaire.
 - The API creates the profile through specialist AI evaluator calls:
+  - first-meeting conversation extractor
   - math knowledge diagnostician
   - tutoring-focused psychopedagogical profiler
   - teaching strategy planner
@@ -245,6 +265,10 @@ Rules from current implementation:
 - Later profile and strategy updates are produced from sanitized tutor-turn
   signals in background jobs, not from full synchronous profile regeneration
   after every discussion turn.
+- Successful profile creation from a stored meeting conversation marks the
+  corresponding `meeting` lesson finished with goal reached. If extraction or
+  profile generation fails, the meeting remains active so the student can
+  continue the dialog.
 - The stored psychopedagogical profile is for explanation strategy only; it
   must not diagnose, manipulate, or preserve unnecessary sensitive details.
 - First-meeting answers and AI-made profile sections are filtered before

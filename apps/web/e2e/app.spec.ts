@@ -398,8 +398,8 @@ async function mockStudentSession(
 
   await page.route('**/auth/me', (route) => fulfillJson(route, { user: studentUser }));
   await page.route('**/auth/logout', (route) => fulfillJson(route, {}));
-  await page.route('**/student-profile/me', async (route) => {
-    if (route.request().method() === 'PUT') {
+  await page.route('**/student-profile/me**', async (route) => {
+    if (['PUT', 'POST'].includes(route.request().method())) {
       profileStatus = completedProfileStatus;
     }
     return fulfillJson(route, profileStatus);
@@ -517,15 +517,38 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Давай познакомимся' })).toBeVisible();
-  await page.getByLabel('Зачем нужен результат').fill('Хочу закрыть пробелы перед ЕГЭ');
-  await page.getByRole('button', { name: 'Дальше' }).click();
-  await expect(page.getByText('Как сейчас с математикой?')).toBeVisible();
-  await page.getByRole('button', { name: 'Дальше' }).click();
-  await expect(page.getByText('Где чаще застреваешь?')).toBeVisible();
-  await page.getByRole('button', { name: 'Дальше' }).click();
-  await expect(page.getByText('Пара коротких заданий нужна')).toBeVisible();
-  await page.getByPlaceholder('Можно ответить как получается').first().fill('x = 6');
-  await page.getByRole('button', { name: 'Настроить репетитора' }).click();
+  await expect(page.getByRole('button', { name: 'Начать голосовую встречу' })).toBeVisible();
+  await expect(page.getByText('Разговор еще не начат')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Начать голосовую встречу' }).click();
+  await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: 'Хочу закрыть пробелы перед ЕГЭ, лучше через примеры' },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+  await expect.poll(() => tutorRequests.length).toBe(2);
+  await expect(page.getByText('Данных уже достаточно')).toBeVisible();
+  await page.getByRole('button', { name: 'Создать профиль из разговора' }).click();
 
   await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
   await expect(page.getByText('профиль объяснений активен')).toBeVisible();
@@ -536,6 +559,13 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await expect(page.getByText('Первая встреча')).toBeVisible();
   await expect(page.getByText('Проверка уровня')).toBeVisible();
   await expect(page.getByText('Практика: уравнения')).toBeVisible();
+  expect(tutorRequests[0]).toMatchObject({ lessonType: 'meeting' });
+  expect(tutorRequests[1]).toMatchObject({
+    conversationId: 'conv-e2e',
+    lessonType: 'meeting',
+    source: 'voice',
+  });
+  tutorRequests.length = 0;
 
   await page.getByRole('button', { name: 'Начать первое занятие' }).click();
 
@@ -547,7 +577,7 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
     .poll(() =>
       page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
     )
-    .toBe(1);
+    .toBeGreaterThanOrEqual(3);
   await expect
     .poll(() =>
       page.evaluate(() => (window as Window & { __recognitionLanguage?: string }).__recognitionLanguage),
@@ -568,7 +598,7 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
     .poll(() =>
       page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
     )
-    .toBe(2);
+    .toBeGreaterThanOrEqual(4);
   await page.evaluate(() => {
     const state = window as Window & {
       __lastRecognition?: { onerror: ((event: Event) => void) | null };

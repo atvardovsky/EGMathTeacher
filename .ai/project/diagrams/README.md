@@ -12,9 +12,9 @@ are generated into `rendered/`.
   provider facade, and OpenAI boundaries.
 - `api-modules.mmd`: NestJS module ownership, background AI worker,
   model-provider facade, and dependency direction.
-- `onboarding-profile-sequence.mmd`: first-login student profile creation,
-  specialist evaluator pipeline, RAG/shared-knowledge lookup, DB memory
-  persistence, and transition to tutor.
+- `onboarding-profile-sequence.mmd`: voice-first first-login meeting,
+  stored-transcript extraction, specialist evaluator pipeline,
+  RAG/shared-knowledge lookup, DB memory persistence, and transition to tutor.
 - `tutor-rag-sequence.mmd`: tutor text/voice request, RAG, persistence,
   optional batched background observation windows, legacy background enqueue,
   profile/strategy refresh, and optional image flow.
@@ -29,8 +29,8 @@ are generated into `rendered/`.
   remote OpenAI objects.
 - `assistant-governance.mmd`: Alatyr framework/project/assistant contours,
   gates, operations, and evidence flow.
-- `ui-tree.mmd`: web UI state tree from auth through first meeting, tutor,
-  optional image generation, and admin materials.
+- `ui-tree.mmd`: web UI state tree from auth through the voice-first meeting,
+  tutor, optional image generation, and admin materials.
 
 ## Maintenance
 

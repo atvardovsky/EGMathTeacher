@@ -1,8 +1,10 @@
 sequenceDiagram
   actor Student
   participant Web as React Web Client
+  participant TutorApi as TutorController
   participant API as StudentProfileController
   participant Auth as AuthGuard
+  participant Tutor as TutorService
   participant Profile as StudentProfileService
   participant Knowledge as KnowledgeService
   participant DB as SQLite
@@ -18,10 +20,37 @@ sequenceDiagram
   Profile->>DB: Read student_profiles
   DB-->>Profile: No profile found
   API-->>Web: onboardingRequired=true
-  Web-->>Student: Show first meeting
-  Student->>Web: Answer learning, motivation, preference, and diagnostic prompts
-  Web->>API: PUT /student-profile/me
-  API->>Profile: completeOnboarding(user, answers)
+  Web-->>Student: Show voice-first meeting screen
+  Student->>Web: Click green start voice meeting button
+  Web->>TutorApi: POST /tutor/message lessonType=meeting
+  TutorApi->>Auth: Validate session cookie
+  Auth-->>TutorApi: Authenticated student
+  TutorApi->>Tutor: Start AI-led meeting turn
+  Tutor->>AIModel: Tutor meeting answer
+  AIModel->>OpenAI: Create meeting response
+  OpenAI-->>AIModel: Short question or diagnostic prompt
+  AIModel-->>Tutor: Meeting answer
+  Tutor->>DB: Persist tutor_turns with lesson_type=meeting
+  Tutor-->>TutorApi: Meeting answer and conversationId
+  TutorApi-->>Web: Visible tutor answer
+  Web-->>Student: Speak answer and reopen mic when supported
+  Student->>Web: Reply by voice or text
+  Web->>TutorApi: POST /tutor/message with same conversationId
+  TutorApi->>Tutor: Continue meeting turn
+  Tutor->>DB: Persist additional meeting turn
+  Tutor-->>TutorApi: Meeting answer
+  TutorApi-->>Web: Visible tutor answer
+  Student->>Web: Create profile from conversation
+  Web->>API: POST /student-profile/me/from-conversation
+  API->>Profile: completeOnboardingFromConversation(user, conversationId)
+  Profile->>DB: Read stored meeting tutor_turns for user and conversation
+  DB-->>Profile: Meeting transcript
+  Profile->>AIModel: Extract onboarding answers from transcript
+  AIModel->>Policy: Resolve onboardingConversationExtraction policy
+  Policy-->>AIModel: Extractor role, model, metadata, optional service tier
+  AIModel->>OpenAI: Create extraction response
+  OpenAI-->>AIModel: Teaching-only onboarding answers
+  AIModel-->>Profile: Extracted answer JSON
   Profile->>Knowledge: getActiveVectorStoreIds()
   Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
   Knowledge-->>Profile: Vector store ids
@@ -44,6 +73,7 @@ sequenceDiagram
   OpenAI-->>AIModel: explanationStrategy and aiSummary
   AIModel-->>Profile: strategy and summary
   Profile->>DB: Upsert student_profiles
+  Profile->>DB: Mark meeting lesson_session finished with goal reached
   Profile-->>API: Profile status
   API-->>Web: onboardingRequired=false and profile
   Web-->>Student: Open tutor workspace with lesson launcher
