@@ -135,8 +135,9 @@ Production domain:
   pretending the zero is a real billable cost.
 - Expanded usage details also show recent safe background job status, compact
   sanitized result previews, and stored failure messages for the signed-in
-  user. The usage panel has a manual refresh action and polls the safe summary
-  endpoint while details are open or background jobs are still pending/running.
+  user. The usage panel has a manual refresh action, a retry-one action for
+  visible failed background jobs, and polls the safe summary endpoint while
+  details are open or background jobs are still pending/running.
 - Russian/English static web UI locale switch for auth, first meeting, tutor, and admin views.
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for
@@ -145,7 +146,10 @@ Production domain:
   transactional migration application.
 - Admin upload endpoint for PDF/Markdown/TXT/DOCX/TeX knowledge files.
 - Image endpoint for explanatory math diagrams generated from a tutor image
-  block prompt and rendered in the same tutor turn after explicit user action.
+  block prompt. Fresh required image blocks can trigger one automatic
+  generation after the text answer is visible; saved turns and optional blocks
+  keep an explicit create-diagram action. Generated POC data URLs are rendered
+  and persisted inside the same tutor turn.
 - Browser voice input using speech recognition, submitted to the same RAG tutor endpoint.
 - Browser voice output using local speech synthesis in the tutor workspace.
   Voice dialog is on by default when supported, can be switched off by the
@@ -155,7 +159,9 @@ Production domain:
   remains limited by the installed browser voices. Browser speech recognition
   can still stop after silence, permission/device issues, or network/browser
   policy; the web UI shows the stop reason and retries once after an automatic
-  silence stop in voice-dialog mode.
+  silence stop in voice-dialog mode. Short uncertain voice fragments without
+  math or lesson intent are placed back into the composer for confirmation
+  instead of being sent as a lesson request.
 - Imported WebRTC/Realtime voice service remains available under `/webrtc`.
 
 ## Checks

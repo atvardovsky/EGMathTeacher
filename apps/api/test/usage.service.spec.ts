@@ -6,7 +6,10 @@ import { ResolvedAiOperationPolicy } from '../src/ai-model/ai-model.types';
 import { DatabaseService } from '../src/database/database.service';
 import { UsageService } from '../src/usage/usage.service';
 
-function createConfig(sqlitePath: string): ConfigService {
+function createConfig(
+  sqlitePath: string,
+  overrides: Record<string, unknown> = {},
+): ConfigService {
   const values: Record<string, unknown> = {
     'app.sqlitePath': sqlitePath,
     'ai.usage.trackingEnabled': true,
@@ -14,6 +17,7 @@ function createConfig(sqlitePath: string): ConfigService {
     'ai.usage.defaultCachedInputUsdPer1M': 0.5,
     'ai.usage.defaultOutputUsdPer1M': 10,
     'ai.usage.defaultImageUsd': 0.04,
+    ...overrides,
   };
   return {
     get: <T>(key: string) => values[key] as T,
@@ -101,6 +105,200 @@ describe('UsageService', () => {
         outputTokens: 500,
         model: 'gpt-test',
         correlationId: 'turn-1',
+      }),
+    );
+  });
+
+  it('uses service-tier model pricing overrides when they are configured', () => {
+    db.onModuleDestroy();
+    const sqlitePath = join(tmpdir(), `egmathteacher-usage-${randomUUID()}.sqlite`);
+    const config = createConfig(sqlitePath, {
+      'ai.usage.modelPricingJson': JSON.stringify({
+        'gpt-test:flex': {
+          inputUsdPer1M: 1,
+          cachedInputUsdPer1M: 0.1,
+          outputUsdPer1M: 2,
+          source: 'tier_test',
+        },
+      }),
+    });
+    db = new DatabaseService(config);
+    service = new UsageService(db, config);
+    db.run(
+      'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['student-1', 'Маша', 'hash', 'student', new Date().toISOString()],
+    );
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status,
+         goal_text, success_criteria_json, active_learning_seconds, turn_count,
+         started_at, last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'active', 'in_progress', ?, ?, 120, 1, ?, ?, ?, ?)`,
+      [
+        'lesson-1',
+        'student-1',
+        'conv-1',
+        'tutor',
+        'Разобрать вопрос',
+        JSON.stringify(['понят главный шаг']),
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString(),
+      ],
+    );
+
+    service.recordOperation(
+      {
+        ...policy,
+        serviceTier: 'flex',
+      },
+      {
+        userId: 'student-1',
+        conversationId: 'conv-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'tutor',
+        correlationId: 'turn-flex',
+      },
+      { model: 'gpt-test' },
+      {
+        usage: {
+          input_tokens: 1000,
+          input_tokens_details: { cached_tokens: 100 },
+          output_tokens: 500,
+          total_tokens: 1500,
+        },
+      },
+    );
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.today.estimatedCostUsd).toBe(0.00191);
+    expect(summary.currentLesson?.items[0]).toEqual(
+      expect.objectContaining({
+        pricingSource: 'tier_test',
+        serviceTier: 'flex',
+      }),
+    );
+  });
+
+  it('stores image token usage when the provider returns it', () => {
+    service.recordOperation(
+      {
+        ...policy,
+        operationKey: 'tutorImage',
+        operation: 'tutor.generate_image',
+        role: 'image_explainer',
+        model: 'gpt-image-test',
+        responseFormat: 'image',
+      },
+      {
+        userId: 'student-1',
+        conversationId: 'conv-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'visual_explanation',
+        correlationId: 'image-1',
+      },
+      { model: 'gpt-image-test', n: 1 },
+      {
+        data: [{ url: 'https://example.test/image.png' }],
+        usage: {
+          input_tokens: 1000,
+          input_tokens_details: { cached_tokens: 100 },
+          output_tokens: 500,
+          total_tokens: 1500,
+        },
+      },
+    );
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.today.estimatedCostUsd).toBe(0.04685);
+    expect(summary.today.imageCount).toBe(1);
+    expect(summary.currentLesson?.items[0]).toEqual(
+      expect.objectContaining({
+        inputTokens: 1000,
+        cachedInputTokens: 100,
+        outputTokens: 500,
+        imageCount: 1,
+      }),
+    );
+  });
+
+  it('estimates GPT image output tokens when the provider omits usage', () => {
+    db.onModuleDestroy();
+    const sqlitePath = join(tmpdir(), `egmathteacher-usage-${randomUUID()}.sqlite`);
+    const config = createConfig(sqlitePath, {
+      'ai.usage.defaultInputUsdPer1M': 0,
+      'ai.usage.defaultCachedInputUsdPer1M': 0,
+      'ai.usage.defaultOutputUsdPer1M': 0,
+      'ai.usage.defaultImageUsd': 0,
+      'ai.usage.modelPricingJson': JSON.stringify({
+        'gpt-image-2': {
+          inputUsdPer1M: 5,
+          cachedInputUsdPer1M: 1.25,
+          outputUsdPer1M: 30,
+          source: 'gpt_image_2_token_estimate',
+        },
+      }),
+    });
+    db = new DatabaseService(config);
+    service = new UsageService(db, config);
+    db.run(
+      'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['student-1', 'Маша', 'hash', 'student', new Date().toISOString()],
+    );
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status,
+         goal_text, success_criteria_json, active_learning_seconds, turn_count,
+         started_at, last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'active', 'in_progress', ?, ?, 120, 1, ?, ?, ?, ?)`,
+      [
+        'lesson-1',
+        'student-1',
+        'conv-1',
+        'visual_explanation',
+        'Разобрать схему',
+        JSON.stringify(['схема показана']),
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString(),
+      ],
+    );
+
+    service.recordOperation(
+      {
+        ...policy,
+        operationKey: 'tutorImage',
+        operation: 'tutor.generate_image',
+        role: 'image_explainer',
+        model: 'gpt-image-2',
+        responseFormat: 'image',
+      },
+      {
+        userId: 'student-1',
+        conversationId: 'conv-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'visual_explanation',
+        correlationId: 'image-estimated',
+      },
+      { model: 'gpt-image-2', size: '1024x1024', quality: 'low' },
+      { data: [{ b64_json: 'abc' }] },
+    );
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.today.estimatedCostUsd).toBe(0.00588);
+    expect(summary.currentLesson?.items[0]).toEqual(
+      expect.objectContaining({
+        outputTokens: 196,
+        totalTokens: 196,
+        imageCount: 1,
+        pricingSource: 'gpt_image_2_token_estimate',
       }),
     );
   });

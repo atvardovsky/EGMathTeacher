@@ -183,11 +183,15 @@ Tutor/product API surfaces also include:
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.
-- `POST /tutor/image` for explicit explanatory image generation with optional
-  lesson usage attribution.
+- `POST /tutor/image` for explanatory image generation with optional lesson
+  usage attribution and tutor-turn/block identity so generated POC data URLs
+  can be persisted back into the same answer block.
 - `GET /usage/me/summary` for the signed-in user's own usage estimates,
   per-operation, decision, verifier, verified-outcome details, and recent safe
   background job status/result/error previews.
+- `POST /usage/me/background/recover` for a signed-in user to requeue one or a
+  few of their own recoverable failed background jobs without exposing raw job
+  payloads or running the provider call synchronously in the request.
 
 ## Notes on OpenAI Realtime
 

@@ -294,6 +294,7 @@ export class LessonService {
     if (differentActiveSession && differentActiveSession.lesson_type !== input.lessonType) {
       this.finishSessionForLessonTypeChange(differentActiveSession, input.lessonType, nowIso);
     }
+    this.finishSupersededActiveSessions(input, nowIso);
 
     const defaults = LESSON_GOALS[input.lessonType];
     const id = `lesson_${randomUUID()}`;
@@ -557,6 +558,27 @@ export class LessonService {
        SET status = 'finished', finish_reason = ?, finished_at = ?, updated_at = ?
        WHERE id = ?`,
       [`lesson_type_changed_to_${nextLessonType}`, nowIso, nowIso, session.id],
+    );
+  }
+
+  private finishSupersededActiveSessions(input: BeginTurnInput, nowIso: string): void {
+    this.db.run(
+      `UPDATE lesson_sessions
+       SET status = 'finished',
+           finish_reason = ?,
+           finished_at = ?,
+           updated_at = COALESCE(last_activity_at, updated_at, ?)
+       WHERE user_id = ?
+         AND conversation_id != ?
+         AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})`,
+      [
+        'superseded_by_new_lesson_session',
+        nowIso,
+        nowIso,
+        input.userId,
+        input.conversationId,
+        ...TERMINAL_STATUSES,
+      ],
     );
   }
 

@@ -708,6 +708,6 @@ export class LessonDecisionService {
 
   private get decisionTimeoutMs(): number {
     const value = this.configService?.get<number>('ai.lessonDecision.timeoutMs');
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 4_000;
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 10_000;
   }
 }

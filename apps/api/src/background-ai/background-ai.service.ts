@@ -73,6 +73,67 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return status;
   }
 
+  requeueFailedJobsForUser(options: {
+    userId: string;
+    limit?: number;
+    conversationId?: string;
+    type?: BackgroundAiJobType;
+  }): { requeued: number; jobIds: string[] } {
+    const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 1), 5));
+    const params: unknown[] = [options.userId];
+    const filters = [
+      'user_id = ?',
+      "status = 'failed'",
+      "type IN ('learning_window_analysis', 'session_summary', 'student_profile_refresh', 'profile_strategy_refresh', 'teaching_strategy_refresh', 'tutor_quality_review')",
+    ];
+    if (options.conversationId?.trim()) {
+      filters.push('conversation_id = ?');
+      params.push(options.conversationId.trim());
+    }
+    if (options.type) {
+      filters.push('type = ?');
+      params.push(options.type);
+    }
+
+    const rows = this.db.all<{ id: string }>(
+      `SELECT id
+       FROM background_ai_jobs
+       WHERE ${filters.join(' AND ')}
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+      [...params, limit],
+    );
+    if (rows.length === 0) {
+      return { requeued: 0, jobIds: [] };
+    }
+
+    const now = new Date().toISOString();
+    const ids = rows.map((row) => row.id);
+    const placeholders = ids.map(() => '?').join(', ');
+    const result = this.db.run(
+      `UPDATE background_ai_jobs
+       SET status = 'pending',
+           attempts = 0,
+           error_message = ?,
+           scheduled_at = ?,
+           started_at = NULL,
+           completed_at = NULL,
+           updated_at = ?
+       WHERE user_id = ?
+         AND id IN (${placeholders})
+         AND status = 'failed'`,
+      [
+        'Requeued by signed-in user recovery action',
+        now,
+        now,
+        options.userId,
+        ...ids,
+      ],
+    );
+
+    return { requeued: result.changes, jobIds: ids.slice(0, result.changes) };
+  }
+
   enqueueTutorTurnWork(input: TutorTurnBackgroundInput): void {
     if (!this.isEnabled()) {
       return;

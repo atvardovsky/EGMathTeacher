@@ -66,6 +66,9 @@ Rules from current implementation:
   network errors, or browser policy. The tutor UI shows a short voice-status
   reason, retries once after an automatic silence stop in voice-dialog mode,
   and leaves the mic button as the manual fallback.
+- Short low-confidence voice transcripts without math or lesson intent are
+  copied back into the composer for confirmation instead of being sent as a
+  tutor request.
 - Browser speech synthesis quality, Russian stress, and emotional prosody are
   browser-voice limitations in the POC. Better voice quality requires a future
   OpenAI audio integration.
@@ -153,12 +156,15 @@ Rules from current implementation:
   `needsImage`, and `imagePrompt` fields for compatibility.
 - Tutor responses include `lessonLifecycle` state and a compact usage snapshot
   for the current lesson/day.
-- Image blocks are visual plans, not generated image bytes. They include
-  prompt, caption, alt text, status, and priority so the UI can keep image
-  support inside the same tutor turn.
+- Image blocks start as visual plans. They include prompt, caption, alt text,
+  status, and priority so the UI can keep image support inside the same tutor
+  turn. When image generation succeeds with tutor-turn/block identity, the POC
+  persists the generated data URL into the same stored image block.
 - If the student explicitly asks for a drawing, diagram, graph, image, or
   visual explanation, the API must return an image block even if the model
-  omitted it. This keeps the explicit image-generation action visible.
+  omitted it. Fresh required image blocks can auto-start one image-generation
+  request after the text answer is visible; older saved turns and optional
+  blocks keep the explicit image-generation action visible.
 - The tutor prompt instructs the model to answer in Russian, explain step by
   step, check understanding, and avoid returning only the final answer.
 - If RAG vector stores exist, the OpenAI-backed model provider uses file
@@ -200,8 +206,9 @@ Rules from current implementation:
 - The web tutor workspace shows a user-visible usage bar for the signed-in
   user's own AI expenses. It shows today's estimate, current lesson estimate,
   evidence level, verified outcome count, cost per verified outcome, and
-  expanded operation/model/token/image/decision details. It must not expose
-  raw prompts, hidden instructions, provider request ids, stack traces,
+  expanded operation/model/token/image/decision/background-job details. It can
+  requeue one visible failed background job for the signed-in user. It must not
+  expose raw prompts, hidden instructions, provider request ids, stack traces,
   secrets, or another user's usage.
 
 ### Complete First-Login Meeting
@@ -268,11 +275,14 @@ Rules from current implementation:
 
 - Image requests use `POST /tutor/image`.
 - The tutor message response does not wait for image generation. It returns an
-  image block with prompt/caption/alt text, and the web client shows a
-  prominent create-diagram action. The generated image renders inside that
-  same tutor turn after the explicit image action.
+  image block with prompt/caption/alt text. Fresh required image blocks
+  auto-start one generation after the text answer is visible; saved turns,
+  optional blocks, and retry cases use the prominent create-diagram action.
 - The API calls the model-provider image operation. The current implementation
   delegates to OpenAI image generation and returns a PNG data URL.
+- When the request includes tutor-turn and image-block identity, the API
+  persists the generated data URL into the stored tutor-turn image block for
+  POC continuity.
 - Image generation usage is recorded in the same usage ledger when a lesson
   session id is provided.
 - Images should explain math concepts, graphs, schemes, or coordinate-plane
@@ -286,15 +296,23 @@ workspace.
 Rules from current implementation:
 
 - Endpoint: `GET /usage/me/summary`.
+- Recovery endpoint: `POST /usage/me/background/recover`.
 - The endpoint returns only the signed-in user's own today/current-lesson
   usage.
 - The default bar is compact for teenage learners: today, current lesson,
   goal status, and active-learning time.
 - Expanded details show operation, assistant role, model, service tier when
-  present, token counts, image counts, and estimated cost.
+  present, token counts, image counts, estimated cost, and safe background job
+  result/error previews.
+- A visible retry-one action can requeue one recoverable failed background job
+  for the signed-in user. It resets attempts and schedules worker processing;
+  it does not run the provider call synchronously in the request.
 - Estimated USD cost is calculated from local pricing configuration. If prices
   are not configured, token/image counts remain visible and cost is shown as
   zero with a pricing note.
+- For GPT-Image-2 image generation, provider usage tokens are used when
+  present; otherwise the POC estimates output tokens from requested size and
+  quality before applying configured token prices.
 - Usage rows must not contain raw prompts, hidden system/developer
   instructions, RAG chunks, provider request ids, secrets, or billing
   credentials.

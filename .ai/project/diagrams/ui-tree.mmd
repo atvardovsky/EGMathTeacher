@@ -46,6 +46,7 @@ flowchart TB
   UsageBar --> GoalStatus[Goal status and active time]
   UsageBar --> VerifiedOutcome[Verified outcomes and cost per outcome]
   UsageBar --> UsageRefresh[Manual refresh and active-job polling]
+  UsageBar --> BackgroundRetry[Retry one failed background job]
   UsageBar --> UsageDetails[Expandable operation/model/token/image details]
   UsageBar --> DecisionDetails[Safe decision policy and verifier details]
   UsageBar --> BackgroundJobDetails[Safe background job result and error details]
@@ -67,7 +68,9 @@ flowchart TB
   Blocks --> Examples[Example blocks]
   Blocks --> ImageBlock[Image block]
   TurnCard --> Citations[Citation badges]
+  ImageBlock --> AutoImage[Auto-generate required fresh image]
   ImageBlock --> ImageAction[Optional image action]
+  AutoImage --> ImageApi
   ImageAction --> ImageApi[POST /tutor/image]
 
   Main --> Settings[Settings view]

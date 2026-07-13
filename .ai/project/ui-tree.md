@@ -50,6 +50,7 @@ App
       │  │  ├─ Goal status and active-learning time
       │  │  ├─ Verified outcome and cost-per-outcome estimates
       │  │  ├─ Manual refresh action
+      │  │  ├─ Retry-one action for visible failed background jobs
       │  │  └─ Expandable safe operation/model/token/image/decision/background-job details
       │  ├─ Textarea composer
       │  ├─ Voice dialog switch
@@ -69,7 +70,7 @@ App
       │     │  ├─ Text block
       │     │  ├─ Task block
       │     │  ├─ Example block
-      │     │  └─ Image block prompt/action/display
+      │     │  └─ Image block prompt/action/auto-required-generation/display
       │     ├─ Citation badges
       │     └─ Optional generated image inside the related block
       ├─ SettingsView
@@ -137,7 +138,11 @@ App
   and only show safe usage, verifier, decision-policy, and background-job
   result/error details when expanded. The usage bar includes a visible refresh
   action and may poll the safe usage endpoint while expanded or while
-  background jobs are active.
+  background jobs are active. When visible failed background jobs exist, it
+  offers a retry-one action scoped to the signed-in user's recoverable jobs.
+- Required image blocks from a freshly returned tutor answer can start one
+  automatic image generation after the text response is visible. Saved
+  historical turns with missing generated images keep the manual image action.
 
 ## Non-Goals
 

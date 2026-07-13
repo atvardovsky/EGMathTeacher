@@ -386,7 +386,59 @@ describe('TutorService', () => {
       expect.objectContaining({
         id: 'image-1',
         type: 'image',
+        priority: 'required',
         prompt: expect.stringContaining('Нарисуй схему параболы с корнями'),
+      }),
+    );
+  });
+
+  it('persists generated image URLs into the stored tutor turn block', async () => {
+    const { service, db } = createService();
+    db.get.mockReturnValueOnce({
+      id: 'turn-1',
+      answer_json: JSON.stringify({
+        conversationId: 'conv-image',
+        lessonType: 'visual_explanation',
+        answer: 'Покажу схему.',
+        blocks: [
+          {
+            id: 'image-1',
+            type: 'image',
+            status: 'suggested',
+            prompt: 'Схема пересечения графика с Ox',
+            caption: 'График и Ox',
+            altText: 'График пересекает ось Ox',
+            priority: 'required',
+          },
+        ],
+        tasks: [],
+        examples: [],
+        needsImage: true,
+        citations: [],
+      }),
+    });
+
+    const result = await service.generateImage({
+      user,
+      prompt: 'Схема пересечения графика с Ox',
+      conversationId: 'conv-image',
+      lessonSessionId: 'lesson-1',
+      lessonType: 'visual_explanation',
+      turnId: 'turn-1',
+      blockId: 'image-1',
+    });
+
+    expect(result.dataUrl).toBe('data:image/png;base64,abc123');
+    const updateCall = db.run.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE tutor_turns'),
+    );
+    expect(updateCall).toBeDefined();
+    const savedAnswer = JSON.parse(String(updateCall?.[1][0]));
+    expect(savedAnswer.blocks[0]).toEqual(
+      expect.objectContaining({
+        id: 'image-1',
+        status: 'ready',
+        url: 'data:image/png;base64,abc123',
       }),
     );
   });

@@ -454,6 +454,67 @@ describe('BackgroundAiService', () => {
     ).toBe(0);
   });
 
+  it('requeues failed background jobs for a single signed-in user scope', () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO background_ai_jobs (
+         id, type, status, user_id, conversation_id, attempts, payload_json,
+         error_message, scheduled_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, 'learning_window_analysis', 'failed', ?, ?, 2, ?, ?, ?, ?, ?, ?)`,
+      [
+        'job-failed-user',
+        'student-1',
+        'conv-1',
+        JSON.stringify({ triggerReason: 'test' }),
+        'OpenAI request failed with status 400',
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+    db.run(
+      'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['other-user', 'Петя', 'hash', 'student', now],
+    );
+    db.run(
+      `INSERT INTO background_ai_jobs (
+         id, type, status, user_id, conversation_id, attempts, payload_json,
+         error_message, scheduled_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, 'learning_window_analysis', 'failed', ?, ?, 2, ?, ?, ?, ?, ?, ?)`,
+      [
+        'job-failed-other',
+        'other-user',
+        'conv-1',
+        JSON.stringify({ triggerReason: 'test' }),
+        'OpenAI request failed with status 400',
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    expect(service.requeueFailedJobsForUser({ userId: 'student-1', limit: 1 })).toEqual({
+      requeued: 1,
+      jobIds: ['job-failed-user'],
+    });
+    expect(
+      db.get<{ status: string; attempts: number; completed_at: string | null }>(
+        'SELECT status, attempts, completed_at FROM background_ai_jobs WHERE id = ?',
+        ['job-failed-user'],
+      ),
+    ).toEqual({ status: 'pending', attempts: 0, completed_at: null });
+    expect(
+      db.get<{ status: string; attempts: number }>(
+        'SELECT status, attempts FROM background_ai_jobs WHERE id = ?',
+        ['job-failed-other'],
+      ),
+    ).toEqual({ status: 'failed', attempts: 2 });
+  });
+
   it('recovers stale queued observations and terminal running jobs before draining', async () => {
     const oldTime = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
     db.run(

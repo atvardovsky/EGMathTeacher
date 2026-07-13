@@ -50,7 +50,7 @@ export class UsageService {
       policy.responseFormat === 'image'
         ? this.extractImageUsage(request, response)
         : this.extractTokenUsage(response);
-    const pricing = this.resolvePricing(policy.model);
+    const pricing = this.resolvePricing(policy.model, policy.serviceTier);
     const estimatedCostUsd = this.estimateCost(counts, pricing);
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -466,13 +466,46 @@ export class UsageService {
   ): UsageCounts {
     const dataCount = Array.isArray(response.data) ? response.data.length : 0;
     const requestedCount = this.pickNumber(request, ['n']);
+    const imageCount = dataCount || requestedCount || 1;
+    const tokenUsage = this.extractTokenUsage(response);
+    const estimatedOutputTokens =
+      tokenUsage.outputTokens > 0 ? 0 : this.estimateGptImageOutputTokens(request) * imageCount;
+    const outputTokens = tokenUsage.outputTokens + estimatedOutputTokens;
+    const totalTokens = Math.max(tokenUsage.totalTokens, tokenUsage.inputTokens + outputTokens);
     return {
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      imageCount: dataCount || requestedCount || 1,
+      ...tokenUsage,
+      outputTokens,
+      totalTokens,
+      imageCount,
     };
+  }
+
+  private estimateGptImageOutputTokens(request: Record<string, unknown>): number {
+    const quality = this.pickString(request, ['quality'])?.toLowerCase() ?? 'low';
+    const size = this.pickString(request, ['size'])?.toLowerCase() ?? '1024x1024';
+    const normalizedSize = size.replace(/\s+/g, '');
+    const estimates: Record<string, Record<string, number>> = {
+      low: {
+        '1024x1024': 196,
+        '1024x1536': 167,
+        '1536x1024': 167,
+      },
+      medium: {
+        '1024x1024': 1767,
+        '1024x1536': 1367,
+        '1536x1024': 1367,
+      },
+      high: {
+        '1024x1024': 7033,
+        '1024x1536': 5500,
+        '1536x1024': 5500,
+      },
+    };
+    return (
+      estimates[quality]?.[normalizedSize] ??
+      estimates[quality]?.['1024x1024'] ??
+      estimates.low['1024x1024']
+    );
   }
 
   private estimateCost(counts: UsageCounts, pricing: Pricing): number {
@@ -485,8 +518,14 @@ export class UsageService {
     return this.normalizeMoney(tokenCost + imageCost);
   }
 
-  private resolvePricing(model: string): Pricing {
-    const modelPricing = this.parseModelPricing()[model] ?? {};
+  private resolvePricing(model: string, serviceTier?: string): Pricing {
+    const pricingTable = this.parseModelPricing();
+    const serviceTierKey = serviceTier?.trim().toLowerCase();
+    const tierPricingKey = serviceTierKey ? `${model}:${serviceTierKey}` : undefined;
+    const modelPricing =
+      (tierPricingKey ? pricingTable[tierPricingKey] : undefined) ??
+      pricingTable[model] ??
+      {};
     const inputUsdPer1M = this.normalizePrice(
       modelPricing.inputUsdPer1M,
       this.configService.get<number>('ai.usage.defaultInputUsdPer1M') ?? 0,

@@ -52,6 +52,8 @@ interface GenerateImageOptions {
   conversationId?: string;
   lessonSessionId?: string;
   lessonType?: LessonType;
+  turnId?: string;
+  blockId?: string;
 }
 
 interface LessonHistoryOptions {
@@ -384,10 +386,19 @@ export class TutorService {
     if (!imageBase64) {
       throw new BadRequestException('OpenAI did not return image data');
     }
+    const dataUrl = `data:image/png;base64,${imageBase64}`;
+    this.persistGeneratedImage({
+      userId: options.user.id,
+      turnId: options.turnId,
+      blockId: options.blockId,
+      conversationId: options.conversationId,
+      prompt,
+      dataUrl,
+    });
 
     return {
       imageBase64,
-      dataUrl: `data:image/png;base64,${imageBase64}`,
+      dataUrl,
       mimeType: 'image/png',
       revisedPrompt: this.pickString(data, ['revised_prompt']),
       usage: options.lessonSessionId
@@ -492,12 +503,13 @@ export class TutorService {
         ? `Образовательная математическая схема для объяснения: ${text.slice(0, 500)}`
         : undefined);
       const answer = text || 'Не удалось разобрать ответ модели.';
+      const blocks = this.buildResponseBlocks(answer, [], [], imagePrompt, needsImage);
       return {
         conversationId,
         lessonType,
         lessonLifecycle: lifecycle,
         answer,
-        blocks: this.buildResponseBlocks(answer, [], [], imagePrompt, needsImage),
+        blocks: requestedImagePrompt ? this.markImageBlocksRequired(blocks) : blocks,
         tasks: [],
         examples: [],
         needsImage,
@@ -517,7 +529,7 @@ export class TutorService {
     const initialNeedsImage = Boolean(
       parsed.needsImage ?? parsed.needs_image ?? requestedImagePrompt,
     );
-    const blocks = this.completeResponseBlocks(
+    const normalizedBlocks = this.completeResponseBlocks(
       answer,
       initialTasks,
       initialExamples,
@@ -525,6 +537,9 @@ export class TutorService {
       imagePrompt,
       initialNeedsImage,
     );
+    const blocks = requestedImagePrompt
+      ? this.markImageBlocksRequired(normalizedBlocks)
+      : normalizedBlocks;
     const tasks = initialTasks.length > 0 ? initialTasks : this.tasksFromBlocks(blocks);
     const examples =
       initialExamples.length > 0 ? initialExamples : this.examplesFromBlocks(blocks);
@@ -552,14 +567,16 @@ export class TutorService {
     prompt: string,
     answer: TutorAnswer,
     requestId?: string,
-  ): void {
+  ): string {
+    const turnId = randomUUID();
+    answer.turnId = turnId;
     this.db.run(
       `INSERT INTO tutor_turns (
          id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        randomUUID(),
+        turnId,
         userId,
         conversationId,
         requestId ?? null,
@@ -569,6 +586,7 @@ export class TutorService {
         new Date().toISOString(),
       ],
     );
+    return turnId;
   }
 
   private getCachedTutorTurn(userId: string, requestId: string): TutorAnswer | undefined {
@@ -1185,6 +1203,124 @@ export class TutorService {
       priority,
       url,
     };
+  }
+
+  private markImageBlocksRequired(blocks: TutorResponseBlock[]): TutorResponseBlock[] {
+    return blocks.map((block) =>
+      block.type === 'image'
+        ? {
+            ...block,
+            priority: 'required',
+          }
+        : block,
+    );
+  }
+
+  private persistGeneratedImage(options: {
+    userId: string;
+    turnId?: string;
+    blockId?: string;
+    conversationId?: string;
+    prompt: string;
+    dataUrl: string;
+  }): void {
+    const row = this.findTutorTurnForImage(options);
+    if (!row) {
+      return;
+    }
+    const parsed = this.parseJsonObject(row.answer_json);
+    if (!parsed) {
+      return;
+    }
+    const blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+    const updatedBlocks = this.attachImageUrlToBlocks(
+      blocks,
+      options.blockId,
+      options.prompt,
+      options.dataUrl,
+    );
+    if (!updatedBlocks.changed) {
+      return;
+    }
+    parsed.blocks = updatedBlocks.blocks;
+    parsed.needsImage = true;
+    this.db.run(
+      `UPDATE tutor_turns
+       SET answer_json = ?
+       WHERE id = ?
+         AND user_id = ?`,
+      [JSON.stringify(parsed), row.id, options.userId],
+    );
+  }
+
+  private findTutorTurnForImage(options: {
+    userId: string;
+    turnId?: string;
+    conversationId?: string;
+  }): { id: string; answer_json: string } | undefined {
+    if (options.turnId) {
+      const row = this.db.get<{ id: string; answer_json: string }>(
+        `SELECT id, answer_json
+         FROM tutor_turns
+         WHERE id = ?
+           AND user_id = ?
+         LIMIT 1`,
+        [options.turnId, options.userId],
+      );
+      if (row) {
+        return row;
+      }
+    }
+
+    if (!options.conversationId) {
+      return undefined;
+    }
+    return this.db.get<{ id: string; answer_json: string }>(
+      `SELECT id, answer_json
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND conversation_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [options.userId, options.conversationId],
+    );
+  }
+
+  private attachImageUrlToBlocks(
+    rawBlocks: unknown[],
+    blockId: string | undefined,
+    prompt: string,
+    dataUrl: string,
+  ): { blocks: unknown[]; changed: boolean } {
+    let changed = false;
+    const blocks = rawBlocks.map((block) => {
+      if (!block || typeof block !== 'object') {
+        return block;
+      }
+      const record = block as Record<string, unknown>;
+      if (record.type !== 'image') {
+        return block;
+      }
+      const id = this.pickString(record, ['id']);
+      const blockPrompt = this.pickString(record, ['prompt', 'imagePrompt', 'image_prompt']);
+      const matches =
+        (blockId && id === blockId) ||
+        (!blockId && blockPrompt && this.sameImagePrompt(blockPrompt, prompt));
+      if (!matches || this.pickString(record, ['url', 'dataUrl', 'data_url'])) {
+        return block;
+      }
+      changed = true;
+      return {
+        ...record,
+        status: 'ready',
+        url: dataUrl,
+      };
+    });
+    return { blocks, changed };
+  }
+
+  private sameImagePrompt(left: string, right: string): boolean {
+    return left.trim().replace(/\s+/g, ' ') === right.trim().replace(/\s+/g, ' ');
   }
 
   private assignBlockIds(blocks: TutorResponseBlock[]): TutorResponseBlock[] {

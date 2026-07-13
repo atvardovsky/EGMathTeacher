@@ -121,6 +121,35 @@ describe('CurriculumService', () => {
     );
     expect(resolved.candidates).toHaveLength(2);
   });
+
+  it('routes graph/Ox language to function graph intersections before generic scoring', () => {
+    insertCurriculumSkill(db, {
+      skillId: 'calculus.derivative.graph_meaning',
+      topicId: 'calculus.derivatives',
+      topicTitle: 'Производная',
+      skillTitle: 'связывать знак производной с графиком',
+      taskTypeId: 'ege.profile.derivative_short',
+      taskTypeTitle: 'Производная и график',
+      description: 'График производной и функции.',
+    });
+    insertCurriculumSkill(db, {
+      skillId: 'functions.graphs.intersections',
+      topicId: 'functions.graphs',
+      topicTitle: 'Функции и графики',
+      skillTitle: 'связывать число решений с пересечениями графиков',
+      taskTypeId: 'ege.profile.function_short',
+      taskTypeTitle: 'Функции и графики',
+      description: 'Пересечения графика с осью Ox и f(x)=0.',
+    });
+
+    expect(service.resolve('что значит график пересекает ось Ox и f(x)=0')).toEqual(
+      expect.objectContaining({
+        topicId: 'functions.graphs',
+        skillId: 'functions.graphs.intersections',
+        resolutionReason: 'resolved_high_signal',
+      }),
+    );
+  });
 });
 
 function insertCurriculumSkill(

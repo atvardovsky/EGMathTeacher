@@ -66,6 +66,49 @@ describe('LessonService', () => {
     });
   });
 
+  it('finishes superseded active sessions without moving them to the top of history', () => {
+    const firstLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-old',
+      lessonType: 'tutor',
+    });
+    const oldActivity = '2026-07-13T10:00:00.000Z';
+    db.run(
+      `UPDATE lesson_sessions
+       SET last_activity_at = ?, updated_at = ?
+       WHERE id = ?`,
+      [oldActivity, oldActivity, firstLifecycle.lessonSessionId],
+    );
+
+    const nextLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-new',
+      lessonType: 'meeting',
+    });
+
+    const oldSession = db.get<{
+      status: string;
+      finish_reason: string | null;
+      updated_at: string;
+    }>('SELECT status, finish_reason, updated_at FROM lesson_sessions WHERE id = ?', [
+      firstLifecycle.lessonSessionId,
+    ]);
+    const ordered = db.all<{ id: string }>(
+      `SELECT id
+       FROM lesson_sessions
+       WHERE user_id = ?
+       ORDER BY updated_at DESC`,
+      ['student-1'],
+    );
+
+    expect(oldSession).toEqual({
+      status: 'finished',
+      finish_reason: 'superseded_by_new_lesson_session',
+      updated_at: oldActivity,
+    });
+    expect(ordered[0]?.id).toBe(nextLifecycle.lessonSessionId);
+  });
+
   it('does not charge active learning time for the first turn', () => {
     const lifecycle = service.beginTurn({
       userId: 'student-1',

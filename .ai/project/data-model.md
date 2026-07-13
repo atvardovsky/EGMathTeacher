@@ -808,7 +808,10 @@ must not store raw prompts, hidden instructions, RAG chunks, provider request
 ids, secrets, billing credentials, or another user's usage in a response.
 If local pricing is absent, `pricing_source` is `not_configured` and
 `estimated_cost_usd` remains `0`; the UI must label that as missing pricing
-rather than presenting it as a provider bill.
+rather than presenting it as a provider bill. For image operations, provider
+token usage is used when present; when GPT-Image-2 image output usage is
+absent, the POC estimates output tokens from requested size and quality before
+applying the configured token price.
 
 ### `tutor_turns`
 
@@ -829,9 +832,11 @@ Source owner: `apps/api/src/tutor`.
 contract includes ordered `blocks` for text, task, example, and image visual
 plan blocks, while retaining legacy `answer`, `tasks`, `examples`,
 `needsImage`, and `imagePrompt` fields for compatibility with background
-analysis and older clients. Image bytes are not stored in `tutor_turns`;
-generated images are remote provider outputs returned to the web client as
-data URLs in the current POC.
+analysis and older clients. When `POST /tutor/image` receives tutor-turn and
+image-block identity, the generated PNG data URL is persisted back into the
+matching image block in `answer_json` so resumed POC lessons can show the
+visual. This is local POC continuity storage, not a production media-storage
+design.
 
 The saved-lessons endpoint also uses `tutor_turns` directly for turn previews
 and backward-compatible legacy history. When a conversation has stored turns

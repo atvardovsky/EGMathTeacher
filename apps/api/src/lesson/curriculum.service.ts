@@ -46,6 +46,10 @@ export class CurriculumService {
   resolve(message: string): CurriculumContext {
     const normalized = message.toLowerCase();
     const rows = this.getRuntimeSkills();
+    const highSignal = this.resolveHighSignalContext(normalized, rows);
+    if (highSignal) {
+      return highSignal;
+    }
     const scored: ScoredCurriculumSkill[] = rows
       .map((skill) => ({
         skill,
@@ -102,6 +106,67 @@ export class CurriculumService {
   private scoreSkill(normalizedMessage: string, skill: CurriculumSkillRow): number {
     const terms = this.searchTermsFor(skill);
     return terms.filter((term) => normalizedMessage.includes(term)).length;
+  }
+
+  private resolveHighSignalContext(
+    normalizedMessage: string,
+    rows: CurriculumSkillRow[],
+  ): CurriculumContext | undefined {
+    const intersectionSignal =
+      /(ось\s*o?x|ox\b|пересеч|f\s*\(\s*x\s*\)\s*=\s*0|кор(е|ё)н[ьи]? функц|нули? функц)/iu.test(
+        normalizedMessage,
+      );
+    if (intersectionSignal) {
+      return this.contextFromSkill(
+        rows.find((row) => row.skill_id === 'functions.graphs.intersections'),
+        'resolved_high_signal',
+      );
+    }
+
+    const graphReadingSignal =
+      /(координат|точк[аиу]?\s*\(|\([^)]+;[^)]+\)|значени[ея]\s*y|чему равно\s*y|график)/iu.test(
+        normalizedMessage,
+      ) &&
+      !/(производн|касательн|скорост[ьи]|derivative)/iu.test(normalizedMessage);
+    if (graphReadingSignal) {
+      return this.contextFromSkill(
+        rows.find((row) => row.skill_id === 'functions.graphs.read_value'),
+        'resolved_high_signal',
+      );
+    }
+
+    return undefined;
+  }
+
+  private contextFromSkill(
+    selected: CurriculumSkillRow | undefined,
+    resolutionReason: CurriculumContext['resolutionReason'] | 'resolved_high_signal',
+  ): CurriculumContext | undefined {
+    if (!selected) {
+      return undefined;
+    }
+    return {
+      topicId: selected.topic_id,
+      topicTitle: selected.topic_title,
+      skillId: selected.skill_id,
+      skillTitle: selected.skill_title,
+      taskTypeId: selected.task_type_id,
+      taskTypeTitle: selected.task_type_title,
+      verifierKind:
+        selected.verifier_kind === 'linear_equation_numeric'
+          ? 'linear_equation_numeric'
+          : 'unsupported',
+      confidence: 'high',
+      resolutionReason,
+      candidates: [
+        {
+          topicId: selected.topic_id,
+          skillId: selected.skill_id,
+          taskTypeId: selected.task_type_id,
+          score: 99,
+        },
+      ],
+    };
   }
 
   private searchTermsFor(skill: CurriculumSkillRow): string[] {

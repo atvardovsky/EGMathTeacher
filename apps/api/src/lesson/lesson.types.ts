@@ -145,7 +145,7 @@ export interface CurriculumContext {
   taskTypeTitle: string;
   verifierKind: 'linear_equation_numeric' | 'unsupported';
   confidence: 'low' | 'medium' | 'high';
-  resolutionReason?: 'no_match' | 'low_confidence' | 'ambiguous' | 'resolved';
+  resolutionReason?: 'no_match' | 'low_confidence' | 'ambiguous' | 'resolved' | 'resolved_high_signal';
   candidates?: Array<{
     topicId: string;
     skillId: string;

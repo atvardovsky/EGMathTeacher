@@ -51,7 +51,8 @@ implemented.
 Current guards:
 
 - `AuthGuard` protects tutor endpoints.
-- `AuthGuard` protects the signed-in user's usage summary endpoint.
+- `AuthGuard` protects the signed-in user's usage summary and background job
+  recovery endpoints.
 - `AdminGuard` protects admin knowledge endpoints.
 
 Guard coverage details are owned by `.ai/project/guards.md`.
@@ -118,7 +119,9 @@ Potential student data in this POC:
   user's operation/model/token/image/cost estimates
 - backend-generated lesson tasks, bounded student attempts, deterministic
   verifier results, and mastery evidence for supported task types
-- generated images and prompts
+- generated images and prompts; in the POC, generated image data URLs can be
+  stored inside the signed-in user's `tutor_turns.answer_json` image block for
+  lesson continuity
 - uploaded knowledge file metadata
 - voice transcripts and transcript files
 - remote OpenAI files/vector stores/model outputs
@@ -155,6 +158,11 @@ show raw prompts, hidden system/developer instructions, RAG chunks, provider
 request ids, secrets, billing credentials, stack traces, or another user's
 usage. Cost values are local estimates based on configured prices and are not
 provider billing proof.
+
+The usage panel may offer background job recovery only for recoverable failed
+jobs owned by the signed-in user. The recovery request must not expose raw
+background payloads and must schedule later worker execution instead of
+running a provider call synchronously in the HTTP request.
 
 Browser voice output in the tutor workspace reads only visible tutor answer
 blocks through local speech synthesis. It must not speak hidden prompts,

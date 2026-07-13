@@ -194,6 +194,11 @@ export interface UserUsageSummary {
   backgroundJobs: BackgroundJobUsageItem[];
 }
 
+export interface BackgroundRecoveryResult {
+  requeued: number;
+  jobIds: string[];
+}
+
 export interface TutorUsageSnapshot {
   currency: 'USD';
   lesson: UsageTotals;
@@ -282,6 +287,7 @@ export type TutorResponseBlock =
   | TutorImageBlock;
 
 export interface TutorAnswer {
+  turnId?: string;
   conversationId: string;
   lessonType?: LessonType;
   lessonLifecycle: TutorLessonLifecycle;

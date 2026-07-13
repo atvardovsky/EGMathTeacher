@@ -52,7 +52,9 @@ visible next actions.
   voices. Browser speech-recognition timeouts, no-speech stops, permission
   blocks, device errors, and network errors are surfaced near the mic control;
   voice-dialog auto-listen retries once after silence before falling back to
-  manual mic start.
+  manual mic start. Short low-confidence voice fragments without math or lesson
+  intent are copied into the composer for confirmation instead of being sent as
+  a tutor request.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
@@ -64,7 +66,10 @@ visible next actions.
 - Tutor turns are attached to a lesson session with a goal, success criteria,
   goal status, active-learning time, daily/continuous learning-limit status,
   and a progress/regression strategy signal. The POC uses configurable
-  educational time-limit heuristics, not clinical fatigue diagnosis.
+  educational time-limit heuristics, not clinical fatigue diagnosis. Starting a
+  new conversation boundary finishes other active lesson sessions for the same
+  signed-in student so stale sessions do not remain active after UI or voice
+  routing drift.
 - Tutor turns run through a Lesson Decision Agent before final answer
   generation. The decision agent selects allowed teaching actions such as
   requesting an attempt, changing explanation strategy, suggesting visual
@@ -94,9 +99,11 @@ visible next actions.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
-- Explicit student visual requests are guaranteed to surface an image block
-  and visible create-diagram action, while actual bitmap generation remains a
-  separate user-triggered step.
+- Explicit student visual requests are guaranteed to surface a required image
+  block. For a freshly returned tutor answer, the web client starts the diagram
+  generation once automatically for that required block; saved historical turns
+  with missing images still expose a visible create-diagram action instead of
+  spending again on page load.
 - Structured tutor answers include lesson lifecycle state and a compact usage
   snapshot for the current lesson/day.
 - Static web UI text supports Russian and English locale switching across
@@ -117,7 +124,9 @@ visible next actions.
   signed-in user. It must not expose raw prompts, hidden instructions, or
   another user's job rows. The web client offers a manual refresh action and
   polls `GET /usage/me/summary` while the usage details panel is open or while
-  any visible background job is `pending` or `running`.
+  any visible background job is `pending` or `running`. When a safe visible
+  background job is failed, the signed-in user can requeue one failed job at a
+  time from the usage panel.
 - Tutor prompts include the stored student profile summary when available so
   explanations adapt to the teenager across compacted sessions.
 - Tutor prompts also include DB-backed continuity context for the active
@@ -183,8 +192,10 @@ visible next actions.
   create/upload/attach/delete calls.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
-- Image generation remains asynchronous and explicit; generated images render
-  inside the same tutor turn after the text/blocks response is already shown.
+- Image generation remains asynchronous and never blocks the text response.
+  Required images requested in the current turn can be generated automatically
+  after the tutor answer appears; generated data URLs are persisted back into
+  the stored tutor-turn image block for continuity in the POC.
 - Imported WebRTC/Realtime voice assistant under `/webrtc`.
 
 ## Architecture

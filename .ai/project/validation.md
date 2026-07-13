@@ -36,8 +36,11 @@ Current covered areas:
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
   storage, profile/strategy refresh merging, failed window observation release,
-  and stale queued/running state recovery
-- tutor structured output and image data URL behavior
+  stale queued/running state recovery, and signed-in-user-scoped failed-job
+  requeue behavior
+- tutor structured output, required image-block normalization for explicit
+  visual requests, and generated image data URL persistence into the stored
+  tutor turn
 - tutor lesson-history retrieval for canonical lesson sessions, stored tutor
   turns, prompt continuity context, and legacy tutor-turn conversations
 - AI model-provider facade delegation and role/operation policy application
@@ -53,7 +56,8 @@ Current covered areas:
   independent success, cumulative cross-lesson mastery counting, task-bank
   hint ladders, invalid-format answer attempts with format hints,
   misconception-routed hints, `TASK_BANK_REQUIRED` fallback behavior, and
-  cost-per-verified-outcome summary behavior, plus user-scoped background job
+  cost-per-verified-outcome summary behavior, GPT-Image-2 output-token
+  estimation when image responses omit usage, plus user-scoped background job
   result/error projection in usage summaries
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,

@@ -23,6 +23,7 @@ Used by:
 - `TutorController`
 - `StudentProfileController`
 - `UsageController`
+- `BackgroundAiController`
 
 Protected endpoints:
 
@@ -31,6 +32,7 @@ Protected endpoints:
 - `POST /tutor/message`
 - `POST /tutor/image`
 - `GET /usage/me/summary`
+- `POST /usage/me/background/recover`
 
 ### `AdminGuard`
 

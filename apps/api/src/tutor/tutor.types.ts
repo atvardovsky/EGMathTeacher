@@ -220,6 +220,7 @@ export type TutorResponseBlock =
   | TutorImageBlock;
 
 export interface TutorAnswer {
+  turnId?: string;
   conversationId: string;
   lessonType: LessonType;
   lessonLifecycle: TutorLessonLifecycle;

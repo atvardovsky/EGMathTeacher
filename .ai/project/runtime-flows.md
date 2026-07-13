@@ -121,7 +121,10 @@ This file records runtime flows from current source evidence.
 
 ## Tutor Message Flow
 
-1. Authenticated user submits text or browser speech-recognition text.
+1. Authenticated user submits text or browser speech-recognition text. If a
+   voice transcript is a short low-confidence fragment without math or lesson
+   intent, the web client copies it into the composer and asks the student to
+   confirm/edit it instead of sending it to the tutor API.
 2. Web client calls `POST /tutor/message` with:
    - `message`
    - optional `conversationId`
@@ -142,11 +145,13 @@ This file records runtime flows from current source evidence.
 5. `LessonService` creates or touches the active `lesson_sessions` row for the
    conversation and lesson type. If an older client reuses a conversation id
    with a different lesson type, the previous active session is finished and a
-   new session is created. The first turn adds no active-learning seconds; later
-   quick turns use the configured minimum-turn heuristic. The service updates
-   turn count, active-learning heuristic seconds, daily and continuous
-   learning-limit state, goal status, and the current scoped
-   progress/regression strategy signal.
+   new session is created. When a new conversation boundary starts, other
+   non-terminal lesson sessions for the same signed-in student are finished as
+   superseded. The first turn adds no active-learning seconds; later quick
+   turns use the configured minimum-turn heuristic. The service updates turn
+   count, active-learning heuristic seconds, daily and continuous learning-limit
+   state, goal status, and the current scoped progress/regression strategy
+   signal.
 6. If a hard daily or continuous learning limit is reached, `TutorService`
    returns a local stop response, persists the tutor turn, and does not call
    the model for a new explanation.
@@ -235,7 +240,11 @@ This file records runtime flows from current source evidence.
     decision policy, and verifier result.
 25. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
     then renders ordered response blocks, lesson-type badge, citations, and
-    optional image actions inside the same tutor turn.
+    optional image actions inside the same tutor turn. If the freshly returned
+    answer contains a required image block from an explicit visual request, the
+    web client starts one `POST /tutor/image` call for that block after the text
+    response is visible. Historical saved turns with missing image URLs keep the
+    manual create-diagram action.
 26. If browser speech synthesis is supported and the student has voice dialog
     enabled, the web client speaks the visible tutor answer locally. The spoken
     text is derived from the ordered response blocks, capped for length, and is
@@ -325,7 +334,13 @@ This file records runtime flows from current source evidence.
 13. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
     stay visible in `background_ai_jobs` and appear as safe error previews in
     the signed-in user's expanded usage panel.
-14. Background work must not store non-teaching sensitive details and must not
+14. A signed-in user can requeue a small number of their own final failed jobs
+    from the usage panel through `POST /usage/me/background/recover`. The API
+    scopes recovery to the authenticated user, supports optional conversation
+    and job-type filters, resets attempts, and only requeues safe background job
+    types. Recovery schedules future worker execution; it does not run the
+    OpenAI call synchronously in the request.
+15. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow
@@ -334,18 +349,26 @@ This file records runtime flows from current source evidence.
    status, and priority, or legacy `needsImage=true` plus `imagePrompt`.
    Explicit student requests for a drawing, diagram, graph, image, or visual
    explanation are normalized into an image block if the model omitted one.
-2. User clicks the prominent create-diagram action in the web client. The
-   current POC keeps image
-   generation explicit instead of blocking the immediate tutor response.
+2. For a fresh tutor answer whose image block has `priority=required`, the web
+   client automatically starts one create-diagram request after the text answer
+   is rendered. For older saved turns, optional image blocks, or failed
+   automatic generation, the student can still click the visible create-diagram
+   action.
 3. Web client calls `POST /tutor/image` with prompt/context plus optional
-   conversation id, lesson session id, and lesson type for usage attribution.
+   conversation id, lesson session id, lesson type, tutor-turn id, and image
+   block id for usage attribution and same-turn persistence.
 4. API calls the `tutorImage` model-provider operation. The current
    implementation resolves the image operation model policy, then delegates to
    OpenAI image generation using configured size and quality.
 5. `AiModelService` writes image usage to `ai_usage_ledger` when user and
-   lesson context are present.
-6. API returns a PNG data URL and optional usage snapshot.
-7. Web client refreshes usage and renders the generated image in the same
+   lesson context are present. If the image provider response omits usage
+   tokens, `UsageService` estimates GPT-Image-2 output tokens from the
+   requested size and quality so the local cost estimate does not silently stay
+   at zero.
+6. API persists the generated PNG data URL into the matching stored
+   `tutor_turns.answer_json` image block when turn/block identity is available.
+7. API returns a PNG data URL and optional usage snapshot.
+8. Web client refreshes usage and renders the generated image in the same
    tutor turn and image block where the visual was requested.
 
 ## Usage Summary Flow
@@ -373,7 +396,11 @@ This file records runtime flows from current source evidence.
    visible manual refresh button, and through lightweight polling while the
    usage details panel is open or any visible background job is `pending` or
    `running`.
-7. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
+7. If the summary contains a visible failed background job, the usage bar shows
+   a retry-one action that calls `POST /usage/me/background/recover` and then
+   refreshes the safe summary. This is an explicit user action and is limited
+   to the signed-in user's recoverable background jobs.
+8. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
    background job payloads, provider request ids, secrets, stack traces, or
    another user's rows.
 

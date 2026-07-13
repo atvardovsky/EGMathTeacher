@@ -18,6 +18,8 @@ interface TutorImageBody {
   conversationId?: string;
   lessonSessionId?: string;
   lessonType?: LessonType;
+  turnId?: string;
+  blockId?: string;
 }
 
 @Controller('tutor')
@@ -65,6 +67,8 @@ export class TutorController {
       conversationId: body.conversationId,
       lessonSessionId: body.lessonSessionId,
       lessonType: body.lessonType,
+      turnId: body.turnId,
+      blockId: body.blockId,
     });
   }
 }

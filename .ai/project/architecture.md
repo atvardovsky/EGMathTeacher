@@ -81,7 +81,7 @@ flowchart LR
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
-| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, and legacy per-turn background jobs. |
+| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
 | `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
 | `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, verified outcome counts, and safe background job status/result/error projections. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
@@ -116,9 +116,11 @@ Main UI areas in `apps/web/src/App.tsx`:
   restart plus visible recognition stop reasons in voice-dialog mode
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
-  and expanded operation/model/token/image/decision details
+  expanded operation/model/token/image/decision details, background job status,
+  and retry-one recovery for visible failed background jobs
 - tutor turn cards for ordered text, task, example, and image response blocks,
-  lesson-type badge, citations, and optional image generation
+  lesson-type badge, citations, optional image generation, and automatic
+  generation for fresh required image blocks after the text answer is visible
 - admin knowledge screen for file upload and status table
 - settings screen for language, voice input language, account info, read-only
   student profile memory, recent session summaries, and skill
@@ -175,8 +177,9 @@ configuration.
 | `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile. |
 | `GET /tutor/lessons` | authenticated | Return signed-in user's recent lesson sessions, summaries, stored turns, and legacy saved tutor-turn discussions for resume UI. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. |
-| `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context. |
+| `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context and optionally persist the generated POC data URL into the matching tutor-turn image block. |
 | `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
+| `POST /usage/me/background/recover` | authenticated | Requeue one or a few recoverable failed background jobs scoped to the signed-in user, without exposing raw job payloads or running provider calls synchronously. |
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
