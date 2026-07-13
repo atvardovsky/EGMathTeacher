@@ -84,9 +84,9 @@ This file records runtime flows from current source evidence.
    prompt. When `requestId` already has a stored tutor turn for the signed-in
    user, the API returns that stored answer instead of calling the models again.
 4. `CurriculumService` resolves a canonical topic, skill, task type, and
-   verifier kind from active SQLite `curriculum_skills` rows. Unknown or
-   unmatched topics remain `unknown`; they do not fall back to the
-   linear-equation context. The current verified vertical is
+   verifier kind from active SQLite `curriculum_skills` rows. Unknown,
+   low-confidence, or ambiguous topics remain `unknown` with candidate context;
+   they do not fall back to the linear-equation context. The current verified vertical is
    `algebra.linear.solve_one_variable` /
    `ege.base.linear_equation_numeric`; unsupported skills remain routing
    context but cannot produce verified mastery.
@@ -107,28 +107,34 @@ This file records runtime flows from current source evidence.
    active `curriculum_mastery_criteria`, and records the policy result on the
    attempt. Correct/equivalent answers write `mastery_evidence` and a verified
    progress row only when the imported evidence sequence allows mastery.
-8. `StudentProfileService` loads the stored student profile summary and
+   Independent successes are counted across the student's lesson sessions by
+   canonical `source_task_id`, not by the local `lesson_tasks.id`, and active
+   criteria are required by default for supported verifier skills.
+8. If the answer is incorrect, task-bank `common_errors_json` can route the
+   next hint through an imported `curriculum_misconceptions` row before the
+   generic hint ladder is used.
+9. `StudentProfileService` loads the stored student profile summary and
    explanation strategy when available.
-9. `LessonDecisionService` calls the `lessonDecision` model-provider
+10. `LessonDecisionService` calls the `lessonDecision` model-provider
    operation with the lesson lifecycle, current message, recent turns, profile
    context, scoped strategy signal, curriculum context, backend verifier
    evidence, limits, and allowed lesson-agent tools. The decision call can be
    disabled with `AI_LESSON_DECISION_ENABLED=false` or fail fast to a local
    fallback after `AI_LESSON_DECISION_TIMEOUT_MS`.
-10. `LessonPolicyService` accepts or rejects proposed actions. The decision
+11. `LessonPolicyService` accepts or rejects proposed actions. The decision
    agent cannot directly finish lessons or mutate profiles. Self-reported
    understanding remains weak evidence and should lead to a requested attempt
    or explanation. Attempt-based completion requires backend-observed attempt
    evidence; practice and mistake-review completion require backend verifier
    evidence.
-11. `LessonDecisionService` stores action-level observability in
+12. `LessonDecisionService` stores action-level observability in
    `lesson_decisions`, including tool name, sanitized decision JSON, policy
    result, accepted/rejected status, evidence level, verifier result when
    available, latency, model, local usage correlation id, fallback marker, and
    outcome. `propose_profile_delta` is rejected from immediate mutation and
    routed into sanitized background observations.
-12. `KnowledgeService` returns configured or uploaded vector store ids.
-13. `TutorService` builds a model-provider request:
+13. `KnowledgeService` returns configured or uploaded vector store ids.
+14. `TutorService` builds a model-provider request:
    - Russian ЕГЭ tutor instructions
    - user name
    - source type
@@ -142,41 +148,41 @@ This file records runtime flows from current source evidence.
    - optional `file_search` tool
    - local-only usage context for user, conversation, lesson session, and
      lesson type plus a local correlation id
-14. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
+15. `AiModelService` resolves the `tutorAnswer` or `tutorAnswerWithRag`
    operation policy, including model, metadata, and optional service tier.
-15. The current OpenAI-backed provider calls Responses API.
-16. After the provider returns, `AiModelService` strips local usage context
+16. The current OpenAI-backed provider calls Responses API.
+17. After the provider returns, `AiModelService` strips local usage context
     from provider payloads and writes `ai_usage_ledger` when usage context is
     present.
-17. API parses model output as structured tutor JSON when possible. The
+18. API parses model output as structured tutor JSON when possible. The
    preferred response contract is an ordered `blocks` array containing text,
    task, example, and image blocks. Legacy `answer`, `tasks`, `examples`,
    `needsImage`, and `imagePrompt` fields remain populated for compatibility.
    The preferred contract also includes `lessonLifecycle.goalStatus` so the
    model can report policy-accepted goal completion or blockage.
-18. API extracts citations from file-search annotations/results.
-19. If the lesson needs an independent attempt and the resolved curriculum
+19. API extracts citations from file-search annotations/results.
+20. If the lesson needs an independent attempt and the resolved curriculum
     vertical is supported, `MathVerifierService` asks `TaskBankService` for an
     active imported `task_bank_tasks` row, appends and stores the selected
     verifiable task plus hint ladder without exposing the expected answer, and
     only uses the hardcoded linear-equation task as an explicitly logged POC
     empty-DB fallback. `TASK_BANK_REQUIRED=true` disables that fallback.
-20. `LessonService` completes the turn, stores a lesson effectiveness signal,
+21. `LessonService` completes the turn, stores a lesson effectiveness signal,
     and accepts goal completion only when backend policy accepted a
     `propose_goal_completion` action. Otherwise `goalStatus=reached` remains a
     pending model suggestion and the lesson stays in progress.
-21. API writes the tutor turn, lesson type, and optional request id to
+22. API writes the tutor turn, lesson type, and optional request id to
     `tutor_turns`.
-22. API enqueues background AI work. In batched mode, it stores a sanitized
+23. API enqueues background AI work. In batched mode, it stores a sanitized
     tutor-turn observation with lesson type and schedules or reschedules a grouped
     `learning_window_analysis` job. In legacy mode, it enqueues per-turn
     learning-signal extraction and separate interval jobs for session summary,
     student profile refresh, teaching strategy refresh, or rare quality review.
     Enqueue failures are isolated from the immediate answer path.
-23. API returns the tutor answer with lesson lifecycle, compact usage snapshot
+24. API returns the tutor answer with lesson lifecycle, compact usage snapshot
     for current lesson/day, and user-visible debug facts for curriculum,
     decision policy, and verifier result.
-24. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
+25. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
     then
     renders ordered response blocks, lesson-type badge, citations, and
     optional image actions inside the same tutor turn.
@@ -349,8 +355,10 @@ Local knowledge-pack import/sync:
    `--wait-ready` polls vector-store indexing readiness with configurable
    attempts and delay, and marks a job `indexed` only when remote status is
    `completed`. Timeout leaves the job attached with timeout metadata.
-   `--recover-rag` retries failed jobs that recorded recoverable OpenAI file
-   ids.
+   `--recover-rag` retries failed or attached-timeout jobs that recorded
+   recoverable OpenAI file ids and waits by default; without waiting, queued
+   replacements remain `indexing` and stale active attachments are not
+   removed.
 10. Non-dry-run RAG sync remains a protected live OpenAI side effect even
     though local idempotency and recovery metadata exist.
 

@@ -145,10 +145,18 @@ export interface CurriculumContext {
   taskTypeTitle: string;
   verifierKind: 'linear_equation_numeric' | 'unsupported';
   confidence: 'low' | 'medium' | 'high';
+  resolutionReason?: 'no_match' | 'low_confidence' | 'ambiguous' | 'resolved';
+  candidates?: Array<{
+    topicId: string;
+    skillId: string;
+    taskTypeId: string;
+    score: number;
+  }>;
 }
 
 export interface LessonTaskEvidence {
   taskId: string;
+  sourceTaskId?: string;
   prompt: string;
   topicId: string;
   skillId: string;
@@ -156,12 +164,14 @@ export interface LessonTaskEvidence {
   status: 'pending' | 'attempted' | 'verified_correct' | 'blocked';
   source?: 'backend_generated' | 'model_imported' | 'task_bank_imported';
   hintLadder?: string[];
+  commonErrors?: string[];
 }
 
 export interface LessonVerifierEvidence {
   attemptSubmitted: boolean;
   taskId?: string;
   attemptId?: string;
+  sourceTaskId?: string;
   result: LessonVerifierResult;
   expectedAnswer?: string;
   errorCode?: string;
@@ -169,11 +179,18 @@ export interface LessonVerifierEvidence {
   masteryUpdateAllowed: boolean;
   masteryPolicyReason?: string;
   masteryEvidenceLevel?: LessonEvidenceLevel;
+  currentLessonVerifiedSuccessCount?: number;
+  currentLessonIndependentSuccessCount?: number;
+  cumulativeVerifiedSuccessCount?: number;
+  cumulativeIndependentSuccessCount?: number;
   verifiedSuccessCount?: number;
   independentSuccessCount?: number;
   requiredSuccessCount?: number;
   nextHint?: string;
+  nextHintRoute?: string;
+  misconceptionId?: string;
   hintLadder?: string[];
+  commonErrors?: string[];
   topicId?: string;
   skillId?: string;
   taskTypeId?: string;

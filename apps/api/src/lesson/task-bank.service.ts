@@ -12,6 +12,7 @@ interface TaskBankRow {
   prompt: string;
   expected_answer: string;
   hint_ladder_json: string;
+  common_errors_json: string;
   verifier_kind: string;
 }
 
@@ -20,6 +21,7 @@ export interface TaskBankSelection {
   prompt: string;
   expectedAnswer: string;
   hintLadder: string[];
+  commonErrors: string[];
   task: TutorTask;
 }
 
@@ -40,11 +42,13 @@ export class TaskBankService {
       return undefined;
     }
     const hintLadder = this.parseStringArray(row.hint_ladder_json);
+    const commonErrors = this.parseStringArray(row.common_errors_json);
     return {
       sourceTaskId: row.task_id,
       prompt: row.prompt,
       expectedAnswer: row.expected_answer,
       hintLadder,
+      commonErrors,
       task: {
         title: input.curriculum.taskTypeTitle,
         prompt: row.prompt,
@@ -61,7 +65,7 @@ export class TaskBankService {
   }): TaskBankRow | undefined {
     return this.db.get<TaskBankRow>(
       `SELECT task_id, topic_id, skill_id, task_type_id, difficulty, prompt,
-              expected_answer, hint_ladder_json, verifier_kind
+              expected_answer, hint_ladder_json, common_errors_json, verifier_kind
        FROM task_bank_tasks
        WHERE COALESCE(sync_status, 'active') = 'active'
          AND topic_id = ?
@@ -73,7 +77,7 @@ export class TaskBankService {
            FROM lesson_tasks
            WHERE lesson_tasks.user_id = ?
              AND lesson_tasks.skill_id = task_bank_tasks.skill_id
-             AND lesson_tasks.prompt = task_bank_tasks.prompt
+             AND lesson_tasks.source_task_id = task_bank_tasks.task_id
          )
        ORDER BY
          CASE difficulty
@@ -102,15 +106,15 @@ export class TaskBankService {
   }): TaskBankRow | undefined {
     return this.db.get<TaskBankRow>(
       `SELECT task_id, topic_id, skill_id, task_type_id, difficulty, prompt,
-              expected_answer, hint_ladder_json, verifier_kind
+              expected_answer, hint_ladder_json, common_errors_json, verifier_kind
        FROM task_bank_tasks
        LEFT JOIN (
-         SELECT prompt AS used_prompt, COUNT(*) AS use_count, MAX(created_at) AS last_used_at
+         SELECT source_task_id, COUNT(*) AS use_count, MAX(created_at) AS last_used_at
          FROM lesson_tasks
          WHERE user_id = ?
            AND skill_id = ?
-         GROUP BY prompt
-       ) AS task_usage ON task_usage.used_prompt = task_bank_tasks.prompt
+         GROUP BY source_task_id
+       ) AS task_usage ON task_usage.source_task_id = task_bank_tasks.task_id
        WHERE COALESCE(sync_status, 'active') = 'active'
          AND topic_id = ?
          AND skill_id = ?

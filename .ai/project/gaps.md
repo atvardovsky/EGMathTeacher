@@ -73,9 +73,10 @@ decisions.
   fallback.
 - Tutor messages can carry a request id for idempotent retry handling.
 - A first deterministic verified learning loop exists for linear equations:
-  task-bank-backed task, stored hint ladder, student attempt, numeric verifier,
-  imported mastery-criteria gate, mastery evidence only after policy
-  acceptance, and cost-per-verified-outcome visibility.
+  task-bank-backed task, canonical source task identity, stored hint ladder and
+  common-error ids, student attempt, numeric verifier, imported
+  mastery-criteria gate, misconception-aware hint routing, mastery evidence
+  only after policy acceptance, and cost-per-verified-outcome visibility.
 - Accepted `mark_goal_blocked` policy now updates durable lesson goal state.
 - Profile-delta proposals from the immediate decision path are routed into
   sanitized background observations instead of mutating the profile.
@@ -150,8 +151,9 @@ Knowledge-pack runtime and sync review gaps are repaired in
 
 - non-dry-run OpenAI RAG sync has not been validated with live credentials in
   this workspace
-- recovery covers failed jobs that recorded recoverable OpenAI file ids; fully
-  arbitrary remote/local divergence may still need operator cleanup
+- recovery covers failed jobs and attached indexing-timeout jobs that recorded
+  recoverable OpenAI file ids; fully arbitrary remote/local divergence may
+  still need operator cleanup
 - archive guardrails bound local trusted-operator packs, but this is not a
   public web-upload workflow
 - parallel sync claims protect upload/attach paths for the same

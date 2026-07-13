@@ -43,13 +43,20 @@ Current implementation state:
   `task_bank_tasks` before using the POC empty-DB fallback task.
 - `TaskBankService` returns imported hint ladders and orders reusable tasks by
   prior user exposure before deterministic difficulty/task id order.
+- `TaskBankService` and `MathVerifierService` preserve canonical
+  `source_task_id` and imported `common_errors` on lesson tasks so repeated
+  copies of one task do not count as independent mastery evidence and hints
+  can route through misconception playbooks.
 - `MathVerifierService` records task-bank lesson tasks as
   `task_bank_imported`, logs the empty-DB generated fallback, and can reject
   fallback usage with `TASK_BANK_REQUIRED=true`.
 - `MasteryPolicyService` reads imported `curriculum_mastery_criteria` and
   gates mastery evidence, progress rows, and practice/mistake-review
   completion. One correct answer remains only a verified attempt when the
-  imported criteria require repeated independent success.
+  imported criteria require repeated independent success. The policy counts
+  cumulative successes across lesson sessions, deduplicates independent
+  successes by `source_task_id`, and requires imported criteria by default for
+  supported verifier skills.
 - Imported `curriculum_*` and `task_bank_tasks` rows are the active runtime
   source for lesson routing and supported task selection.
 - Structured import validates required files, required fields, enum-like
@@ -71,6 +78,7 @@ validated knowledge pack
 -> SQLite curriculum and task-bank tables
 -> DB-backed curriculum resolver
 -> task-bank-backed task selection
+-> canonical source task identity and common-error metadata
 -> supported verifier contract
 -> student attempt
 -> deterministic verifier
@@ -83,8 +91,8 @@ Rules:
 
 - Imported structured DB rows become the source for curriculum and task-bank
   runtime lookups after validation.
-- Unknown or low-confidence topic resolution must remain `unknown` or trigger
-  clarification. It must not silently fall back to linear equations.
+- Unknown, low-confidence, or ambiguous topic resolution must remain `unknown`
+  or trigger clarification. It must not silently fall back to linear equations.
 - A task can produce verified mastery only when its `verifier_kind` is
   implemented by backend code.
 - RAG remains shared teaching/reference knowledge for the AI. Student profile
@@ -101,16 +109,21 @@ Implementation steps:
 Implemented:
 
 - `CurriculumService.resolve()` reads active SQLite curriculum skills.
-- No-match routing returns `unknown`.
+- No-match, low-confidence, and tied ambiguous routing returns `unknown` with
+  candidate context for debugging/clarification.
 - `TaskBankService.selectTask()` reads active `task_bank_tasks` by topic,
   skill, task type, verifier kind, and prior task use, and returns hint
-  ladders for tutor/verifier context.
+  ladders plus common-error ids for tutor/verifier context.
 - `MathVerifierService.ensureBackendTask()` selects imported task-bank rows for
   supported verifier kinds, stores `task_bank_imported`, and keeps hardcoded
   generation only as a logged POC fallback that can be disabled with
   `TASK_BANK_REQUIRED=true`.
 - `MasteryPolicyService` enforces imported mastery criteria before
-  `mastery_evidence` or progress rows are written.
+  `mastery_evidence` or progress rows are written, using cumulative
+  cross-lesson evidence and source-task deduplication.
+- `HintRoutingService` maps verifier errors plus task-bank `common_errors` to
+  imported `curriculum_misconceptions` hints before falling back to the hint
+  ladder.
 
 Tests:
 
@@ -119,11 +132,18 @@ Tests:
 - unsupported imported skill can route context but cannot produce verified
   mastery;
 - task-bank task is selected and persisted to `lesson_tasks`;
+- task-bank source task ids and common-error ids are persisted to
+  `lesson_tasks`;
 - a pending task is reused instead of generating a duplicate;
 - deterministic verifier writes `student_attempts` for selected linear tasks;
 - imported mastery criteria can prevent one successful attempt from writing
   `mastery_evidence`, then allow mastery after the required independent
   success sequence;
+- repeated copies of the same `source_task_id` do not satisfy independent
+  success requirements;
+- a verified success from a prior lesson session can count toward cumulative
+  mastery when the current attempt provides fresh deterministic evidence;
+- common-error ids route hints through imported misconception rows;
 - `TASK_BANK_REQUIRED=true` fails instead of silently using the generated
   fallback when no task-bank row exists.
 
@@ -181,20 +201,24 @@ Implemented:
   `knowledge_files.source_path` rows only when the current sync is strict and
   authoritative:
   - unchanged paths are skipped;
-  - changed paths upload the new file and supersede the old attachment;
+  - changed paths upload the new file and supersede the old attachment only
+    after replacement indexing is completed when wait-ready is requested;
   - missing paths are detached and marked `superseded` or `retired`;
   - renamed paths behave as missing old path plus new path unless a future
     manifest explicitly maps rename identity.
 - Stores remote sync state transitions:
   `planned`, `uploaded`, `attached`, `indexed`, `cleanup_pending`,
   `completed`, and `failed`.
-- Added `--recover-rag` for failed jobs that recorded recoverable OpenAI file
-  ids.
+- Added `--recover-rag` for failed or attached-timeout jobs that recorded
+  recoverable OpenAI file ids.
 - Added optional wait-for-index behavior that polls vector-store file status
   until terminal `completed` or `failed`. Jobs are marked `indexed` only after
-  `completed`; timeout leaves the job attached with timeout metadata. For
-  production-like sync, waiting should be the default; dry-run never waits or
-  calls OpenAI.
+  `completed`; timeout leaves the job attached with timeout metadata, stores
+  the new file as `sync_status='indexing'`, and keeps stale active attachments
+  in place until recovery promotes the replacement. Recovery waits by default,
+  and explicit no-wait recovery leaves queued replacements in `indexing`
+  instead of promoting them or cleaning stale attachments. For production-like
+  sync, waiting should be the default; dry-run never waits or calls OpenAI.
 - Active project vector-store ids in `project_ai_resources` are updated
   only after a successful attach or explicit existing-store reuse.
 
@@ -205,6 +229,7 @@ Tests:
 - partial upload/attach/DB failures are recoverable without duplicate active
   local rows;
 - wait-ready handles completed, failed, and timeout states;
+- no-wait recovery does not promote queued replacement files;
 - local concurrent sync attempts cannot both claim the same pack/vector-store
   job inside SQLite transaction boundaries.
 

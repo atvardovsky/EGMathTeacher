@@ -93,10 +93,12 @@ Rules from current implementation:
   mistake-review completion require backend verifier evidence.
 - For the first supported vertical, the backend resolves curriculum from
   active SQLite rows, selects an imported task-bank task when available,
-  carries hint ladders into lesson tasks, verifies a numeric answer, and
-  writes `student_attempts`. Correct answers become `mastery_evidence`, skill
-  progress, and goal-completion evidence only when imported mastery criteria
-  allow the evidence sequence. Unknown topics remain `unknown` instead of
+  carries hint ladders and common-error ids into lesson tasks, verifies a
+  numeric answer, and writes `student_attempts`. Correct answers become
+  `mastery_evidence`, skill progress, and goal-completion evidence only when
+  imported mastery criteria allow the evidence sequence. Independent successes
+  are deduplicated by canonical `source_task_id` across lesson sessions.
+  Unknown, low-confidence, or ambiguous topics remain `unknown` instead of
   falling back to linear equations.
 - Accepted completion sets `goalStatusEvidence=backend_observed`; unaccepted
   model-only or policy-rejected completion keeps the lesson in progress with
@@ -265,7 +267,9 @@ Rules from current implementation:
   student-facing Markdown files can be synced to the active OpenAI vector
   store by content hash.
 - Unchanged synced Markdown files are skipped. Changed synced Markdown files
-  are uploaded and the superseded vector-store file attachment is detached.
+  are uploaded, but the superseded vector-store file attachment is detached
+  only after the replacement reaches remote `completed` status when
+  `--wait-ready` is used.
 - Removed Markdown paths are reconciled only for strict authoritative RAG
   sync; partial packs do not detach files simply because they are absent.
 - `--dry-run` must not perform live OpenAI create/upload/attach/delete calls.
@@ -273,10 +277,10 @@ Rules from current implementation:
   imports are ledgered, pack schema/release/content hashes are separated,
   removed structured rows are soft-retired, deleted/renamed RAG paths are
   reconciled only in strict authoritative mode, sync jobs are locally claimed,
-  `--recover-rag` retries
-  recoverable failed jobs, `--wait-ready` can wait for vector-store indexing
-  and records `indexed` only after remote `completed`, and archive guardrails
-  bound local pack processing.
+  `--recover-rag` retries recoverable failed or attached-timeout jobs,
+  `--wait-ready` can wait for vector-store indexing and records `indexed` only
+  after remote `completed`, timeout rows remain `sync_status='indexing'`, and
+  archive guardrails bound local pack processing.
 - Non-dry-run `--sync-rag` is a protected live OpenAI side effect.
 
 ### Use WebRTC Voice Assistant

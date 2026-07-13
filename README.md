@@ -70,13 +70,17 @@ Production domain:
   support partial mode with warnings, record failed ledgers, soft-retire
   removed structured rows, and store pack schema/release/content-hash
   metadata separately. RAG sync skips unchanged files, uploads changed files,
-  detaches superseded source paths, records durable sync jobs, can wait for
-  vector-store indexing, and includes a recovery command for failed jobs with
-  recoverable OpenAI file ids. Removed-path reconciliation is enabled only for
-  strict authoritative RAG sync, not partial packs.
+  detaches superseded source paths only after a replacement has indexed,
+  records durable sync jobs, can wait for vector-store indexing, and includes
+  a recovery command for failed or attached timeout jobs with recoverable
+  OpenAI file ids. Recovery waits for completed indexing by default; queued
+  replacements remain pending and do not trigger stale cleanup. Removed-path
+  reconciliation is enabled only for strict authoritative RAG sync, not
+  partial packs.
 - Lesson runtime reads active `curriculum_skills` rows from SQLite and selects
-  supported verifier tasks from imported `task_bank_tasks`; unknown topics stay
-  `unknown` instead of silently falling back to the linear-equation context.
+  supported verifier tasks from imported `task_bank_tasks`; unknown,
+  low-confidence, or ambiguous topics stay `unknown` with candidate context
+  instead of silently falling back to the linear-equation context.
 - Lesson type support for tutor sessions: the API supports meeting, tutor,
   concept, practice, diagnostic, exam strategy, mistake review, visual
   explanation, and reflection modes; the POC web UI exposes tutor, practice,
@@ -98,10 +102,13 @@ Production domain:
   actions, but backend policy controls goal completion; self-reported phrases
   such as "я понял" are not accepted as mastery evidence.
 - The first deterministic verified learning loop supports task-bank-backed
-  linear-equation tasks, numeric answer verification, stored attempts, hint
-  ladders, and mastery-policy-gated evidence. A correct answer is stored as an
-  attempt first; mastery evidence, progress updates, and goal completion are
-  written only when imported `curriculum_mastery_criteria` allow it.
+  linear-equation tasks, canonical source task identity, numeric answer
+  verification, stored attempts, misconception-aware hint routing, and
+  mastery-policy-gated evidence. A correct answer is stored as an attempt
+  first; mastery evidence, progress updates, and goal completion are written
+  only when imported `curriculum_mastery_criteria` allow it. Independent
+  success counts are cumulative across lesson sessions but are deduplicated by
+  `source_task_id`, so repeated copies of the same task do not prove mastery.
 - User-visible lesson usage bar shows the signed-in user's own estimated
   daily and per-lesson AI expenses with operation/model/token/image details,
   decision outcomes, verifier status, verified outcome count, and cost per

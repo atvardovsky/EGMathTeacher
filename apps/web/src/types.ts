@@ -214,16 +214,23 @@ export interface TutorDebugInfo {
     attemptSubmitted: boolean;
     taskId?: string;
     attemptId?: string;
+    sourceTaskId?: string;
     result: LessonVerifierResult;
     errorCode?: string;
     confidence: 'low' | 'medium' | 'high' | 'unknown';
     masteryUpdateAllowed: boolean;
     masteryPolicyReason?: string;
     masteryEvidenceLevel?: LessonEvidenceLevel;
+    currentLessonVerifiedSuccessCount?: number;
+    currentLessonIndependentSuccessCount?: number;
+    cumulativeVerifiedSuccessCount?: number;
+    cumulativeIndependentSuccessCount?: number;
     verifiedSuccessCount?: number;
     independentSuccessCount?: number;
     requiredSuccessCount?: number;
     nextHint?: string;
+    nextHintRoute?: string;
+    misconceptionId?: string;
   };
 }
 

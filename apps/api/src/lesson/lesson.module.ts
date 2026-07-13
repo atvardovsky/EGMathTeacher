@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { CurriculumService } from './curriculum.service';
+import { HintRoutingService } from './hint-routing.service';
 import { LessonDecisionService } from './lesson-decision.service';
 import { LessonPolicyService } from './lesson-policy.service';
 import { LessonService } from './lesson.service';
@@ -13,6 +14,7 @@ import { TaskBankService } from './task-bank.service';
     LessonService,
     LessonPolicyService,
     LessonDecisionService,
+    HintRoutingService,
     MasteryPolicyService,
     CurriculumService,
     TaskBankService,
@@ -22,6 +24,7 @@ import { TaskBankService } from './task-bank.service';
     LessonService,
     LessonPolicyService,
     LessonDecisionService,
+    HintRoutingService,
     MasteryPolicyService,
     CurriculumService,
     TaskBankService,

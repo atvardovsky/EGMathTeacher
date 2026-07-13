@@ -22,6 +22,11 @@ interface CurriculumSkillRow {
   difficulty: string | null;
 }
 
+interface ScoredCurriculumSkill {
+  skill: CurriculumSkillRow;
+  score: number;
+}
+
 const UNKNOWN_CURRICULUM_CONTEXT: CurriculumContext = {
   topicId: 'unknown',
   topicTitle: 'Неизвестная тема',
@@ -31,6 +36,7 @@ const UNKNOWN_CURRICULUM_CONTEXT: CurriculumContext = {
   taskTypeTitle: 'Нужно уточнить тип задания',
   verifierKind: 'unsupported',
   confidence: 'low',
+  resolutionReason: 'no_match',
 };
 
 @Injectable()
@@ -40,7 +46,7 @@ export class CurriculumService {
   resolve(message: string): CurriculumContext {
     const normalized = message.toLowerCase();
     const rows = this.getRuntimeSkills();
-    const scored = rows
+    const scored: ScoredCurriculumSkill[] = rows
       .map((skill) => ({
         skill,
         score: this.scoreSkill(normalized, skill),
@@ -49,8 +55,12 @@ export class CurriculumService {
       .sort((left, right) => right.score - left.score);
     const selected = scored[0]?.skill;
     const score = scored[0]?.score ?? 0;
-    if (!selected) {
-      return UNKNOWN_CURRICULUM_CONTEXT;
+    if (!selected || score < 2) {
+      return this.unknownContext(score > 0 ? 'low_confidence' : 'no_match', scored);
+    }
+    const secondScore = scored[1]?.score ?? 0;
+    if (secondScore === score) {
+      return this.unknownContext('ambiguous', scored);
     }
 
     return {
@@ -64,7 +74,9 @@ export class CurriculumService {
         selected.verifier_kind === 'linear_equation_numeric'
           ? 'linear_equation_numeric'
           : 'unsupported',
-      confidence: score >= 2 ? 'high' : score === 1 ? 'medium' : 'low',
+      confidence: score >= 4 ? 'high' : 'medium',
+      resolutionReason: 'resolved',
+      candidates: this.toCandidates(scored.slice(0, 3)),
     };
   }
 
@@ -101,14 +113,10 @@ export class CurriculumService {
       skill.task_type_id,
       skill.task_type_title,
       skill.description,
-      skill.minimum_mastery_criterion,
-      skill.recommended_lesson_type,
-      skill.difficulty,
       ...this.arrayStrings(skill.prerequisites_json),
       ...this.arrayStrings(skill.task_type_ids_json),
       ...this.arrayStrings(skill.typical_misconceptions_json),
       ...this.arrayStrings(skill.explanation_methods_json),
-      ...this.arrayStrings(skill.verification_methods_json),
     ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
 
     const terms = new Set<string>();
@@ -119,6 +127,9 @@ export class CurriculumService {
         if (part.length < 3) {
           continue;
         }
+        if (this.isNoisyTerm(part)) {
+          continue;
+        }
         terms.add(part);
         if (part.length > 5) {
           terms.add(part.slice(0, 6));
@@ -126,6 +137,49 @@ export class CurriculumService {
       }
     }
     return Array.from(terms).filter((term) => term.length >= 3);
+  }
+
+  private unknownContext(
+    resolutionReason: 'no_match' | 'low_confidence' | 'ambiguous',
+    scored: ScoredCurriculumSkill[],
+  ): CurriculumContext {
+    return {
+      ...UNKNOWN_CURRICULUM_CONTEXT,
+      resolutionReason,
+      candidates: this.toCandidates(scored.slice(0, 3)),
+    };
+  }
+
+  private toCandidates(scored: ScoredCurriculumSkill[]): CurriculumContext['candidates'] {
+    return scored.map((candidate) => ({
+      topicId: candidate.skill.topic_id,
+      skillId: candidate.skill.skill_id,
+      taskTypeId: candidate.skill.task_type_id,
+      score: candidate.score,
+    }));
+  }
+
+  private isNoisyTerm(term: string): boolean {
+    return new Set([
+      'base',
+      'medium',
+      'advanced',
+      'foundation',
+      'planned',
+      'student',
+      'lesson',
+      'practice',
+      'diagnostic',
+      'concept',
+      'worked',
+      'example',
+      'егэ',
+      'база',
+      'пример',
+      'задача',
+      'урок',
+      'ученик',
+    ]).has(term);
   }
 
   private arrayStrings(json: string | null): string[] {

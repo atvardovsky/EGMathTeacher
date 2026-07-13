@@ -85,12 +85,13 @@ Current knowledge-pack sync safety posture:
   size, file count, single-file size, directory depth, extension, and
   path-traversal guardrails, but remain trusted local operator workflows
 - non-dry-run RAG sync records durable local sync jobs and can recover failed
-  jobs that captured recoverable OpenAI file ids
+  or attached-timeout jobs that captured recoverable OpenAI file ids
 - parallel upload/attach paths are locally claimed by sync job key, but there
   is no distributed lock beyond the SQLite process boundary
 - vector-store indexing readiness is polled when `--wait-ready` is used; a
   sync job is marked `indexed` only after remote `completed`, while timeouts
-  remain attached with timeout metadata
+  remain attached with timeout metadata and keep stale active attachments in
+  place until recovery promotes the replacement
 
 Other configured providers are stubs unless implemented later.
 

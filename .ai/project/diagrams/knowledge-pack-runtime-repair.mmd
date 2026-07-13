@@ -12,11 +12,14 @@ flowchart LR
     Resolver --> Context[topic skill task type verifier kind]
     TaskBank --> SelectTask[TaskBankService.selectTask]
     Context --> SelectTask
-    SelectTask --> LessonTasks[(lesson_tasks)]
+    SelectTask --> SourceTask[canonical source_task_id and common_errors]
+    SourceTask --> LessonTasks[(lesson_tasks)]
     LessonTasks --> Verifier[MathVerifierService]
+    LessonTasks --> HintRouting[Misconception-aware hint routing]
     Verifier --> Attempts[(student_attempts)]
     Attempts --> MasteryPolicy[MasteryPolicyService]
-    MasteryPolicy --> Mastery[(mastery_evidence)]
+    MasteryPolicy --> SourceDedup[Cross-lesson source-task deduplication]
+    SourceDedup --> Mastery[(mastery_evidence)]
   end
 
   subgraph RagSync[RAG sync hardening]
@@ -25,7 +28,9 @@ flowchart LR
     Reconcile --> Upload[Upload or skip changed files]
     Upload --> Attach[Attach to vector store]
     Attach --> WaitReady[Wait-ready marks indexed only after completed]
-    WaitReady --> Cleanup[Detach retired or superseded files]
+    WaitReady --> PendingIndex[indexing row on timeout]
+    PendingIndex --> RecoverPromote[Recover promotes after completed]
+    RecoverPromote --> Cleanup[Detach retired or superseded files]
     Cleanup --> KnowledgeFiles[(knowledge_files)]
   end
 

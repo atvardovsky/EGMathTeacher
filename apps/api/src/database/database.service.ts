@@ -1143,6 +1143,133 @@ export class DatabaseService implements OnModuleDestroy {
 
       PRAGMA legacy_alter_table = OFF;
     `, { disableForeignKeys: true });
+
+    this.applyMigration('011_task_identity_and_indexing_state', `
+      PRAGMA legacy_alter_table = ON;
+
+      ALTER TABLE lesson_tasks RENAME TO lesson_tasks_old;
+
+      CREATE TABLE lesson_tasks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_session_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lesson_type TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        task_type_id TEXT NOT NULL,
+        source_task_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        expected_answer TEXT NOT NULL,
+        verifier_kind TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN (
+          'backend_generated',
+          'model_imported',
+          'task_bank_imported'
+        )),
+        status TEXT NOT NULL CHECK (status IN (
+          'pending',
+          'attempted',
+          'verified_correct',
+          'blocked'
+        )),
+        hint_ladder_json TEXT,
+        common_errors_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (lesson_session_id) REFERENCES lesson_sessions(id)
+      );
+
+      INSERT INTO lesson_tasks (
+        id, user_id, lesson_session_id, conversation_id, lesson_type,
+        topic_id, skill_id, task_type_id, source_task_id, prompt,
+        expected_answer, verifier_kind, source, status, hint_ladder_json,
+        common_errors_json, created_at, updated_at
+      )
+      SELECT
+        id, user_id, lesson_session_id, conversation_id, lesson_type,
+        topic_id, skill_id, task_type_id,
+        COALESCE(
+          (
+            SELECT task_bank_tasks.task_id
+            FROM task_bank_tasks
+            WHERE task_bank_tasks.skill_id = lesson_tasks_old.skill_id
+              AND task_bank_tasks.task_type_id = lesson_tasks_old.task_type_id
+              AND task_bank_tasks.prompt = lesson_tasks_old.prompt
+            LIMIT 1
+          ),
+          CASE
+            WHEN source = 'backend_generated'
+              THEN 'generated:' || verifier_kind || ':' || replace(prompt, ' ', '_')
+            ELSE 'legacy:' || id
+          END
+        ),
+        prompt, expected_answer, verifier_kind, source, status,
+        hint_ladder_json, NULL, created_at, updated_at
+      FROM lesson_tasks_old;
+
+      DROP TABLE lesson_tasks_old;
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_tasks_lesson_status
+        ON lesson_tasks(user_id, lesson_session_id, status, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_lesson_tasks_source_task
+        ON lesson_tasks(user_id, skill_id, source_task_id, created_at);
+
+      ALTER TABLE knowledge_files RENAME TO knowledge_files_old;
+
+      CREATE TABLE knowledge_files (
+        id TEXT PRIMARY KEY,
+        original_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        openai_file_id TEXT NOT NULL,
+        vector_store_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        source_kind TEXT NOT NULL DEFAULT 'manual_upload',
+        source_path TEXT,
+        source_pack_version TEXT,
+        content_hash TEXT,
+        sync_status TEXT NOT NULL DEFAULT 'active'
+          CHECK (sync_status IN ('active', 'indexing', 'superseded', 'failed', 'cleanup_failed')),
+        superseded_at TEXT,
+        error_message TEXT
+      );
+
+      INSERT INTO knowledge_files (
+        id, original_name, mime_type, size_bytes, openai_file_id,
+        vector_store_id, status, created_at, updated_at, source_kind,
+        source_path, source_pack_version, content_hash, sync_status,
+        superseded_at, error_message
+      )
+      SELECT
+        id, original_name, mime_type, size_bytes, openai_file_id,
+        vector_store_id, status, created_at, updated_at, source_kind,
+        source_path, source_pack_version, content_hash, sync_status,
+        superseded_at, error_message
+      FROM knowledge_files_old;
+
+      DROP TABLE knowledge_files_old;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_files_source_hash
+        ON knowledge_files(source_kind, source_path, content_hash, vector_store_id)
+        WHERE source_path IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_knowledge_files_source_active
+        ON knowledge_files(source_kind, source_path, sync_status, updated_at);
+
+      PRAGMA legacy_alter_table = OFF;
+    `, { disableForeignKeys: true });
+
+    this.applyMigration('012_generated_task_identity_normalization', `
+      UPDATE lesson_tasks
+      SET source_task_id = 'generated:' || verifier_kind || ':' || replace(prompt, ' ', '_')
+      WHERE source = 'backend_generated'
+        AND source_task_id LIKE 'generated:%';
+    `);
   }
 
   private applyMigration(

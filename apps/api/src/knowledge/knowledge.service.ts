@@ -81,6 +81,8 @@ export interface SyncRagSourceFileResult {
   action:
     | 'skipped'
     | 'skipped_cleaned'
+    | 'uploaded_pending_index'
+    | 'replaced_pending_index'
     | 'uploaded'
     | 'replaced'
     | 'would_upload'
@@ -273,6 +275,7 @@ export class KnowledgeService {
       }
       const now = new Date().toISOString();
       const knowledgeFileId = randomUUID();
+      const indexPending = status !== 'completed';
 
       this.db.transaction(() => {
         this.db.run(
@@ -281,7 +284,7 @@ export class KnowledgeService {
              vector_store_id, status, source_kind, source_path, source_pack_version,
              content_hash, sync_status, created_at, updated_at
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             knowledgeFileId,
             input.relativePath,
@@ -294,6 +297,7 @@ export class KnowledgeService {
             input.relativePath,
             input.sourcePackVersion,
             input.contentHash,
+            indexPending ? 'indexing' : 'active',
             now,
             now,
           ],
@@ -307,11 +311,36 @@ export class KnowledgeService {
           sourcePackVersion: input.sourcePackVersion,
           contentHash: input.contentHash,
           sizeBytes: input.buffer.length,
-          status: 'synced',
+          status: indexPending ? 'pending' : 'synced',
           knowledgeFileId,
-          metadata: { vectorStoreId, openAiFileId, status },
+          metadata: {
+            vectorStoreId,
+            openAiFileId,
+            status,
+            indexWaitTimedOut: indexPending,
+            staleKnowledgeFileIds: stale.map((row) => row.id),
+          },
         });
       });
+
+      if (indexPending) {
+        this.updateSyncJob(syncJob.id, 'attached', {
+          openAiFileId,
+          knowledgeFileId,
+          status,
+          indexWaitTimedOut: true,
+          staleKnowledgeFileIds: stale.map((row) => row.id),
+        });
+        return {
+          relativePath: input.relativePath,
+          action: stale.length > 0 ? 'replaced_pending_index' : 'uploaded_pending_index',
+          vectorStoreId,
+          openAiFileId,
+          knowledgeFileId,
+          contentHash: input.contentHash,
+          supersededCount: 0,
+        };
+      }
 
       this.updateSyncJob(syncJob.id, 'cleanup_pending', { openAiFileId, knowledgeFileId });
       const cleanup = await this.cleanupSupersededSources(stale);
@@ -419,7 +448,7 @@ export class KnowledgeService {
   }
 
   async recoverFailedRagSyncJobs(
-    waitUntilIndexed = false,
+    waitUntilIndexed = true,
   ): Promise<{ recovered: number; failed: number }> {
     const jobs = this.db.all<KnowledgePackSyncJobRow>(
       `SELECT
@@ -428,7 +457,7 @@ export class KnowledgeService {
          claimed_at, completed_at, created_at, updated_at
        FROM knowledge_pack_sync_jobs
        WHERE job_kind = 'student_rag_file'
-         AND status = 'failed'
+         AND status IN ('failed', 'attached')
        ORDER BY updated_at ASC`,
     );
     let recovered = 0;
@@ -437,6 +466,13 @@ export class KnowledgeService {
     for (const job of jobs) {
       try {
         const metadata = this.parseMetadata(job.metadata_json);
+        if (
+          job.status === 'attached' &&
+          metadata.indexWaitTimedOut !== true
+        ) {
+          failed += 1;
+          continue;
+        }
         const openAiFileId = this.pickString(metadata, 'openAiFileId');
         if (!openAiFileId) {
           failed += 1;
@@ -454,6 +490,81 @@ export class KnowledgeService {
           recovered += 1;
           continue;
         }
+        const indexing = this.findIndexingSyncedSource(
+          job.source_path,
+          job.content_hash,
+          job.vector_store_id,
+        );
+        if (indexing) {
+          const status = waitUntilIndexed
+            ? await this.waitForVectorStoreFile(job.vector_store_id, openAiFileId)
+            : indexing.status;
+          const now = new Date().toISOString();
+          if (status !== 'completed') {
+            this.db.run(
+              `UPDATE knowledge_files
+               SET status = ?,
+                   updated_at = ?
+               WHERE id = ?`,
+              [status, now, indexing.id],
+            );
+            this.updateSyncJob(job.id, 'attached', {
+              openAiFileId,
+              knowledgeFileId: indexing.id,
+              status,
+              indexWaitTimedOut: true,
+              recoveryRequiresWaitReady: !waitUntilIndexed,
+            });
+            failed += 1;
+            continue;
+          }
+
+          this.db.transaction(() => {
+            this.db.run(
+              `UPDATE knowledge_files
+               SET status = ?,
+                   sync_status = 'active',
+                   error_message = NULL,
+                   updated_at = ?
+               WHERE id = ?`,
+              [status, now, indexing.id],
+            );
+            this.upsertProjectAiResource(job.vector_store_id, {
+              source: KNOWLEDGE_PACK_RAG_SOURCE_KIND,
+              sourcePackVersion: job.source_pack_version,
+            });
+            this.upsertSourceFileState({
+              relativePath: job.source_path,
+              sourcePackVersion: job.source_pack_version,
+              contentHash: job.content_hash,
+              sizeBytes: indexing.size_bytes,
+              status: 'synced',
+              knowledgeFileId: indexing.id,
+              metadata: {
+                vectorStoreId: job.vector_store_id,
+                openAiFileId,
+                status,
+                recovered: true,
+              },
+            });
+          });
+          this.updateSyncJob(job.id, 'cleanup_pending', {
+            openAiFileId,
+            knowledgeFileId: indexing.id,
+            recovered: true,
+          });
+          const cleanup = await this.cleanupSupersededSources(
+            this.findStaleSyncedSources(job.source_path, job.content_hash, job.vector_store_id),
+          );
+          this.updateSyncJob(job.id, 'completed', {
+            knowledgeFileId: indexing.id,
+            status,
+            cleanup,
+            recovered: true,
+          });
+          recovered += 1;
+          continue;
+        }
         const attachment = await this.aiModel.attachFileToVectorStore(
           job.vector_store_id,
           openAiFileId,
@@ -462,17 +573,19 @@ export class KnowledgeService {
         const status = waitUntilIndexed
           ? await this.waitForVectorStoreFile(job.vector_store_id, openAiFileId)
           : attachedStatus;
-        if (waitUntilIndexed && status === 'completed') {
+        if (status === 'completed') {
           this.updateSyncJob(job.id, 'indexed', { openAiFileId, status });
-        } else if (waitUntilIndexed) {
+        } else {
           this.updateSyncJob(job.id, 'attached', {
             openAiFileId,
             status,
             indexWaitTimedOut: true,
+            recoveryRequiresWaitReady: !waitUntilIndexed,
           });
         }
         const now = new Date().toISOString();
         const knowledgeFileId = randomUUID();
+        const indexPending = status !== 'completed';
         this.db.transaction(() => {
           this.db.run(
             `INSERT INTO knowledge_files (
@@ -480,7 +593,7 @@ export class KnowledgeService {
                vector_store_id, status, source_kind, source_path, source_pack_version,
                content_hash, sync_status, created_at, updated_at
              )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               knowledgeFileId,
               job.source_path,
@@ -493,6 +606,7 @@ export class KnowledgeService {
               job.source_path,
               job.source_pack_version,
               job.content_hash,
+              indexPending ? 'indexing' : 'active',
               now,
               now,
             ],
@@ -506,12 +620,38 @@ export class KnowledgeService {
             sourcePackVersion: job.source_pack_version,
             contentHash: job.content_hash,
             sizeBytes: this.pickNumber(metadata, 'sizeBytes') ?? 0,
-            status: 'synced',
+            status: indexPending ? 'pending' : 'synced',
             knowledgeFileId,
-            metadata: { vectorStoreId: job.vector_store_id, openAiFileId, status, recovered: true },
+            metadata: {
+              vectorStoreId: job.vector_store_id,
+              openAiFileId,
+              status,
+              recovered: true,
+              indexWaitTimedOut: indexPending,
+            },
           });
         });
-        this.updateSyncJob(job.id, 'completed', { knowledgeFileId, status, recovered: true });
+        if (indexPending) {
+          this.updateSyncJob(job.id, 'attached', {
+            openAiFileId,
+            knowledgeFileId,
+            status,
+            indexWaitTimedOut: true,
+            recovered: true,
+          });
+          failed += 1;
+          continue;
+        }
+        this.updateSyncJob(job.id, 'cleanup_pending', { knowledgeFileId, status, recovered: true });
+        const cleanup = await this.cleanupSupersededSources(
+          this.findStaleSyncedSources(job.source_path, job.content_hash, job.vector_store_id),
+        );
+        this.updateSyncJob(job.id, 'completed', {
+          knowledgeFileId,
+          status,
+          cleanup,
+          recovered: true,
+        });
         recovered += 1;
       } catch (error) {
         this.updateSyncJob(job.id, 'failed', undefined, error);
@@ -815,6 +955,30 @@ export class KnowledgeService {
     );
   }
 
+  private findIndexingSyncedSource(
+    relativePath: string,
+    contentHash: string,
+    vectorStoreId: string,
+  ): KnowledgeFileRow | undefined {
+    return this.db.get<KnowledgeFileRow>(
+      `SELECT
+         id, original_name, mime_type, size_bytes, openai_file_id,
+         vector_store_id, status, source_kind, source_path,
+         source_pack_version, content_hash, sync_status, superseded_at,
+         error_message, created_at, updated_at
+       FROM knowledge_files
+       WHERE source_kind = ?
+         AND source_path = ?
+         AND content_hash = ?
+         AND vector_store_id = ?
+         AND sync_status = 'indexing'
+         AND superseded_at IS NULL
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [KNOWLEDGE_PACK_RAG_SOURCE_KIND, relativePath, contentHash, vectorStoreId],
+    );
+  }
+
   private findStaleSyncedSources(
     relativePath: string,
     contentHash: string,
@@ -907,7 +1071,7 @@ export class KnowledgeService {
     sourcePackVersion: string;
     contentHash: string;
     sizeBytes: number;
-    status: 'imported' | 'synced' | 'skipped' | 'failed';
+    status: 'pending' | 'imported' | 'synced' | 'skipped' | 'failed';
     knowledgeFileId?: string;
     metadata: Record<string, unknown>;
     errorMessage?: string;

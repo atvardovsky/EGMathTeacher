@@ -85,6 +85,7 @@ The first closed loop is intentionally narrow:
 
 ```text
 task-bank-backed linear-equation task
+→ canonical source_task_id plus task-bank common_errors
 → student answer
 → numeric verifier
 → student_attempts row
@@ -99,7 +100,17 @@ The backend, not the decision model, owns `lesson_tasks`, `student_attempts`,
 model may explain, hint, or ask for a retry, but it does not write proof rows.
 If imported criteria set `single_success_can_complete=false`, one correct
 answer remains a verified attempt but does not become mastery evidence until
-the required independent success sequence is satisfied.
+the required independent success sequence is satisfied. Independent successes
+are counted across lesson sessions by canonical `source_task_id`, so repeated
+copies of the same task cannot satisfy repeated-success criteria. If active
+criteria are missing while `MASTERY_CRITERIA_REQUIRED=true`, supported verifier
+skills cannot write mastery evidence.
+
+For incorrect attempts, backend hint routing first checks task-bank
+`common_errors` against imported `curriculum_misconceptions` and only then
+falls back to the generic hint ladder. The agent can use `nextHint`,
+`nextHintRoute`, and `misconceptionId` from verifier evidence, but it must not
+invent proof or profile updates from a hint route alone.
 
 ## Observability
 

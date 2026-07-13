@@ -25,6 +25,9 @@ export default registerAs('app', () => ({
   taskBankRequired: ['true', '1', 'yes', 'y', 'on'].includes(
     (process.env.TASK_BANK_REQUIRED ?? 'false').toLowerCase(),
   ),
+  masteryCriteriaRequired: ['true', '1', 'yes', 'y', 'on'].includes(
+    (process.env.MASTERY_CRITERIA_REQUIRED ?? 'true').toLowerCase(),
+  ),
   knowledgeRagIndexWaitAttempts: parseInt(
     process.env.KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS ?? '40',
     10,

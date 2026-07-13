@@ -999,7 +999,18 @@ export class TutorService {
       `task_type_id: ${curriculum.taskTypeId}`,
       `verifier_kind: ${curriculum.verifierKind}`,
       `confidence: ${curriculum.confidence}`,
-    ].join('\n');
+      curriculum.resolutionReason ? `resolution: ${curriculum.resolutionReason}` : '',
+      curriculum.candidates?.length
+        ? `candidates: ${curriculum.candidates
+            .map(
+              (candidate) =>
+                `${candidate.skillId}/${candidate.taskTypeId} score=${candidate.score}`,
+            )
+            .join('; ')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private getVerifierPrompt(evidence: LessonVerifierEvidence): string {
@@ -1019,7 +1030,22 @@ export class TutorService {
       evidence.requiredSuccessCount !== undefined
         ? `requiredSuccessCount: ${evidence.requiredSuccessCount}`
         : '',
+      evidence.currentLessonVerifiedSuccessCount !== undefined
+        ? `currentLessonVerifiedSuccessCount: ${evidence.currentLessonVerifiedSuccessCount}`
+        : '',
+      evidence.currentLessonIndependentSuccessCount !== undefined
+        ? `currentLessonIndependentSuccessCount: ${evidence.currentLessonIndependentSuccessCount}`
+        : '',
+      evidence.cumulativeVerifiedSuccessCount !== undefined
+        ? `cumulativeVerifiedSuccessCount: ${evidence.cumulativeVerifiedSuccessCount}`
+        : '',
+      evidence.cumulativeIndependentSuccessCount !== undefined
+        ? `cumulativeIndependentSuccessCount: ${evidence.cumulativeIndependentSuccessCount}`
+        : '',
       evidence.nextHint ? `nextHint: ${evidence.nextHint}` : '',
+      evidence.nextHintRoute ? `nextHintRoute: ${evidence.nextHintRoute}` : '',
+      evidence.misconceptionId ? `misconceptionId: ${evidence.misconceptionId}` : '',
+      evidence.sourceTaskId ? `sourceTaskId: ${evidence.sourceTaskId}` : '',
       evidence.taskId ? `taskId: ${evidence.taskId}` : '',
       evidence.attemptId ? `attemptId: ${evidence.attemptId}` : '',
       evidence.errorCode ? `errorCode: ${evidence.errorCode}` : '',
@@ -1160,16 +1186,23 @@ export class TutorService {
         attemptSubmitted: verifierEvidence.attemptSubmitted,
         taskId: verifierEvidence.taskId,
         attemptId: verifierEvidence.attemptId,
+        sourceTaskId: verifierEvidence.sourceTaskId,
         result: verifierEvidence.result,
         errorCode: verifierEvidence.errorCode,
         confidence: verifierEvidence.confidence,
         masteryUpdateAllowed: verifierEvidence.masteryUpdateAllowed,
         masteryPolicyReason: verifierEvidence.masteryPolicyReason,
         masteryEvidenceLevel: verifierEvidence.masteryEvidenceLevel,
+        currentLessonVerifiedSuccessCount: verifierEvidence.currentLessonVerifiedSuccessCount,
+        currentLessonIndependentSuccessCount: verifierEvidence.currentLessonIndependentSuccessCount,
+        cumulativeVerifiedSuccessCount: verifierEvidence.cumulativeVerifiedSuccessCount,
+        cumulativeIndependentSuccessCount: verifierEvidence.cumulativeIndependentSuccessCount,
         verifiedSuccessCount: verifierEvidence.verifiedSuccessCount,
         independentSuccessCount: verifierEvidence.independentSuccessCount,
         requiredSuccessCount: verifierEvidence.requiredSuccessCount,
         nextHint: verifierEvidence.nextHint,
+        nextHintRoute: verifierEvidence.nextHintRoute,
+        misconceptionId: verifierEvidence.misconceptionId,
       },
     };
   }

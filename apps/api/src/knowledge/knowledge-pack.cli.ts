@@ -55,7 +55,7 @@ async function main(): Promise<void> {
     try {
       const knowledgeService = app.get(KnowledgeService);
       const summary = await knowledgeService.recoverFailedRagSyncJobs(
-        options.waitUntilIndexed ?? false,
+        options.waitUntilIndexed ?? true,
       );
       console.log(JSON.stringify(summary, null, 2));
     } finally {
@@ -176,7 +176,7 @@ Options:
   --reconcile-rag Detach active RAG source paths missing from this strict authoritative pack.
   --no-reconcile-rag
                   Keep existing RAG source paths even if absent from this pack.
-  --recover-rag   Retry failed RAG sync jobs that have recoverable remote file ids.
+  --recover-rag   Retry failed or attached-timeout RAG sync jobs. Waits for completed indexing by default.
 `);
 }
 

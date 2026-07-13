@@ -9,6 +9,7 @@ import {
   LessonVerifierEvidence,
   LessonVerifierResult,
 } from './lesson.types';
+import { HintRoutingService } from './hint-routing.service';
 import { MasteryPolicyService } from './mastery-policy.service';
 import { TaskBankService } from './task-bank.service';
 
@@ -21,12 +22,14 @@ interface LessonTaskRecord {
   topic_id: string;
   skill_id: string;
   task_type_id: string;
+  source_task_id: string;
   prompt: string;
   expected_answer: string;
   verifier_kind: string;
   source: 'backend_generated' | 'model_imported' | 'task_bank_imported';
   status: LessonTaskEvidence['status'];
   hint_ladder_json: string | null;
+  common_errors_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -62,6 +65,7 @@ export class MathVerifierService {
     private readonly db: DatabaseService,
     private readonly taskBankService: TaskBankService,
     private readonly masteryPolicyService: MasteryPolicyService,
+    private readonly hintRoutingService: HintRoutingService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -72,17 +76,18 @@ export class MathVerifierService {
     }
 
     const submittedAnswer = this.extractNumericAnswer(input.message);
-    if (!submittedAnswer) {
+    if (!submittedAnswer && !this.looksLikeAnswerAttempt(input.message)) {
       return EMPTY_VERIFIER_EVIDENCE;
     }
 
     const expected = this.normalizeNumber(task.expected_answer);
-    const actual = this.normalizeNumber(submittedAnswer);
+    const actual = submittedAnswer ? this.normalizeNumber(submittedAnswer) : undefined;
     const result = this.verifyNumber(actual, expected);
     const now = new Date().toISOString();
     const attemptId = randomUUID();
     const errorCode = this.errorCodeFor(result, actual, expected);
     const hintLadder = this.parseStringArray(task.hint_ladder_json);
+    const commonErrors = this.parseStringArray(task.common_errors_json);
 
     this.db.run(
       `INSERT INTO student_attempts (
@@ -106,6 +111,7 @@ export class MathVerifierService {
         now,
       ],
     );
+    const attemptCount = this.countTaskAttempts(task.id);
 
     const masteryPolicy = this.masteryPolicyService.evaluateVerifiedAttempt({
       userId: input.userId,
@@ -162,11 +168,19 @@ export class MathVerifierService {
 
       this.persistSkillProgress(input, task, attemptId, now);
     }
+    const hint = this.hintRoutingService.selectHint({
+      result,
+      errorCode,
+      hintLadder,
+      commonErrors,
+      attemptCount,
+    });
 
     return {
       attemptSubmitted: true,
       taskId: task.id,
       attemptId,
+      sourceTaskId: task.source_task_id,
       result,
       expectedAnswer: task.expected_answer,
       errorCode,
@@ -174,11 +188,18 @@ export class MathVerifierService {
       masteryUpdateAllowed,
       masteryPolicyReason: masteryPolicy.reason,
       masteryEvidenceLevel: masteryPolicy.evidenceLevel,
+      currentLessonVerifiedSuccessCount: masteryPolicy.currentLessonVerifiedSuccessCount,
+      currentLessonIndependentSuccessCount: masteryPolicy.currentLessonIndependentSuccessCount,
+      cumulativeVerifiedSuccessCount: masteryPolicy.cumulativeVerifiedSuccessCount,
+      cumulativeIndependentSuccessCount: masteryPolicy.cumulativeIndependentSuccessCount,
       verifiedSuccessCount: masteryPolicy.verifiedSuccessCount,
       independentSuccessCount: masteryPolicy.independentSuccessCount,
       requiredSuccessCount: masteryPolicy.requiredIndependentSuccessCount,
-      nextHint: this.pickNextHint(task.id, hintLadder, result),
+      nextHint: hint.hint,
+      nextHintRoute: hint.route,
+      misconceptionId: hint.misconceptionId,
       hintLadder,
+      commonErrors,
       topicId: task.topic_id,
       skillId: task.skill_id,
       taskTypeId: task.task_type_id,
@@ -215,10 +236,10 @@ export class MathVerifierService {
     this.db.run(
       `INSERT INTO lesson_tasks (
          id, user_id, lesson_session_id, conversation_id, lesson_type,
-         topic_id, skill_id, task_type_id, prompt, expected_answer,
-         verifier_kind, source, status, hint_ladder_json, created_at, updated_at
+         topic_id, skill_id, task_type_id, source_task_id, prompt, expected_answer,
+         verifier_kind, source, status, hint_ladder_json, common_errors_json, created_at, updated_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
       [
         taskId,
         input.userId,
@@ -228,11 +249,13 @@ export class MathVerifierService {
         input.curriculum.topicId,
         input.curriculum.skillId,
         input.curriculum.taskTypeId,
+        generated.sourceTaskId,
         generated.prompt,
         generated.expectedAnswer,
         input.curriculum.verifierKind,
         selectedTask ? 'task_bank_imported' : 'backend_generated',
         JSON.stringify(generated.task.hintLadder ?? []),
+        JSON.stringify(generated.commonErrors),
         now,
         now,
       ],
@@ -249,6 +272,8 @@ export class MathVerifierService {
       status: 'pending',
       source: selectedTask ? 'task_bank_imported' : 'backend_generated',
       hintLadder: generated.task.hintLadder,
+      sourceTaskId: generated.sourceTaskId,
+      commonErrors: generated.commonErrors,
     };
   }
 
@@ -274,8 +299,10 @@ export class MathVerifierService {
 
   private generateTask(curriculum: CurriculumContext): {
     task: TutorTask;
+    sourceTaskId: string;
     prompt: string;
     expectedAnswer: string;
+    commonErrors: string[];
   } {
     const prompt = 'Реши уравнение: 2x + 3 = 15. В ответе напиши значение x.';
     return {
@@ -285,8 +312,10 @@ export class MathVerifierService {
         difficulty: 'base',
         hintLadder: [],
       },
+      sourceTaskId: this.generatedSourceTaskId(curriculum, prompt),
       prompt,
       expectedAnswer: '6',
+      commonErrors: [],
     };
   }
 
@@ -312,8 +341,9 @@ export class MathVerifierService {
   ): LessonTaskRecord | undefined {
     return this.db.get<LessonTaskRecord>(
       `SELECT id, user_id, lesson_session_id, conversation_id, lesson_type,
-              topic_id, skill_id, task_type_id, prompt, expected_answer,
-              verifier_kind, source, status, hint_ladder_json, created_at, updated_at
+              topic_id, skill_id, task_type_id, source_task_id, prompt, expected_answer,
+              verifier_kind, source, status, hint_ladder_json, common_errors_json,
+              created_at, updated_at
        FROM lesson_tasks
        WHERE user_id = ?
          AND lesson_session_id = ?
@@ -327,6 +357,7 @@ export class MathVerifierService {
   private toTaskEvidence(task: LessonTaskRecord): LessonTaskEvidence {
     return {
       taskId: task.id,
+      sourceTaskId: task.source_task_id,
       prompt: task.prompt,
       topicId: task.topic_id,
       skillId: task.skill_id,
@@ -334,6 +365,7 @@ export class MathVerifierService {
       status: task.status,
       source: task.source,
       hintLadder: this.parseStringArray(task.hint_ladder_json),
+      commonErrors: this.parseStringArray(task.common_errors_json),
     };
   }
 
@@ -351,6 +383,19 @@ export class MathVerifierService {
       return normalized;
     }
     return undefined;
+  }
+
+  private looksLikeAnswerAttempt(message: string): boolean {
+    const normalized = message.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return (
+      /(?:ответ|answer)\s*:?/iu.test(normalized) ||
+      /(?:^|[\s,;])(?:x|х)\s*=/iu.test(normalized) ||
+      /=/.test(normalized) ||
+      /^-?\d/.test(normalized)
+    );
   }
 
   private normalizeNumber(value: string): number | undefined {
@@ -412,6 +457,7 @@ export class MathVerifierService {
           source: 'deterministic_verifier',
           attemptId,
           taskId: task.id,
+          sourceTaskId: task.source_task_id,
           verifierResult: 'correct',
         }),
         now,
@@ -419,20 +465,17 @@ export class MathVerifierService {
     );
   }
 
-  private pickNextHint(
-    taskId: string,
-    hintLadder: string[],
-    result: LessonVerifierResult,
-  ): string | undefined {
-    if (result === 'correct' || result === 'equivalent' || hintLadder.length === 0) {
-      return undefined;
-    }
-    const attemptCount =
+  private countTaskAttempts(taskId: string): number {
+    return (
       this.db.get<{ count: number }>(
         'SELECT COUNT(*) AS count FROM student_attempts WHERE task_id = ?',
         [taskId],
-      )?.count ?? 1;
-    return hintLadder[Math.min(Math.max(attemptCount - 1, 0), hintLadder.length - 1)];
+      )?.count ?? 1
+    );
+  }
+
+  private generatedSourceTaskId(curriculum: CurriculumContext, prompt: string): string {
+    return `generated:${curriculum.verifierKind}:${prompt.replace(/ /g, '_')}`;
   }
 
   private parseStringArray(value: string | null): string[] {

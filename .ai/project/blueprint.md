@@ -62,12 +62,15 @@ visible next actions.
   `algebra.linear.solve_one_variable` /
   `ege.base.linear_equation_numeric`. The backend resolves curriculum from
   active SQLite rows, selects imported task-bank tasks for the supported
-  verifier kind when available, carries task-bank hint ladders into lesson
-  tasks, verifies submitted numeric answers, and stores attempts. Imported
+  verifier kind when available, carries task-bank hint ladders, common-error
+  ids, and canonical source task identity into lesson tasks, verifies
+  submitted numeric answers, and stores attempts. Imported
   `curriculum_mastery_criteria` gate whether verified attempts may write
   mastery evidence, update skill progress, or complete practice/mistake-review
-  goals. Unknown topics remain `unknown` instead of falling back to linear
-  equations.
+  goals. Independent successes are cumulative across lesson sessions but are
+  deduplicated by `source_task_id`; repeated copies of one task do not prove
+  mastery. Unknown, low-confidence, or ambiguous topics remain `unknown`
+  instead of falling back to linear equations.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
@@ -133,13 +136,15 @@ visible next actions.
   Student-facing Markdown files can be synced to OpenAI vector stores with
   source-path/content-hash idempotency: unchanged files are skipped, changed
   synced files are uploaded and the superseded vector-store attachment is
-  detached. Removed source paths are reconciled only for strict authoritative
-  RAG sync, not partial packs. Strict mode validates canonical structured
-  files before writes; partial mode records warnings.
+  detached only after the replacement indexes when wait-ready is requested.
+  Removed source paths are reconciled only for strict authoritative RAG sync,
+  not partial packs. Strict mode validates canonical structured files before
+  writes; partial mode records warnings.
   Failed imports are ledgered, pack schema/release/content-hash metadata is
-  separated, structured rows can be soft-retired, sync jobs are recoverable,
-  `--wait-ready` can poll vector-store indexing and marks jobs indexed only
-  after remote completion, and archive guardrails bound local pack processing.
+  separated, structured rows can be soft-retired, failed and attached-timeout
+  sync jobs are recoverable, `--wait-ready` can poll vector-store indexing and
+  marks jobs indexed only after remote completion, timeout rows stay
+  `indexing`, and archive guardrails bound local pack processing.
   Dry-run RAG sync performs no OpenAI
   create/upload/attach/delete calls.
 - OpenAI vector store/file search integration for RAG.
@@ -226,7 +231,8 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
   and supported task selection. Runtime verified mastery is still implemented
   only for the existing linear-equation numeric vertical.
 - `lesson_tasks`: backend-generated or imported tasks tied to a lesson
-  session and curriculum skill, including task-bank hint ladders when present.
+  session and curriculum skill, including canonical `source_task_id`,
+  task-bank hint ladders, and common-error ids when present.
 - `student_attempts`: submitted answers, deterministic verifier results, and
   mastery-policy outcome JSON.
 - `mastery_evidence`: proof rows for policy-accepted verified learning

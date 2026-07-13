@@ -238,6 +238,16 @@ describe('StudentProfileService', () => {
         '010_mastery_policy_and_task_source',
       ]),
     ).toEqual({ version: '010_mastery_policy_and_task_source' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '011_task_identity_and_indexing_state',
+      ]),
+    ).toEqual({ version: '011_task_identity_and_indexing_state' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '012_generated_task_identity_normalization',
+      ]),
+    ).toEqual({ version: '012_generated_task_identity_normalization' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

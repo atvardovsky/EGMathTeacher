@@ -47,13 +47,17 @@ Current covered areas:
 - lesson lifecycle goal completion remains pending without accepted backend
   policy and only completes when policy accepts the completion proposal
 - deterministic linear-equation verifier, student attempts, imported
-  mastery-criteria gating, mastery evidence, task-bank hint ladders,
-  `TASK_BANK_REQUIRED` fallback behavior, and cost-per-verified-outcome summary
-  behavior
+  mastery-criteria gating, mastery evidence, source-task-deduplicated
+  independent success, cumulative cross-lesson mastery counting, task-bank
+  hint ladders, invalid-format answer attempts with format hints,
+  misconception-routed hints, `TASK_BANK_REQUIRED` fallback behavior, and
+  cost-per-verified-outcome summary behavior
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation
-  safety, wait-ready timeout semantics, and sync-job recovery metadata
+  safety, wait-ready timeout semantics, pending-index local rows, and sync-job
+  recovery metadata, including no-wait recovery refusing to promote queued
+  replacements before remote `completed`
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths
@@ -97,9 +101,11 @@ citation display, and explicit image rendering.
 - Focused API tests cover strict/partial knowledge-pack import behavior,
   failed import ledger rows, RAG deleted-path reconciliation, migration ledger
   presence, imported `task_bank_tasks` driving lesson task selection, imported
-  mastery criteria preventing one-answer mastery, partial RAG sync skipping
-  removed-path reconciliation, and wait-ready timeout leaving jobs attached
-  rather than indexed.
+  mastery criteria preventing one-answer mastery, canonical source task ids
+  preventing duplicate independent evidence, cumulative cross-lesson mastery,
+  common-error hint routing, partial RAG sync skipping removed-path
+  reconciliation, and wait-ready timeout leaving jobs attached rather than
+  indexed.
 - Remaining validation gaps: no live OpenAI non-dry-run RAG sync smoke test,
   no dedicated archive-guardrail fixture suite, and no parallel-process
   concurrency stress test.

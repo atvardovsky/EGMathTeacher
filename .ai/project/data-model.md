@@ -42,7 +42,11 @@ source-path/content-hash RAG sync metadata, migration
 retirement, sync-job, and recovery metadata, and migration
 `010_mastery_policy_and_task_source` after adding mastery-policy attempt
 metadata, task-bank task source semantics, and stored hint ladders on lesson
-tasks.
+tasks, migration `011_task_identity_and_indexing_state` after adding
+canonical `source_task_id`, common-error ids, and RAG indexing state, and
+migration `012_generated_task_identity_normalization` after normalizing
+backend-generated fallback task identities to the same generated formula used
+at runtime.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -81,7 +85,7 @@ Source owner: `apps/api/src/auth` and `apps/api/src/database/database.service.ts
 | `source_path` | `TEXT` | optional source-relative path for imported/synced files |
 | `source_pack_version` | `TEXT` | optional knowledge-pack version |
 | `content_hash` | `TEXT` | optional SHA-256 content hash for idempotent sync |
-| `sync_status` | `TEXT` | required; `active`, `superseded`, `failed`, or `cleanup_failed` |
+| `sync_status` | `TEXT` | required; `active`, `indexing`, `superseded`, `failed`, or `cleanup_failed` |
 | `superseded_at` | `TEXT` | optional ISO timestamp when replaced by a newer synced file |
 | `error_message` | `TEXT` | optional cleanup/sync error |
 | `created_at` | `TEXT` | required ISO timestamp |
@@ -92,10 +96,12 @@ Source owner: `apps/api/src/knowledge`.
 Manual admin uploads use `source_kind=manual_upload`. Knowledge-pack RAG sync
 uses `source_kind=knowledge_pack_student_rag`, stores the source path and hash,
 skips unchanged files, and marks older synced rows `superseded` after the
-remote vector-store attachment has been detached. If remote cleanup fails, the
-row is kept visible as `cleanup_failed`. Deleted or renamed knowledge-pack
-Markdown paths are reconciled against active RAG rows only during strict
-authoritative sync. Partial packs do not retire absent RAG paths.
+remote vector-store attachment has been detached. When `--wait-ready` times
+out, the new replacement row stays `indexing` and the older active row remains
+attached until recovery later confirms remote `completed`. If remote cleanup
+fails, the row is kept visible as `cleanup_failed`. Deleted or renamed
+knowledge-pack Markdown paths are reconciled against active RAG rows only
+during strict authoritative sync. Partial packs do not retire absent RAG paths.
 
 ### `project_ai_resources`
 
@@ -195,10 +201,14 @@ with content release identity.
 Source owner: `apps/api/src/knowledge/knowledge.service.ts`.
 
 This table locally claims RAG upload/attach jobs before remote side effects,
-tracks state transitions, and supports `--recover-rag` for failed jobs that
-recorded a recoverable OpenAI file id. Claims are made inside a local SQLite
-transaction. `indexed` means the remote vector-store file status reached
-`completed`; wait-ready timeout leaves the job attached with timeout metadata.
+tracks state transitions, and supports `--recover-rag` for failed jobs and
+attached timeout jobs that recorded a recoverable OpenAI file id. Claims are
+made inside a local SQLite transaction. `indexed` means the remote vector-store
+file status reached `completed`; wait-ready timeout or no-wait queued status
+leaves the job attached with timeout metadata and the local `knowledge_files`
+row in `indexing`. Recovery waits by default, and queued replacements are not
+promoted to `active` or allowed to clean stale attachments until the remote
+status is `completed`.
 
 ### `student_profiles`
 
@@ -670,12 +680,14 @@ supported verifier kinds before falling back to the POC generated task.
 | `topic_id` | `TEXT` | required curriculum topic id |
 | `skill_id` | `TEXT` | required curriculum skill id |
 | `task_type_id` | `TEXT` | required curriculum task type id |
+| `source_task_id` | `TEXT` | required canonical imported/generated task identity |
 | `prompt` | `TEXT` | required student-visible task prompt |
 | `expected_answer` | `TEXT` | required backend verifier answer, not exposed in tutor response |
 | `verifier_kind` | `TEXT` | required verifier kind |
 | `source` | `TEXT` | required; `backend_generated`, `model_imported`, or `task_bank_imported` |
 | `status` | `TEXT` | required; `pending`, `attempted`, `verified_correct`, or `blocked` |
 | `hint_ladder_json` | `TEXT` | optional serialized task-bank hint ladder |
+| `common_errors_json` | `TEXT` | optional serialized task-bank misconception/error ids |
 | `created_at` | `TEXT` | required ISO timestamp |
 | `updated_at` | `TEXT` | required ISO timestamp |
 
@@ -686,7 +698,10 @@ Lesson tasks are the first proof surface for deterministic practice. For the
 current verified vertical, the service selects imported `task_bank_tasks` rows
 when available and records them as `task_bank_imported`; the hardcoded linear
 equation remains only as a logged POC empty-DB fallback with
-`backend_generated`. `TASK_BANK_REQUIRED=true` disables the empty-DB fallback.
+`backend_generated`. `source_task_id` is the identity used by mastery policy to
+deduplicate repeated copies of the same task across lessons. `common_errors_json`
+feeds misconception-aware hint routing before the generic hint ladder is used.
+`TASK_BANK_REQUIRED=true` disables the empty-DB fallback.
 
 ### `student_attempts`
 
@@ -712,7 +727,11 @@ Source owner: `apps/api/src/lesson/math-verifier.service.ts` and
 Attempts are proof records for a concrete backend task. They are not grades,
 and they are not automatically mastery evidence. Correct/equivalent attempts
 become durable mastery only when `MasteryPolicyService` accepts the imported
-evidence criteria for the skill.
+evidence criteria for the skill. The policy counts cumulative successful
+attempts across lesson sessions, but independent successes are distinct
+canonical `lesson_tasks.source_task_id` values. If
+`MASTERY_CRITERIA_REQUIRED=true` and no active criteria row exists, supported
+verifier skills cannot write mastery evidence.
 
 ### `mastery_evidence`
 

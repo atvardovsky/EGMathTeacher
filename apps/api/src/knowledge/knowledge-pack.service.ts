@@ -343,7 +343,11 @@ export class KnowledgePackService {
           targetKind: 'student_rag',
           contentHash: file.contentHash,
           sizeBytes: file.sizeBytes,
-          status: result.action === 'skipped' ? 'skipped' : 'synced',
+          status: result.action.endsWith('_pending_index')
+            ? 'pending'
+            : result.action === 'skipped'
+              ? 'skipped'
+              : 'synced',
           knowledgeFileId: result.knowledgeFileId,
           metadata: {
             action: result.action,
@@ -366,8 +370,12 @@ export class KnowledgePackService {
       packVersion,
       rootPath,
       ragFiles: files.length,
-      uploadedFiles: results.filter((result) => result.action === 'uploaded').length,
-      replacedFiles: results.filter((result) => result.action === 'replaced').length,
+      uploadedFiles: results.filter((result) =>
+        ['uploaded', 'uploaded_pending_index'].includes(result.action),
+      ).length,
+      replacedFiles: results.filter((result) =>
+        ['replaced', 'replaced_pending_index'].includes(result.action),
+      ).length,
       skippedFiles: results.filter((result) => result.action.startsWith('skipped')).length,
       retiredFiles: results.filter((result) => result.action === 'retired').length,
       dryRun: input.dryRun ?? false,

@@ -203,14 +203,124 @@ describe('KnowledgePackService', () => {
       'SELECT status, metadata_json FROM knowledge_pack_sync_jobs LIMIT 1',
     );
     const metadata = JSON.parse(job?.metadata_json ?? '{}') as Record<string, unknown>;
-    expect(job?.status).toBe('completed');
+    expect(job?.status).toBe('attached');
     expect(metadata.status).toBe('queued');
     expect(metadata.indexWaitTimedOut).toBe(true);
     expect(
-      db.get<{ status: string }>('SELECT status FROM knowledge_files WHERE openai_file_id = ?', [
-        'file_1',
-      ]),
-    ).toEqual({ status: 'queued' });
+      db.get<{ status: string; sync_status: string }>(
+        'SELECT status, sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ status: 'queued', sync_status: 'indexing' });
+    expect(
+      db.get<{ status: string }>(
+        'SELECT status FROM knowledge_source_files WHERE relative_path = ?',
+        ['rag-corpus/03-theory/linear-equations.md'],
+      ),
+    ).toEqual({ status: 'pending' });
+  });
+
+  it('keeps no-wait RAG sync rows indexing when attach status is still queued', async () => {
+    writeText(root, 'rag-corpus/03-theory/linear-equations.md', '# Linear equations\n');
+    aiModel.attachFileToVectorStore.mockResolvedValueOnce({ status: 'queued' });
+
+    const summary = await packService.syncStudentRag({
+      rootPath: root,
+      waitUntilIndexed: false,
+    });
+
+    expect(summary.results[0]).toEqual(
+      expect.objectContaining({
+        action: 'uploaded_pending_index',
+        openAiFileId: 'file_1',
+      }),
+    );
+    expect(
+      db.get<{ status: string; sync_status: string }>(
+        'SELECT status, sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ status: 'queued', sync_status: 'indexing' });
+    expect(
+      db.get<{ status: string }>(
+        'SELECT status FROM knowledge_pack_sync_jobs WHERE source_path = ?',
+        ['rag-corpus/03-theory/linear-equations.md'],
+      ),
+    ).toEqual({ status: 'attached' });
+  });
+
+  it('promotes pending indexed RAG files only after recovery sees completed indexing', async () => {
+    writeText(root, 'rag-corpus/03-theory/linear-equations.md', '# Linear equations\n');
+    aiModel.listVectorStoreFiles.mockResolvedValue({
+      data: [{ id: 'file_1', status: 'completed' }],
+    });
+    await packService.syncStudentRag({ rootPath: root, waitUntilIndexed: true });
+
+    writeText(root, 'rag-corpus/03-theory/linear-equations.md', '# Linear equations\nupdated\n');
+    aiModel.listVectorStoreFiles.mockResolvedValue({
+      data: [{ id: 'file_2', status: 'queued' }],
+    });
+    const pending = await packService.syncStudentRag({
+      rootPath: root,
+      waitUntilIndexed: true,
+    });
+
+    expect(pending.results[0]).toEqual(
+      expect.objectContaining({
+        action: 'replaced_pending_index',
+        supersededCount: 0,
+      }),
+    );
+    expect(aiModel.removeFileFromVectorStore).not.toHaveBeenCalledWith('vs_1', 'file_1');
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ sync_status: 'active' });
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_2'],
+      ),
+    ).toEqual({ sync_status: 'indexing' });
+
+    const noWaitRecovery = await knowledgeService.recoverFailedRagSyncJobs(false);
+
+    expect(noWaitRecovery).toEqual({ recovered: 0, failed: 1 });
+    expect(aiModel.removeFileFromVectorStore).not.toHaveBeenCalledWith('vs_1', 'file_1');
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ sync_status: 'active' });
+    expect(
+      db.get<{ sync_status: string; status: string }>(
+        'SELECT sync_status, status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_2'],
+      ),
+    ).toEqual({ sync_status: 'indexing', status: 'queued' });
+
+    aiModel.listVectorStoreFiles.mockResolvedValue({
+      data: [{ id: 'file_2', status: 'completed' }],
+    });
+    const recovered = await knowledgeService.recoverFailedRagSyncJobs(true);
+
+    expect(recovered).toEqual({ recovered: 1, failed: 0 });
+    expect(aiModel.removeFileFromVectorStore).toHaveBeenCalledWith('vs_1', 'file_1');
+    expect(
+      db.get<{ sync_status: string }>(
+        'SELECT sync_status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_1'],
+      ),
+    ).toEqual({ sync_status: 'superseded' });
+    expect(
+      db.get<{ sync_status: string; status: string }>(
+        'SELECT sync_status, status FROM knowledge_files WHERE openai_file_id = ?',
+        ['file_2'],
+      ),
+    ).toEqual({ sync_status: 'active', status: 'completed' });
   });
 
   it('fails strict imports for incomplete packs and records failed sync attempts', async () => {

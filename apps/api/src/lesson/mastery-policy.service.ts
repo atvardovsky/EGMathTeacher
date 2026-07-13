@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
 import { LessonEvidenceLevel, LessonVerifierResult } from './lesson.types';
 
@@ -28,42 +29,60 @@ export interface MasteryPolicyResult {
   evidenceLevel: LessonEvidenceLevel;
   reason: string;
   requiredEvidenceSequence: string[];
+  currentLessonVerifiedSuccessCount: number;
+  currentLessonIndependentSuccessCount: number;
+  cumulativeVerifiedSuccessCount: number;
+  cumulativeIndependentSuccessCount: number;
   verifiedSuccessCount: number;
   independentSuccessCount: number;
   requiredIndependentSuccessCount: number;
-  criteriaSource: 'curriculum_mastery_criteria' | 'fallback';
+  criteriaSource: 'curriculum_mastery_criteria' | 'fallback' | 'missing_required';
 }
 
 @Injectable()
 export class MasteryPolicyService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly configService: ConfigService,
+  ) {}
 
   evaluateVerifiedAttempt(input: MasteryPolicyInput): MasteryPolicyResult {
-    const counts = this.countVerifiedAttempts(input);
+    const currentCounts = this.countVerifiedAttempts(input, 'current_lesson');
+    const cumulativeCounts = this.countVerifiedAttempts(input, 'cumulative_skill');
     const criteria = this.getCriteria(input.skillId);
     if (!this.isSuccessfulVerifierResult(input.verifierResult)) {
       return this.result({
         allowed: false,
-        evidenceLevel: counts.attempt_count > 0 ? 'attempt_submitted' : 'none',
+        evidenceLevel: currentCounts.attempt_count > 0 ? 'attempt_submitted' : 'none',
         reason: 'Verifier result is not a successful independent answer.',
         criteria,
-        counts,
+        currentCounts,
+        cumulativeCounts,
       });
     }
 
     if (!criteria) {
+      if (this.isMasteryCriteriaRequired()) {
+        return this.result({
+          allowed: false,
+          evidenceLevel: this.currentEvidenceLevel(currentCounts, cumulativeCounts),
+          reason: 'Active mastery criteria are required for this supported verifier skill.',
+          criteria,
+          currentCounts,
+          cumulativeCounts,
+          criteriaSourceOverride: 'missing_required',
+        });
+      }
       return this.result({
-        allowed: counts.verified_success_count >= 1,
-        evidenceLevel:
-          counts.independent_success_count >= 2
-            ? 'repeated_independent_success'
-            : 'deterministically_verified',
+        allowed: cumulativeCounts.verified_success_count >= 1,
+        evidenceLevel: this.currentEvidenceLevel(currentCounts, cumulativeCounts),
         reason:
-          counts.verified_success_count >= 1
+          cumulativeCounts.verified_success_count >= 1
             ? 'No imported mastery criteria were found; POC fallback accepts one verified success.'
             : 'No verified success is available yet.',
         criteria,
-        counts,
+        currentCounts,
+        cumulativeCounts,
         requiredIndependentSuccessCount: 1,
       });
     }
@@ -73,27 +92,26 @@ export class MasteryPolicyService {
       sequence.includes('repeated_independent_success') ||
       criteria.single_success_can_complete !== 1;
     const requiredIndependentSuccessCount = requiresRepeated ? 2 : 1;
-    const missing = this.missingEvidence(sequence, counts, requiredIndependentSuccessCount);
+    const missing = this.missingEvidence(sequence, currentCounts, cumulativeCounts, requiredIndependentSuccessCount);
     if (missing.length > 0) {
       return this.result({
         allowed: false,
-        evidenceLevel: this.currentEvidenceLevel(counts),
+        evidenceLevel: this.currentEvidenceLevel(currentCounts, cumulativeCounts),
         reason: `Mastery criteria are not satisfied yet: missing ${missing.join(', ')}.`,
         criteria,
-        counts,
+        currentCounts,
+        cumulativeCounts,
         requiredIndependentSuccessCount,
       });
     }
 
     return this.result({
       allowed: true,
-      evidenceLevel:
-        counts.independent_success_count >= 2
-          ? 'repeated_independent_success'
-          : 'deterministically_verified',
+      evidenceLevel: this.currentEvidenceLevel(currentCounts, cumulativeCounts),
       reason: 'Imported mastery criteria are satisfied.',
       criteria,
-      counts,
+      currentCounts,
+      cumulativeCounts,
       requiredIndependentSuccessCount,
     });
   }
@@ -110,7 +128,16 @@ export class MasteryPolicyService {
     );
   }
 
-  private countVerifiedAttempts(input: MasteryPolicyInput): VerifiedAttemptCounts {
+  private countVerifiedAttempts(
+    input: MasteryPolicyInput,
+    scope: 'current_lesson' | 'cumulative_skill',
+  ): VerifiedAttemptCounts {
+    const lessonPredicate =
+      scope === 'current_lesson' ? 'AND student_attempts.lesson_session_id = ?' : '';
+    const params =
+      scope === 'current_lesson'
+        ? [input.userId, input.lessonSessionId, input.skillId]
+        : [input.userId, input.skillId];
     const counts = this.db.get<Partial<VerifiedAttemptCounts>>(
       `SELECT
            COUNT(student_attempts.id) AS attempt_count,
@@ -123,16 +150,16 @@ export class MasteryPolicyService {
            COUNT(
              DISTINCT CASE
                WHEN student_attempts.verifier_result IN ('correct', 'equivalent')
-               THEN student_attempts.task_id
+               THEN COALESCE(lesson_tasks.source_task_id, student_attempts.task_id)
                ELSE NULL
              END
            ) AS independent_success_count
          FROM student_attempts
          INNER JOIN lesson_tasks ON lesson_tasks.id = student_attempts.task_id
          WHERE student_attempts.user_id = ?
-           AND student_attempts.lesson_session_id = ?
+           ${lessonPredicate}
            AND lesson_tasks.skill_id = ?`,
-      [input.userId, input.lessonSessionId, input.skillId],
+      params,
     );
     return {
       attempt_count: counts?.attempt_count ?? 0,
@@ -143,20 +170,24 @@ export class MasteryPolicyService {
 
   private missingEvidence(
     sequence: string[],
-    counts: VerifiedAttemptCounts,
+    currentCounts: VerifiedAttemptCounts,
+    cumulativeCounts: VerifiedAttemptCounts,
     requiredIndependentSuccessCount: number,
   ): string[] {
     const missing: string[] = [];
-    if (sequence.includes('attempt_submitted') && counts.attempt_count < 1) {
+    if (sequence.includes('attempt_submitted') && currentCounts.attempt_count < 1) {
       missing.push('attempt_submitted');
     }
-    if (sequence.includes('deterministically_verified') && counts.verified_success_count < 1) {
+    if (
+      sequence.includes('deterministically_verified') &&
+      currentCounts.verified_success_count < 1
+    ) {
       missing.push('deterministically_verified');
     }
     if (
       (sequence.includes('repeated_independent_success') ||
         requiredIndependentSuccessCount > 1) &&
-      counts.independent_success_count < requiredIndependentSuccessCount
+      cumulativeCounts.independent_success_count < requiredIndependentSuccessCount
     ) {
       missing.push('repeated_independent_success');
     }
@@ -174,14 +205,17 @@ export class MasteryPolicyService {
     }
   }
 
-  private currentEvidenceLevel(counts: VerifiedAttemptCounts): LessonEvidenceLevel {
-    if (counts.independent_success_count >= 2) {
+  private currentEvidenceLevel(
+    currentCounts: VerifiedAttemptCounts,
+    cumulativeCounts: VerifiedAttemptCounts,
+  ): LessonEvidenceLevel {
+    if (cumulativeCounts.independent_success_count >= 2) {
       return 'repeated_independent_success';
     }
-    if (counts.verified_success_count >= 1) {
+    if (currentCounts.verified_success_count >= 1) {
       return 'deterministically_verified';
     }
-    if (counts.attempt_count >= 1) {
+    if (currentCounts.attempt_count >= 1) {
       return 'attempt_submitted';
     }
     return 'none';
@@ -192,8 +226,10 @@ export class MasteryPolicyService {
     evidenceLevel: LessonEvidenceLevel;
     reason: string;
     criteria: CurriculumMasteryCriteriaRow | undefined;
-    counts: VerifiedAttemptCounts;
+    currentCounts: VerifiedAttemptCounts;
+    cumulativeCounts: VerifiedAttemptCounts;
     requiredIndependentSuccessCount?: number;
+    criteriaSourceOverride?: 'missing_required';
   }): MasteryPolicyResult {
     return {
       allowed: input.allowed,
@@ -202,14 +238,24 @@ export class MasteryPolicyService {
       requiredEvidenceSequence: input.criteria
         ? this.readEvidenceSequence(input.criteria)
         : ['attempt_submitted', 'deterministically_verified'],
-      verifiedSuccessCount: input.counts.verified_success_count ?? 0,
-      independentSuccessCount: input.counts.independent_success_count ?? 0,
+      currentLessonVerifiedSuccessCount: input.currentCounts.verified_success_count ?? 0,
+      currentLessonIndependentSuccessCount: input.currentCounts.independent_success_count ?? 0,
+      cumulativeVerifiedSuccessCount: input.cumulativeCounts.verified_success_count ?? 0,
+      cumulativeIndependentSuccessCount: input.cumulativeCounts.independent_success_count ?? 0,
+      verifiedSuccessCount: input.cumulativeCounts.verified_success_count ?? 0,
+      independentSuccessCount: input.cumulativeCounts.independent_success_count ?? 0,
       requiredIndependentSuccessCount: input.requiredIndependentSuccessCount ?? 1,
-      criteriaSource: input.criteria ? 'curriculum_mastery_criteria' : 'fallback',
+      criteriaSource:
+        input.criteriaSourceOverride ??
+        (input.criteria ? 'curriculum_mastery_criteria' : 'fallback'),
     };
   }
 
   private isSuccessfulVerifierResult(result: LessonVerifierResult): boolean {
     return result === 'correct' || result === 'equivalent';
+  }
+
+  private isMasteryCriteriaRequired(): boolean {
+    return this.configService.get<boolean>('app.masteryCriteriaRequired') ?? true;
   }
 }

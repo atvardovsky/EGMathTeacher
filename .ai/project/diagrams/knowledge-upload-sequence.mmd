@@ -85,8 +85,12 @@ sequenceDiagram
         AIModel->>Vectors: List vector store files
         Vectors-->>AIModel: completed, failed, or timeout status
       end
-      Knowledge->>DB: Insert active knowledge_files row and mark indexed only after completed
-      opt Older synced file exists
+      alt indexing completed or wait-ready disabled
+        Knowledge->>DB: Insert active knowledge_files row and mark indexed only after completed
+      else wait-ready timeout
+        Knowledge->>DB: Insert indexing knowledge_files row and keep job attached
+      end
+      opt Older synced file exists and replacement is active
         Knowledge->>AIModel: Remove old file from vector store
         AIModel->>Vectors: DELETE /vector_stores/{vector_store_id}/files/{file_id}
         Vectors-->>AIModel: deletion status
@@ -100,5 +104,5 @@ sequenceDiagram
     end
   end
   Pack->>DB: Insert knowledge_pack_imports summary
-  Note over Pack,DB: Failed import attempts are ledgered and recovery mode retries failed jobs with remote file ids
+  Note over Pack,DB: Failed imports are ledgered. Recovery retries failed and timeout jobs.
   end

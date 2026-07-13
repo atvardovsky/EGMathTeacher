@@ -156,27 +156,30 @@ describe('UsageService', () => {
     );
     db.run(
       `INSERT INTO lesson_tasks (
-         id, user_id, lesson_session_id, conversation_id, lesson_type,
-         topic_id, skill_id, task_type_id, prompt, expected_answer,
-         verifier_kind, source, status, created_at, updated_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified_correct', ?, ?)`,
-      [
-        'task-1',
-        'student-1',
+       id, user_id, lesson_session_id, conversation_id, lesson_type,
+       topic_id, skill_id, task_type_id, source_task_id, prompt, expected_answer,
+       verifier_kind, source, status, hint_ladder_json, common_errors_json, created_at, updated_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified_correct', ?, ?, ?, ?)`,
+    [
+      'task-1',
+      'student-1',
         'lesson-1',
         'conv-1',
         'tutor',
-        'algebra.linear_equations',
-        'algebra.linear.solve_one_variable',
-        'ege.base.linear_equation_numeric',
-        '2x + 3 = 15',
-        '6',
-        'linear_equation_numeric',
-        'backend_generated',
-        new Date().toISOString(),
-        new Date().toISOString(),
-      ],
+      'algebra.linear_equations',
+      'algebra.linear.solve_one_variable',
+      'ege.base.linear_equation_numeric',
+      'generated:linear_equation_numeric:2x_+_3_=_15',
+      '2x + 3 = 15',
+      '6',
+      'linear_equation_numeric',
+      'backend_generated',
+      JSON.stringify([]),
+      JSON.stringify([]),
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ],
     );
     db.run(
       `INSERT INTO student_attempts (

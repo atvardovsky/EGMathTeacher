@@ -65,6 +65,10 @@ This repository houses a NestJS orchestration service that now handles both sign
     imported task-bank task matches the resolved curriculum. When `false`, the
     POC generated linear-equation task remains as an explicitly logged
     empty-DB fallback.
+  - `MASTERY_CRITERIA_REQUIRED` – defaults to `true`. When enabled, supported
+    verifier skills require an active imported `curriculum_mastery_criteria`
+    row before a correct answer can write mastery evidence or complete a
+    practice goal.
   - `KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS` and
     `KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS` – tune how long `--wait-ready` polls
     vector-store file indexing before leaving the sync job attached but not
@@ -118,17 +122,26 @@ Reconciliation is intended for strict authoritative packs and is disabled for
 partial packs unless a future operator flow explicitly proves authority.
 `--wait-ready` polls vector-store file status until terminal readiness; jobs
 are marked `indexed` only after the remote status is actually `completed`.
-Timeouts keep the job at the attached stage with timeout metadata.
+Timeouts keep the job at the attached stage with timeout metadata, store the
+new local row as `sync_status='indexing'`, and keep the old active vector file
+attached until `--recover-rag --wait-ready` later sees the replacement as
+`completed`.
 `--dry-run` performs no OpenAI create/upload/attach/delete calls.
-`--recover-rag` retries failed sync jobs that recorded a recoverable OpenAI
-file id.
+`--recover-rag` retries failed or attached-timeout sync jobs that recorded a
+recoverable OpenAI file id. Recovery waits for completed indexing by default;
+if `--no-wait-ready` is used and the remote file is still queued, the local
+row remains `sync_status='indexing'` and stale active attachments are kept.
 
 The lesson runtime now reads active curriculum rows from SQLite and selects
 linear-equation verifier tasks, including hint ladders, from imported
 `task_bank_tasks` when available. Imported mastery criteria decide whether a
-verified answer can write mastery evidence or complete a practice goal. The
-old hardcoded task remains only as an explicitly logged empty-DB fallback for
-the POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
+verified answer can write mastery evidence or complete a practice goal.
+Independent successes are counted by canonical `source_task_id` across lesson
+sessions, while repeated copies of the same source task remain one independent
+success. Task-bank `common_errors` can route the next hint through imported
+misconception playbooks before falling back to the generic hint ladder. The old
+hardcoded task remains only as an explicitly logged empty-DB fallback for the
+POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 
 ## WebRTC Flow (Browser ↔ NestJS ↔ OpenAI)
 
