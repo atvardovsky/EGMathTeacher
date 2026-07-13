@@ -129,6 +129,21 @@ const PACK_LIMITS = {
 
 const ALLOWED_PACK_EXTENSIONS = new Set(['.json', '.jsonl', '.md']);
 const RUNTIME_VERIFIER_KINDS = new Set(['linear_equation_numeric', 'unsupported']);
+const TASK_BANK_VERIFIER_KINDS = new Set([
+  'case_partition',
+  'case_partition_plus_rubric',
+  'finite_set',
+  'interval',
+  'interval_set_plus_rubric',
+  'linear_equation_numeric',
+  'numeric',
+  'numeric_or_rational',
+  'numeric_plus_rubric',
+  'rational',
+  'solution_set_plus_rubric',
+  'symbolic',
+  'text_choice',
+]);
 
 @Injectable()
 export class KnowledgePackService {
@@ -594,7 +609,7 @@ export class KnowledgePackService {
         if (taskTypeId && activeKeys.taskTypes.size > 0 && !activeKeys.taskTypes.has(taskTypeId)) {
           errors.push(`${taskId}.task_type_id references unknown task type: ${taskTypeId}`);
         }
-        if (verifierKind && !RUNTIME_VERIFIER_KINDS.has(verifierKind)) {
+        if (verifierKind && !TASK_BANK_VERIFIER_KINDS.has(verifierKind)) {
           errors.push(`${taskId}.verifier_kind has unsupported value: ${verifierKind}`);
         }
       }
@@ -606,7 +621,12 @@ export class KnowledgePackService {
       this.requireArrayForValidation(parsed, 'error_kinds', errorFile.relativePath, errors);
       this.requireArrayForValidation(parsed, 'classification_levels', errorFile.relativePath, errors);
       this.requireArrayForValidation(parsed, 'misconception_ids', errorFile.relativePath, errors);
-      this.requireObjectForValidation(parsed, 'global_constraints', errorFile.relativePath, errors);
+      if (
+        !Array.isArray(parsed.global_constraints) &&
+        !this.isObjectRecord(parsed.global_constraints)
+      ) {
+        errors.push(`${errorFile.relativePath}.global_constraints must be an object or array`);
+      }
       for (const errorKind of this.arrayValue(parsed.error_kinds)) {
         activeKeys.errorClassificationEntries.add(`error_kind:${String(errorKind)}`);
       }
@@ -624,7 +644,7 @@ export class KnowledgePackService {
       for (const misconceptionId of this.arrayValue(parsed.misconception_ids)) {
         activeKeys.errorClassificationEntries.add(`misconception_id:${String(misconceptionId)}`);
       }
-      for (const key of Object.keys(this.objectValue(parsed.global_constraints))) {
+      for (const [key] of this.globalConstraintEntries(parsed.global_constraints)) {
         activeKeys.errorClassificationEntries.add(`global_constraint:${key}`);
       }
     }
@@ -1115,7 +1135,7 @@ export class KnowledgePackService {
       );
       count += 1;
     }
-    for (const [key, value] of Object.entries(this.objectValue(parsed.global_constraints))) {
+    for (const [key, value] of this.globalConstraintEntries(parsed.global_constraints)) {
       this.upsertErrorClassificationEntry(
         packVersion,
         file,
@@ -1127,6 +1147,13 @@ export class KnowledgePackService {
       count += 1;
     }
     return count;
+  }
+
+  private globalConstraintEntries(value: unknown): [string, unknown][] {
+    if (Array.isArray(value)) {
+      return value.map((entry, index) => [`constraint_${index + 1}`, entry]);
+    }
+    return Object.entries(this.objectValue(value));
   }
 
   private importLessonTypePlan(packVersion: string, file: PackFile): number {
@@ -1809,6 +1836,10 @@ export class KnowledgePackService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as JsonObject)
       : {};
+  }
+
+  private isObjectRecord(value: unknown): value is JsonObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
   private arrayValue(value: unknown): unknown[] {

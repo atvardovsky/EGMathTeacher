@@ -8,6 +8,10 @@ by EGMathTeacher.
 SQLite is initialized in `apps/api/src/database/database.service.ts`.
 
 Default path: `./data/app.sqlite` from `SQLITE_PATH`.
+When the root `npm run knowledge:sync` operator command launches the
+knowledge-pack CLI from the repository root, the CLI defaults `SQLITE_PATH` to
+`apps/api/data/app.sqlite` and loads `apps/api/.env` so imports target the same
+runtime database as the development API.
 
 The service enables:
 
@@ -629,7 +633,9 @@ retry-task rule, and forbidden inference. Source owner:
 
 Stores imported error-classification material as typed entries:
 `error_kind`, `classification_level`, `misconception_id`, or
-`global_constraint`. Source owner:
+`global_constraint`. `global_constraint` accepts either keyed objects or
+ordered string arrays from the knowledge pack; arrays are stored with stable
+`constraint_N` keys. Source owner:
 `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 ### `lesson_type_plans`
@@ -653,7 +659,7 @@ mock-exam placement, and prerequisite-return rule. Source owner:
 | `solution_steps_json` | `TEXT` | required serialized solution steps |
 | `common_errors_json` | `TEXT` | required serialized error ids |
 | `hint_ladder_json` | `TEXT` | required serialized hint ladder |
-| `verifier_kind` | `TEXT` | required verifier kind |
+| `verifier_kind` | `TEXT` | required known task-bank verifier kind; may be planned-only and not backend-verifiable yet |
 | `source_type` | `TEXT` | required pack source type |
 | `verification_json` | `TEXT` | required source verification metadata |
 | `task_bank_file` | `TEXT` | required source JSONL filename |
@@ -666,7 +672,10 @@ mock-exam placement, and prerequisite-return rule. Source owner:
 Source owner: `apps/api/src/knowledge/knowledge-pack.service.ts`.
 
 `MathVerifierService.ensureBackendTask()` selects active task-bank rows for
-supported verifier kinds before falling back to the POC generated task.
+backend-supported verifier kinds before falling back to the POC generated
+task. Unsupported but known task-bank verifier kinds remain stored for routing,
+RAG context, future verifier work, and task-bank completeness, but do not
+produce deterministic mastery evidence.
 
 ### `lesson_tasks`
 

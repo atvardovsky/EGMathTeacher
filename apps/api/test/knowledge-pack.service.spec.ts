@@ -102,6 +102,12 @@ describe('KnowledgePackService', () => {
       verifier_kind: 'linear_equation_numeric',
     });
     expect(
+      db.get<{ verifier_kind: string }>(
+        'SELECT verifier_kind FROM task_bank_tasks WHERE task_id = ?',
+        ['task.arithmetic.1'],
+      ),
+    ).toEqual({ verifier_kind: 'numeric' });
+    expect(
       db.get<{ prompt: string }>('SELECT prompt FROM task_bank_tasks WHERE task_id = ?', [
         'task.linear.1',
       ]),
@@ -365,6 +371,15 @@ function writeStructuredFixture(root: string): void {
         theory_document_id: 'theory.linear',
         status: 'ready',
       },
+      {
+        topic_id: 'arithmetic.numbers_and_calculations',
+        title: 'Числа и вычисления',
+        exam_track: 'base',
+        prerequisite_topic_ids: [],
+        skill_ids: ['arithmetic.numbers.operations'],
+        theory_document_id: 'theory.arithmetic',
+        status: 'ready',
+      },
     ],
   });
   writeJson(root, 'rag-corpus/02-curriculum/curriculum-task-types.json', {
@@ -376,6 +391,15 @@ function writeStructuredFixture(root: string): void {
         response_kind: 'short_numeric',
         runtime_verifier_kind: 'linear_equation_numeric',
         planned_verifier_kind: 'linear_equation_numeric',
+        year_binding: 'fixture',
+      },
+      {
+        task_type_id: 'ege.base.arithmetic_numeric',
+        title: 'Числовые вычисления',
+        exam_track: 'base',
+        response_kind: 'short_numeric',
+        runtime_verifier_kind: 'unsupported',
+        planned_verifier_kind: 'numeric',
         year_binding: 'fixture',
       },
     ],
@@ -397,6 +421,22 @@ function writeStructuredFixture(root: string): void {
         deterministic_verification: 'runtime',
         difficulty: 'foundation',
         estimated_learning_minutes: 30,
+      },
+      {
+        skill_id: 'arithmetic.numbers.operations',
+        title: 'Порядок действий',
+        topic_id: 'arithmetic.numbers_and_calculations',
+        description: 'Выполняет числовые вычисления.',
+        prerequisites: [],
+        task_type_ids: ['ege.base.arithmetic_numeric'],
+        typical_misconceptions: ['sign_error'],
+        explanation_methods: ['worked_example'],
+        minimum_mastery_criterion: 'Practice with checked examples.',
+        verification_methods: ['planned_numeric'],
+        recommended_lesson_type: 'practice',
+        deterministic_verification: 'planned',
+        difficulty: 'foundation',
+        estimated_learning_minutes: 20,
       },
     ],
   });
@@ -458,7 +498,26 @@ function writeStructuredFixture(root: string): void {
       verification: { status: 'checked' },
     })}\n`,
   );
-  for (const taskFile of ['tasks-diagnostic.jsonl', 'tasks-profile.jsonl', 'tasks-retry.jsonl', 'tasks-review.jsonl']) {
+  writeText(
+    root,
+    'rag-corpus/04-task-bank/tasks-diagnostic.jsonl',
+    `${JSON.stringify({
+      task_id: 'task.arithmetic.1',
+      topic_id: 'arithmetic.numbers_and_calculations',
+      skill_id: 'arithmetic.numbers.operations',
+      task_type_id: 'ege.base.arithmetic_numeric',
+      difficulty: 'base',
+      prompt: 'Вычислите: 48 - 3 * (7 - 2).',
+      expected_answer: '33',
+      solution_steps: ['7 - 2 = 5', '3 * 5 = 15', '48 - 15 = 33'],
+      common_errors: ['sign_error'],
+      hint_ladder: ['Начните со скобок.', 'Затем выполните умножение.'],
+      verifier_kind: 'numeric',
+      source_type: 'fixture',
+      verification: { status: 'checked' },
+    })}\n`,
+  );
+  for (const taskFile of ['tasks-profile.jsonl', 'tasks-retry.jsonl', 'tasks-review.jsonl']) {
     writeText(root, `rag-corpus/04-task-bank/${taskFile}`, '');
   }
   writeJson(root, 'rag-corpus/05-misconceptions/error-classification.json', {
@@ -472,7 +531,7 @@ function writeStructuredFixture(root: string): void {
       },
     ],
     misconception_ids: ['sign_error'],
-    global_constraints: { no_labels: true },
+    global_constraints: ['No labels from one mistake.', 'Sensitive data must not be recorded.'],
   });
   writeJson(root, 'learning-plans/lesson-type-plan.json', {
     phases: [

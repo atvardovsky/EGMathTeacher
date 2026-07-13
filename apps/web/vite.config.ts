@@ -5,9 +5,21 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
-const httpsKeyPath = resolve(projectRoot, '.cert/localhost-key.pem');
-const httpsCertPath = resolve(projectRoot, '.cert/localhost-cert.pem');
+const domainHttpsKeyPath = resolve(projectRoot, '.cert/atvardovsky.dev-key.pem');
+const domainHttpsCertPath = resolve(projectRoot, '.cert/atvardovsky.dev-cert.pem');
+const localhostHttpsKeyPath = resolve(projectRoot, '.cert/localhost-key.pem');
+const localhostHttpsCertPath = resolve(projectRoot, '.cert/localhost-cert.pem');
 const useHttps = process.env.VITE_DISABLE_HTTPS !== 'true';
+const httpsKeyPath =
+  process.env.VITE_HTTPS_KEY_PATH ??
+  (existsSync(domainHttpsKeyPath) && existsSync(domainHttpsCertPath)
+    ? domainHttpsKeyPath
+    : localhostHttpsKeyPath);
+const httpsCertPath =
+  process.env.VITE_HTTPS_CERT_PATH ??
+  (existsSync(domainHttpsKeyPath) && existsSync(domainHttpsCertPath)
+    ? domainHttpsCertPath
+    : localhostHttpsCertPath);
 const https =
   useHttps && existsSync(httpsKeyPath) && existsSync(httpsCertPath)
     ? {

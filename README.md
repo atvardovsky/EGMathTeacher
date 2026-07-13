@@ -19,9 +19,12 @@ Default URLs:
 - Direct dev domain URL on this host: `https://atvardovsky.dev:5137`
 - API: `http://localhost:3000`
 
-The direct dev domain URL uses the local Vite HTTPS certificate. The current
-checked-in development certificate is for `localhost`, so browsers can warn
-when opening `https://atvardovsky.dev:5137`.
+The Vite dev server prefers `.cert/atvardovsky.dev-key.pem` and
+`.cert/atvardovsky.dev-cert.pem` when present, then falls back to
+`.cert/localhost-key.pem` and `.cert/localhost-cert.pem`. Because
+`atvardovsky.dev` uses HSTS, browsers require a CA-trusted certificate for
+`https://atvardovsky.dev:5137`; a self-signed certificate will be blocked.
+Keep `.cert/` uncommitted.
 
 Production domain:
 
@@ -152,6 +155,9 @@ npm run knowledge:sync -- --recover-rag --wait-ready
 Knowledge-pack sync remains a trusted local operator workflow. Non-dry-run
 `--sync-rag` can create, upload, attach, and detach OpenAI files/vector-store
 attachments, so run it only with explicit intent and configured credentials.
+When launched through the root `npm run knowledge:sync` script, the CLI reads
+`apps/api/.env` and uses the runtime SQLite database at
+`apps/api/data/app.sqlite` unless `SQLITE_PATH` is explicitly set.
 Partial RAG packs do not reconcile removed paths; use strict authoritative
 sync when the current pack should define the complete vector-store file set.
 

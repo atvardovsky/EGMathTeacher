@@ -59,8 +59,12 @@ Current implementation state:
   supported verifier skills.
 - Imported `curriculum_*` and `task_bank_tasks` rows are the active runtime
   source for lesson routing and supported task selection.
-- Structured import validates required files, required fields, enum-like
-  verifier kinds, JSONL line parsing, and core cross references before writes.
+- Structured import validates required files, required fields, JSONL line
+  parsing, core cross references, runtime verifier kinds on task types, and
+  known task-bank verifier kinds before writes. Task-bank verifier kinds may
+  describe planned or external checking formats such as `numeric`, `rational`,
+  `finite_set`, or `symbolic`; only verifier kinds implemented by backend
+  runtime can produce deterministic mastery evidence.
 - Removed structured records are soft-retired with `sync_status='retired'`.
 - RAG sync is idempotent for same-path content changes and reconciles deleted
   or renamed source paths only during strict authoritative RAG sync. Partial
@@ -93,8 +97,9 @@ Rules:
   runtime lookups after validation.
 - Unknown, low-confidence, or ambiguous topic resolution must remain `unknown`
   or trigger clarification. It must not silently fall back to linear equations.
-- A task can produce verified mastery only when its `verifier_kind` is
-  implemented by backend code.
+- A task can be imported when its `verifier_kind` is a known knowledge-pack
+  verifier kind. It can produce verified mastery only when the corresponding
+  runtime verifier is implemented by backend code.
 - RAG remains shared teaching/reference knowledge for the AI. Student profile
   memory remains in SQLite, not in RAG.
 - OpenAI vector-store writes stay operator-triggered and must support dry-run,

@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 import configuration from '../config/app.configuration';
 import aiConfiguration from '../config/ai.configuration';
 import webrtcConfiguration from '../config/webrtc.configuration';
@@ -26,10 +28,18 @@ interface CliOptions {
   help: boolean;
 }
 
+if (!process.env.SQLITE_PATH && existsSync(resolve(process.cwd(), 'apps/api'))) {
+  process.env.SQLITE_PATH = 'apps/api/data/app.sqlite';
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: [
+        resolve(process.cwd(), 'apps/api/.env'),
+        resolve(process.cwd(), '.env'),
+      ],
       load: [configuration, webrtcConfiguration, aiConfiguration],
     }),
     DatabaseModule,
