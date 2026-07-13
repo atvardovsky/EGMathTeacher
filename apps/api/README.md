@@ -177,13 +177,17 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
 
 Tutor/product API surfaces also include:
 
+- `GET /tutor/lessons` for the signed-in user's recent lessons, stored turns,
+  summaries, and legacy saved discussions so the web client can show lesson
+  records and resume a previous `conversationId`.
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.
 - `POST /tutor/image` for explicit explanatory image generation with optional
   lesson usage attribution.
-- `GET /usage/me/summary` for the signed-in user's own usage estimates and
-  per-operation, decision, verifier, and verified-outcome details.
+- `GET /usage/me/summary` for the signed-in user's own usage estimates,
+  per-operation, decision, verifier, verified-outcome details, and recent safe
+  background job status/result/error previews.
 
 ## Notes on OpenAI Realtime
 

@@ -179,11 +179,180 @@ const usageSummary = {
     costPerVerifiedOutcomeUsd: null,
   },
   recentLessons: [],
+  backgroundJobs: [
+    {
+      id: 'job-1',
+      type: 'learning_window_analysis',
+      status: 'failed',
+      conversationId: 'conv-e2e',
+      lessonSessionId: 'lesson-e2e',
+      attempts: 2,
+      errorMessage: 'OpenAI request failed with status 400',
+      createdAt: '2026-07-11T10:20:00.000Z',
+      updatedAt: '2026-07-11T10:21:00.000Z',
+    },
+    {
+      id: 'job-2',
+      type: 'session_summary',
+      status: 'succeeded',
+      conversationId: 'conv-e2e',
+      lessonSessionId: 'lesson-e2e',
+      attempts: 1,
+      resultPreview: 'Ученик разобрал смысл производной и готов к короткой практике.',
+      createdAt: '2026-07-11T10:22:00.000Z',
+      updatedAt: '2026-07-11T10:23:00.000Z',
+    },
+  ],
+};
+
+const historyAnswer = {
+  conversationId: 'conv-history',
+  lessonType: 'practice',
+  lessonLifecycle: {
+    ...lessonLifecycle,
+    conversationId: 'conv-history',
+    lessonSessionId: 'lesson-history',
+    lessonType: 'practice',
+    lessonGoal: 'Продолжить практику линейных уравнений.',
+    turnCount: 2,
+  },
+  answer: 'В прошлый раз мы остановились на линейном уравнении и проверке ответа.',
+  blocks: [
+    {
+      id: 'text-1',
+      type: 'text',
+      text: 'В прошлый раз мы остановились на линейном уравнении и проверке ответа.',
+    },
+  ],
+  tasks: [],
+  examples: [],
+  needsImage: false,
+  citations: [],
+};
+
+const lessonHistory = {
+  lessons: [
+    {
+      lessonSessionId: 'lesson-history',
+      conversationId: 'conv-history',
+      lessonType: 'practice',
+      status: 'active',
+      goalStatus: 'in_progress',
+      lessonGoal: 'Продолжить практику линейных уравнений.',
+      successCriteria: ['есть самостоятельная попытка'],
+      turnCount: 2,
+      activeLearningSeconds: 360,
+      startedAt: '2026-07-12T10:00:00.000Z',
+      lastActivityAt: '2026-07-12T10:10:00.000Z',
+      updatedAt: '2026-07-12T10:10:00.000Z',
+      summary: {
+        summary: 'Решали линейное уравнение, следующий шаг - еще одна самостоятельная попытка.',
+      },
+      evidenceLevels: { L2: 'сводка занятия' },
+      turns: [
+        {
+          id: 'turn-history-1',
+          prompt: 'Я решил x = 6, что дальше?',
+          lessonType: 'practice',
+          source: 'text',
+          answer: historyAnswer,
+          createdAt: '2026-07-12T10:10:00.000Z',
+        },
+      ],
+    },
+  ],
 };
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('egmathteacher.locale', 'ru');
+    class MockSpeechSynthesisUtterance extends EventTarget {
+      text: string;
+      lang = '';
+      rate = 1;
+      pitch = 1;
+      volume = 1;
+      voice: SpeechSynthesisVoice | null = null;
+      onboundary: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null =
+        null;
+      onend: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null = null;
+      onerror: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisErrorEvent) => unknown) | null =
+        null;
+      onmark: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null =
+        null;
+      onpause: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null =
+        null;
+      onresume: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null =
+        null;
+      onstart: ((this: SpeechSynthesisUtterance, ev: SpeechSynthesisEvent) => unknown) | null =
+        null;
+
+      constructor(text: string) {
+        super();
+        this.text = text;
+      }
+    }
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      value: MockSpeechSynthesisUtterance,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: {
+        speaking: false,
+        pending: false,
+        paused: false,
+        speak(utterance: SpeechSynthesisUtterance) {
+          (window as Window & { __spokenText?: string }).__spokenText = utterance.text;
+          window.setTimeout(() => utterance.onend?.({} as SpeechSynthesisEvent), 0);
+        },
+        cancel() {
+          (window as Window & { __speechCanceled?: boolean }).__speechCanceled = true;
+        },
+        pause() {},
+        resume() {},
+        getVoices() {
+          return [];
+        },
+        onvoiceschanged: null,
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() {
+          return true;
+        },
+      } satisfies SpeechSynthesis,
+      configurable: true,
+    });
+    class MockSpeechRecognition extends EventTarget {
+      continuous = false;
+      interimResults = false;
+      lang = '';
+      onend: (() => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      onresult: ((event: Event) => void) | null = null;
+
+      start() {
+        const state = window as Window & {
+          __recognitionStarts?: number;
+          __recognitionLanguage?: string;
+          __lastRecognition?: MockSpeechRecognition;
+        };
+        state.__recognitionStarts = (state.__recognitionStarts ?? 0) + 1;
+        state.__recognitionLanguage = this.lang;
+        state.__lastRecognition = this;
+      }
+
+      stop() {
+        this.onend?.();
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', {
+      value: MockSpeechRecognition,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'webkitSpeechRecognition', {
+      value: MockSpeechRecognition,
+      configurable: true,
+    });
   });
 });
 
@@ -191,7 +360,10 @@ function fulfillJson(route: Route, json: unknown) {
   return route.fulfill({ status: 200, json });
 }
 
-async function mockStudentSession(page: Page, options: { needsOnboarding: boolean }) {
+async function mockStudentSession(
+  page: Page,
+  options: { needsOnboarding: boolean; lessonHistory?: unknown },
+) {
   let profileStatus = options.needsOnboarding
     ? { onboardingRequired: true, profile: null }
     : completedProfileStatus;
@@ -205,6 +377,9 @@ async function mockStudentSession(page: Page, options: { needsOnboarding: boolea
     }
     return fulfillJson(route, profileStatus);
   });
+  await page.route('**/tutor/lessons**', (route) =>
+    fulfillJson(route, options.lessonHistory ?? { lessons: [] }),
+  );
   await page.route('**/usage/me/summary**', (route) => fulfillJson(route, usageSummary));
   await page.route('**/tutor/message', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -299,7 +474,7 @@ test('auth screen is usable and localized', async ({ page }) => {
 });
 
 test('student completes first meeting, asks tutor, and renders a diagram', async ({ page }) => {
-  await mockStudentSession(page, { needsOnboarding: true });
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: true });
 
   await page.goto('/');
 
@@ -317,18 +492,109 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
   await expect(page.getByText('профиль объяснений активен')).toBeVisible();
   await expect(page.getByText('Расходы занятия')).toBeVisible();
+  await expect(page.getByLabel('Голосовой диалог')).toBeVisible();
+  await expect(page.getByText('Сохраненных занятий пока нет')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Начать первое занятие' })).toBeVisible();
+  await expect(page.getByText('Первая встреча')).toBeVisible();
+  await expect(page.getByText('Проверка уровня')).toBeVisible();
+  await expect(page.getByText('Практика: уравнения')).toBeVisible();
 
-  await page.getByPlaceholder('Например: объясни задание 12 с производной').fill('Объясни производную');
-  await page.getByRole('button', { name: 'Спросить' }).click();
+  await page.getByRole('button', { name: 'Начать первое занятие' }).click();
 
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as Window & { __spokenText?: string }).__spokenText))
+    .toContain('Производная показывает скорость изменения');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionLanguage?: string }).__recognitionLanguage),
+    )
+    .toBe('ru-RU');
+  await expect(
+    page.getByText('Слушаю тебя. Если будет длинная пауза, браузер может выключить микрофон.'),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: { onerror: ((event: Event) => void) | null };
+    };
+    const event = new Event('error') as Event & { error: string };
+    Object.defineProperty(event, 'error', { value: 'no-speech' });
+    state.__lastRecognition?.onerror?.(event);
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(2);
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: { onerror: ((event: Event) => void) | null };
+    };
+    const event = new Event('error') as Event & { error: string };
+    Object.defineProperty(event, 'error', { value: 'no-speech' });
+    state.__lastRecognition?.onerror?.(event);
+  });
+  await expect(page.getByText('Микрофон остановился из-за паузы или тишины.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Озвучить' })).toBeVisible();
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  expect(tutorRequests[0]).toMatchObject({ lessonType: 'meeting' });
   await expect(page.getByText('$0.0030').first()).toBeVisible();
+  await expect(
+    page.locator('.usage-bar').getByRole('button', { name: 'Обновить' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Детали' }).click();
+  await expect(page.getByText('Фоновые задачи')).toBeVisible();
+  await expect(page.getByText('learning_window_analysis')).toBeVisible();
+  await expect(page.getByText('OpenAI request failed with status 400')).toBeVisible();
+  await expect(
+    page.getByText('Ученик разобрал смысл производной и готов к короткой практике.'),
+  ).toBeVisible();
   await expect(page.getByText('Мини-задача')).toBeVisible();
   await expect(page.getByText('Касательная показывает скорость изменения в точке')).toBeVisible();
   await expect(page.getByText('ege-derivatives.pdf')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Показать схему' }).click();
+  await page.getByRole('button', { name: 'Создать схему' }).click();
   await expect(page.getByAltText('Схема графика функции с касательной в точке')).toBeVisible();
+});
+
+test('student sees saved lessons and continues the previous discussion', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, {
+    needsOnboarding: false,
+    lessonHistory,
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await expect(page.getByText('Продолжить с прошлого занятия')).toBeVisible();
+  await expect(page.getByText('Продолжить практику линейных уравнений.')).toBeVisible();
+  await expect(page.getByText('Я решил x = 6, что дальше?')).toHaveCount(2);
+  await expect(
+    page.getByText('В прошлый раз мы остановились на линейном уравнении').first(),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'К открытому занятию' }).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'К открытому занятию' }).first().click();
+
+  await expect(page.getByText('Сохраненное занятие открыто.')).toBeVisible();
+  await expect(page.getByPlaceholder('Например: объясни задание 12 с производной')).toBeFocused();
+
+  await page.getByLabel('Голосовой диалог').uncheck();
+  await page
+    .getByPlaceholder('Например: объясни задание 12 с производной')
+    .fill('Продолжим с места, где остановились');
+  await page.getByRole('button', { name: 'Спросить' }).click();
+
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  expect(tutorRequests[0]).toMatchObject({
+    conversationId: 'conv-history',
+    lessonType: 'practice',
+  });
 });
 
 test('changing tutor lesson mode starts a fresh conversation request', async ({ page }) => {
@@ -337,6 +603,7 @@ test('changing tutor lesson mode starts a fresh conversation request', async ({ 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
 
+  await page.getByLabel('Голосовой диалог').uncheck();
   await page.getByPlaceholder('Например: объясни задание 12 с производной').fill('Объясни производную');
   await page.getByRole('button', { name: 'Спросить' }).click();
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();

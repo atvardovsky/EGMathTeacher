@@ -173,11 +173,25 @@ export interface LessonUsageSummary {
   costPerVerifiedOutcomeUsd: number | null;
 }
 
+export interface BackgroundJobUsageItem {
+  id: string;
+  type: string;
+  status: string;
+  conversationId: string | null;
+  lessonSessionId: string | null;
+  attempts: number;
+  resultPreview?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserUsageSummary {
   currency: 'USD';
   today: UsageTotals;
   currentLesson: LessonUsageSummary | null;
   recentLessons: LessonUsageSummary[];
+  backgroundJobs: BackgroundJobUsageItem[];
 }
 
 export interface TutorUsageSnapshot {
@@ -288,8 +302,32 @@ export interface TutorTurn {
   lessonType: LessonType;
   source: 'text' | 'voice';
   answer?: TutorAnswer;
+  createdAt?: string;
   imageUrls?: Record<string, string>;
   loadingImages?: Record<string, boolean>;
+}
+
+export interface TutorLessonHistoryItem {
+  lessonSessionId: string;
+  conversationId: string;
+  lessonType: LessonType;
+  status: LessonSessionStatus;
+  goalStatus: LessonGoalStatus;
+  lessonGoal: string;
+  successCriteria: string[];
+  finishReason?: string;
+  turnCount: number;
+  activeLearningSeconds: number;
+  startedAt: string;
+  lastActivityAt: string;
+  updatedAt: string;
+  summary?: Record<string, unknown>;
+  evidenceLevels?: Record<string, unknown>;
+  turns: TutorTurn[];
+}
+
+export interface TutorLessonHistory {
+  lessons: TutorLessonHistoryItem[];
 }
 
 export interface DiagnosticAnswer {

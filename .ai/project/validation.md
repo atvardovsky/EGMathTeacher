@@ -38,6 +38,8 @@ Current covered areas:
   storage, profile/strategy refresh merging, failed window observation release,
   and stale queued/running state recovery
 - tutor structured output and image data URL behavior
+- tutor lesson-history retrieval for canonical lesson sessions, stored tutor
+  turns, prompt continuity context, and legacy tutor-turn conversations
 - AI model-provider facade delegation and role/operation policy application
   for response, lesson-decision, and image requests
 - Lesson Decision Agent policy rejection and decision observability storage
@@ -51,7 +53,8 @@ Current covered areas:
   independent success, cumulative cross-lesson mastery counting, task-bank
   hint ladders, invalid-format answer attempts with format hints,
   misconception-routed hints, `TASK_BANK_REQUIRED` fallback behavior, and
-  cost-per-verified-outcome summary behavior
+  cost-per-verified-outcome summary behavior, plus user-scoped background job
+  result/error projection in usage summaries
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation
@@ -73,8 +76,12 @@ Playwright E2E tests live under `apps/web/e2e` and currently mock API routes
 to avoid live OpenAI, SQLite test-data coupling, or system service dependency.
 They start a local HTTP Vite server on `E2E_PORT` or default `5138` so the
 normal `https://localhost:5137` dev server can keep running. They cover
-auth/localization, first-login meeting completion, tutor answer rendering,
-citation display, and explicit image rendering.
+auth/localization, first-login meeting completion, lesson launcher
+visibility/start, explicit empty saved-lesson state, saved lesson list/resume
+with previous discussion hydration, browser speech-synthesis handoff for tutor replies,
+automatic speech-recognition restart after spoken tutor replies, tutor answer
+rendering, citation display, usage refresh control/background-job visibility,
+and explicit image rendering.
 
 ## Existing Static Checks
 

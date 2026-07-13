@@ -108,8 +108,8 @@ sequenceDiagram
   API-->>Web: Lesson type, lifecycle, usage/debug, text, task, example, image blocks, citations
   Web->>API: GET /usage/me/summary
   API->>Usage: getUserSummary(userId, lessonSessionId)
-  Usage->>DB: Read ai_usage_ledger, lesson_decisions, and mastery_evidence for signed-in user
-  API-->>Web: Usage/debug summary for usage bar
+  Usage->>DB: Read ai_usage_ledger, lesson_decisions, mastery_evidence, and background_ai_jobs for signed-in user
+  API-->>Web: Usage/debug summary with safe background job previews
   end
   end
   Note over Background,AIModel: Later drain groups stored observations by window size, idle timeout, or quality trigger

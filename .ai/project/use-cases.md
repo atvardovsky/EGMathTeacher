@@ -44,19 +44,60 @@ Rules from current implementation:
 ### Ask The Tutor
 
 Authenticated user sends a math question by text or browser speech
-recognition.
+recognition. When the student keeps voice dialog enabled, the tutor speaks the
+visible answer aloud through browser speech synthesis and then opens the mic
+again for the next student turn.
 
 Rules from current implementation:
 
 - Tutor requests are sent to `POST /tutor/message`.
 - The API records source as `text` or `voice`.
+- Browser speech recognition is used only to turn student speech into the
+  message sent to `POST /tutor/message`.
+- Browser speech synthesis is used only to read the returned visible tutor
+  answer aloud. It does not call backend audio generation, upload audio, or
+  write generated audio to SQLite.
+- Voice dialog is enabled by default when speech synthesis is available, has a
+  visible on/off switch in the tutor composer, and each tutor answer has a
+  speak/stop control for replay or interruption. After a spoken tutor answer,
+  the web client automatically starts speech recognition when browser support
+  and permissions allow it.
+- Browser speech recognition may stop after silence, permission changes,
+  network errors, or browser policy. The tutor UI shows a short voice-status
+  reason, retries once after an automatic silence stop in voice-dialog mode,
+  and leaves the mic button as the manual fallback.
+- Browser speech synthesis quality, Russian stress, and emotional prosody are
+  browser-voice limitations in the POC. Better voice quality requires a future
+  OpenAI audio integration.
 - The request may include `lessonType`; older clients can omit it and the API
   infers a conservative type from the prompt.
 - Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
   `diagnostic`, `exam_strategy`, `mistake_review`, `visual_explanation`, and
   `reflection`.
-- The current tutor UI exposes the main POC modes: tutor, practice,
+- The current tutor UI exposes the main POC modes: meeting, tutor, practice,
   diagnostic, and mistake review.
+- When the tutor workspace has no turns, it shows a lesson launcher instead of
+  an empty waiting state. The launcher includes a prominent green first-lesson
+  button plus cards for first meeting, level check, linear-equation practice,
+  topic explanation, and mistake review.
+- The tutor workspace also shows saved lesson continuity. It calls
+  `GET /tutor/lessons`, displays recent lesson records, last questions,
+  summaries or last answers, and a continue action. If no lesson has been
+  saved, it shows an explicit empty-history message rather than a blank area.
+- When stored turns exist, the latest saved discussion is loaded into the
+  tutor view on page load, so the student can see where the previous session
+  ended.
+- Continuing a saved lesson reuses its `conversationId` and lesson type. The
+  backend adds recent turns and session summaries from SQLite to the tutor
+  prompt so the answer can continue from the prior discussion.
+- Legacy saved `tutor_turns` without a matching `lesson_sessions` row remain
+  visible as resumable discussions.
+- Starting a launcher lesson is a deliberate user action. The web client does
+  not call the tutor model automatically on page load or immediately after
+  setup completion.
+- First meeting, level check, and practice cards send starter prompts with the
+  matching lesson type. Topic explanation and mistake-review cards prefill the
+  composer because they need student-specific text before sending.
 - Lesson type controls the goal of the response, expected block mix, and which
   background learning signals should be emphasized.
 - Switching the lesson mode in the web UI starts a new conversation/session
@@ -115,6 +156,9 @@ Rules from current implementation:
 - Image blocks are visual plans, not generated image bytes. They include
   prompt, caption, alt text, status, and priority so the UI can keep image
   support inside the same tutor turn.
+- If the student explicitly asks for a drawing, diagram, graph, image, or
+  visual explanation, the API must return an image block even if the model
+  omitted it. This keeps the explicit image-generation action visible.
 - The tutor prompt instructs the model to answer in Russian, explain step by
   step, check understanding, and avoid returning only the final answer.
 - If RAG vector stores exist, the OpenAI-backed model provider uses file
@@ -122,6 +166,9 @@ Rules from current implementation:
 - If RAG materials are missing, the tutor prompt says not to invent citations.
 - If a student profile exists, the tutor prompt includes its compact DB summary
   and explanation strategy so the answer can adapt to the teenager.
+- If the conversation has stored turns or session summaries, the tutor prompt
+  includes compact DB-backed continuity context so chat compaction or page
+  reload does not erase where the lesson stopped.
 - After the immediate tutor answer is persisted, the API enqueues background
   assistant work where logical:
   - in batched mode, sanitized tutor-turn observations are stored locally and
@@ -160,7 +207,8 @@ Rules from current implementation:
 ### Complete First-Login Meeting
 
 Student users complete a guided first meeting before the normal tutor
-workspace.
+workspace. After profile creation, the normal tutor workspace opens with a
+lesson launcher so the next teaching action is visible.
 
 Rules from current implementation:
 
@@ -190,6 +238,9 @@ Rules from current implementation:
   must not diagnose, manipulate, or preserve unnecessary sensitive details.
 - First-meeting answers and AI-made profile sections are filtered before
   storage so only teaching-useful signals remain for explanation strategy.
+- Completing setup does not automatically spend model tokens on a tutor turn.
+  The first teaching turn starts when the student chooses the green first
+  lesson button or another launcher action.
 
 ### Review Settings
 
@@ -217,8 +268,9 @@ Rules from current implementation:
 
 - Image requests use `POST /tutor/image`.
 - The tutor message response does not wait for image generation. It returns an
-  image block with prompt/caption/alt text, and the web client renders the
-  generated image inside that same tutor turn after the explicit image action.
+  image block with prompt/caption/alt text, and the web client shows a
+  prominent create-diagram action. The generated image renders inside that
+  same tutor turn after the explicit image action.
 - The API calls the model-provider image operation. The current implementation
   delegates to OpenAI image generation and returns a PNG data URL.
 - Image generation usage is recorded in the same usage ledger when a lesson

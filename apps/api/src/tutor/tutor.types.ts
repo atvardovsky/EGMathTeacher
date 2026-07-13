@@ -233,3 +233,35 @@ export interface TutorAnswer {
   citations: TutorCitation[];
   debug?: TutorDebugInfo;
 }
+
+export interface TutorLessonHistoryTurn {
+  id: string;
+  prompt: string;
+  lessonType: LessonType;
+  source: 'text' | 'voice';
+  answer: TutorAnswer;
+  createdAt: string;
+}
+
+export interface TutorLessonHistoryItem {
+  lessonSessionId: string;
+  conversationId: string;
+  lessonType: LessonType;
+  status: LessonSessionStatus;
+  goalStatus: LessonGoalStatus;
+  lessonGoal: string;
+  successCriteria: string[];
+  finishReason?: string;
+  turnCount: number;
+  activeLearningSeconds: number;
+  startedAt: string;
+  lastActivityAt: string;
+  updatedAt: string;
+  summary?: Record<string, unknown>;
+  evidenceLevels?: Record<string, unknown>;
+  turns: TutorLessonHistoryTurn[];
+}
+
+export interface TutorLessonHistory {
+  lessons: TutorLessonHistoryItem[];
+}

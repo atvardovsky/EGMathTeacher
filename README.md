@@ -45,7 +45,12 @@ Production domain:
 
 - Local registration/login with SQLite and signed HTTP-only cookies.
 - First registered user becomes `admin`; later users are `student`.
-- First-login meeting for students before the normal tutor workspace.
+- First-login meeting for students before the normal tutor workspace, followed
+  by a lesson launcher with a green first-lesson button and lesson cards.
+- Saved lesson continuity in the tutor workspace: the client loads
+  `GET /tutor/lessons`, shows recent lessons and last questions, auto-opens
+  the latest saved discussion when turns exist, and sends the same
+  `conversationId` when the student continues.
 - DB-backed student profile memory with knowledge state, learning preferences,
   tutoring-focused psychopedagogical profile, and explanation strategy.
 - Specialist AI profile pipeline for first-login onboarding: math knowledge
@@ -86,10 +91,19 @@ Production domain:
   instead of silently falling back to the linear-equation context.
 - Lesson type support for tutor sessions: the API supports meeting, tutor,
   concept, practice, diagnostic, exam strategy, mistake review, visual
-  explanation, and reflection modes; the POC web UI exposes tutor, practice,
-  level check, and mistake review. Switching the visible lesson mode starts a
-  fresh conversation/session boundary, and the API also protects older clients
-  by finishing an active session when the lesson type changes.
+  explanation, and reflection modes; the POC web UI exposes meeting, tutor,
+  practice, level check, and mistake review. When a tutor workspace has no
+  turns, it shows a lesson launcher with first meeting, level check, practice,
+  topic explanation, and mistake-review choices. Starting a launcher lesson is
+  user-triggered, not an automatic model call on page load. Switching the
+  visible lesson mode starts a fresh conversation/session boundary, and the
+  API also protects older clients by finishing an active session when the
+  lesson type changes.
+- The tutor prompt includes DB-backed continuity context for the active
+  conversation, plus recent session summaries, so a resumed lesson can pick up
+  from the previous discussion instead of starting from zero. Older saved
+  `tutor_turns` without a `lesson_sessions` row are still listed as resumable
+  legacy discussions.
 - Tutor answers return ordered response blocks for text, examples, tasks, and
   optional image plans while preserving legacy `answer`, `tasks`, `examples`,
   `needsImage`, and `imagePrompt` fields.
@@ -116,7 +130,13 @@ Production domain:
   daily and per-lesson AI expenses with operation/model/token/image details,
   decision outcomes, verifier status, verified outcome count, and cost per
   verified outcome. Cost estimates come from local pricing configuration; they
-  are not provider billing proof.
+  are not provider billing proof. When pricing is not configured, the UI shows
+  token/image counts plus an explicit missing-pricing state instead of
+  pretending the zero is a real billable cost.
+- Expanded usage details also show recent safe background job status, compact
+  sanitized result previews, and stored failure messages for the signed-in
+  user. The usage panel has a manual refresh action and polls the safe summary
+  endpoint while details are open or background jobs are still pending/running.
 - Russian/English static web UI locale switch for auth, first meeting, tutor, and admin views.
 - Settings view for language, voice input language, account info, and read-only profile memory.
 - Stored student profile memory is filtered to teaching-useful signals for
@@ -127,6 +147,15 @@ Production domain:
 - Image endpoint for explanatory math diagrams generated from a tutor image
   block prompt and rendered in the same tutor turn after explicit user action.
 - Browser voice input using speech recognition, submitted to the same RAG tutor endpoint.
+- Browser voice output using local speech synthesis in the tutor workspace.
+  Voice dialog is on by default when supported, can be switched off by the
+  student, speaks tutor answers, then automatically opens the mic for the next
+  student turn. Each tutor answer has a speak/stop control. This does not call
+  OpenAI audio APIs or store generated audio, so Russian stress/emotion quality
+  remains limited by the installed browser voices. Browser speech recognition
+  can still stop after silence, permission/device issues, or network/browser
+  policy; the web UI shows the stop reason and retries once after an automatic
+  silence stop in voice-dialog mode.
 - Imported WebRTC/Realtime voice service remains available under `/webrtc`.
 
 ## Checks

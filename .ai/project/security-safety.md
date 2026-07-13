@@ -156,6 +156,11 @@ request ids, secrets, billing credentials, stack traces, or another user's
 usage. Cost values are local estimates based on configured prices and are not
 provider billing proof.
 
+Browser voice output in the tutor workspace reads only visible tutor answer
+blocks through local speech synthesis. It must not speak hidden prompts,
+debug-only data, secrets, raw RAG chunks, or non-visible profile facts, and it
+does not create a stored generated-audio artifact.
+
 Gaps:
 
 - no formal privacy policy

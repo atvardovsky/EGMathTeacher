@@ -697,7 +697,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
         lessonType: options.lessonType,
       },
       metadata: {
-        background_ai: true,
+        background_ai: 'true',
         background_specialist: options.specialist,
       },
       input: [

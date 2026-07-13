@@ -1,8 +1,8 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { TutorService } from './tutor.service';
-import type { LessonType, TutorAnswer } from './tutor.types';
+import type { LessonType, TutorAnswer, TutorLessonHistory } from './tutor.types';
 
 interface TutorMessageBody {
   message?: string;
@@ -24,6 +24,19 @@ interface TutorImageBody {
 @UseGuards(AuthGuard)
 export class TutorController {
   constructor(private readonly tutorService: TutorService) {}
+
+  @Get('lessons')
+  lessons(
+    @Req() request: AuthenticatedRequest,
+    @Query('limit') limit?: string,
+    @Query('turnLimit') turnLimit?: string,
+  ): TutorLessonHistory {
+    return this.tutorService.getLessonHistory({
+      user: request.user!,
+      limit,
+      turnLimit,
+    });
+  }
 
   @Post('message')
   async message(

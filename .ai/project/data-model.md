@@ -283,6 +283,10 @@ model calls while preserving eventually consistent profile updates.
 Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
 before each drain: jobs with retry attempts left return to `pending`, and
 exhausted jobs become `failed`.
+`GET /usage/me/summary` may expose only safe projections of this table for the
+signed-in user: job type, status, attempts, timestamps, compact sanitized
+result preview, and stored error message. It must not expose raw
+`payload_json`, hidden instructions, stack traces, or another user's jobs.
 
 ### `background_learning_observations`
 
@@ -445,6 +449,10 @@ completion, learning-limit stops, and ordinary in-progress state without
 adding a separate SQLite column in the POC. The DTO also exposes
 `goalEvidenceLevel`; accepted action-level evidence is stored in
 `lesson_decisions`.
+
+`GET /tutor/lessons` reads `lesson_sessions` as the canonical saved-lesson
+record, then joins recent `tutor_turns` and the latest
+`student_session_summaries` for display/resume context.
 
 ### `lesson_effectiveness_signals`
 
@@ -798,6 +806,9 @@ The usage ledger supports the signed-in user's visible lesson usage bar. It
 stores operation/model/token/image counts and local cost estimates only. It
 must not store raw prompts, hidden instructions, RAG chunks, provider request
 ids, secrets, billing credentials, or another user's usage in a response.
+If local pricing is absent, `pricing_source` is `not_configured` and
+`estimated_cost_usd` remains `0`; the UI must label that as missing pricing
+rather than presenting it as a provider bill.
 
 ### `tutor_turns`
 
@@ -821,6 +832,12 @@ plan blocks, while retaining legacy `answer`, `tasks`, `examples`,
 analysis and older clients. Image bytes are not stored in `tutor_turns`;
 generated images are remote provider outputs returned to the web client as
 data URLs in the current POC.
+
+The saved-lessons endpoint also uses `tutor_turns` directly for turn previews
+and backward-compatible legacy history. When a conversation has stored turns
+but no `lesson_sessions` row, the API exposes it as a resumable discussion
+with a synthetic `legacy_<conversationId>` session id; continuing it still
+uses the original `conversation_id`.
 
 ## In-Memory State
 

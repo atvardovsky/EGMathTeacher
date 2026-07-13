@@ -114,7 +114,7 @@ export class OpenAiClientService {
       if (!response.ok) {
         const body = await response.text();
         this.logger.error(`OpenAI request ${path} failed (${response.status}): ${body}`);
-        throw new BadGatewayException(`OpenAI request failed with status ${response.status}`);
+        throw new BadGatewayException(this.formatOpenAiError(response.status, body));
       }
 
       return (await response.json()) as T;
@@ -128,5 +128,46 @@ export class OpenAiClientService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private formatOpenAiError(status: number, body: string): string {
+    const prefix = `OpenAI request failed with status ${status}`;
+    const detail = this.extractOpenAiErrorDetail(body);
+    return detail ? `${prefix}: ${detail}` : prefix;
+  }
+
+  private extractOpenAiErrorDetail(body: string): string | undefined {
+    try {
+      const parsed = JSON.parse(body) as unknown;
+      const record =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
+      const error = record.error;
+      const errorRecord =
+        error && typeof error === 'object' && !Array.isArray(error)
+          ? (error as Record<string, unknown>)
+          : {};
+      let message: string | undefined;
+      if (typeof errorRecord.message === 'string') {
+        message = errorRecord.message;
+      } else if (typeof record.message === 'string') {
+        message = record.message;
+      }
+      const param = typeof errorRecord.param === 'string' ? errorRecord.param : undefined;
+      const code = typeof errorRecord.code === 'string' ? errorRecord.code : undefined;
+      return this.compactErrorDetail(
+        [message, param ? `param=${param}` : undefined, code ? `code=${code}` : undefined]
+          .filter((item): item is string => Boolean(item))
+          .join(' '),
+      );
+    } catch {
+      return this.compactErrorDetail(body);
+    }
+  }
+
+  private compactErrorDetail(value: string): string | undefined {
+    const compact = value.replace(/\s+/g, ' ').trim();
+    return compact ? compact.slice(0, 500) : undefined;
   }
 }

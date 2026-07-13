@@ -83,10 +83,10 @@ flowchart LR
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
 | `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, session summaries, skill progress/regression rows, profile/strategy refreshes, and legacy per-turn background jobs. |
 | `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
-| `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, and verified outcome counts. |
+| `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, verified outcome counts, and safe background job status/result/error projections. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
-| `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling and image generation. |
+| `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling, saved lesson history, and image generation. |
 | `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, strict authoritative deleted-path reconciliation, sync-job recovery for failed and attached timeout jobs, optional vector-store wait-ready with pending-index state, archive guardrails, vector store status, and local project vector-store id persistence. |
 | `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
@@ -110,8 +110,10 @@ Main UI areas in `apps/web/src/App.tsx`:
 
 - auth screen with login/register mode
 - first-login student meeting for profile creation
-- tutor workspace with lesson mode selector plus text and speech recognition
-  input
+- tutor workspace with lesson launcher, lesson mode selector, text input,
+  saved lesson continuity panel, speech recognition input, and browser
+  speech-synthesis output for visible tutor answers with automatic mic
+  restart plus visible recognition stop reasons in voice-dialog mode
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   and expanded operation/model/token/image/decision details
@@ -171,9 +173,10 @@ configuration.
 | `GET /auth/me` | none | Return current cookie session or null. |
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
 | `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile. |
+| `GET /tutor/lessons` | authenticated | Return signed-in user's recent lesson sessions, summaries, stored turns, and legacy saved tutor-turn discussions for resume UI. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. |
 | `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context. |
-| `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, and verified-outcome economics. |
+| `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |

@@ -27,7 +27,8 @@ UI should:
 - avoid childish tone, moralizing, or school-test framing
 - look polished and modern without clutter or decorative noise
 - keep important controls large enough for touch and coarse pointing
-- give the learner control over text input, voice input, and optional images
+- give the learner control over text input, voice input, voice output, and
+  optional images
 - support Russian and English static UI text
 
 ## Product Flow
@@ -39,15 +40,23 @@ The web UI follows this tree:
 3. Student first-meeting screen when profile onboarding is required.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
-6. Tutor lesson modes expose only the main POC choices in the UI: tutor,
+6. When the tutor workspace has no turns, show a lesson launcher with a
+   prominent green first-lesson button and scannable lesson cards. Do not leave
+   the student in a blank waiting state after setup.
+7. Show a saved-lesson continuity panel in the tutor workspace. It should
+   display recent records and resume actions when history exists, and an
+   explicit empty-history message when no lessons are saved yet. If stored
+   turns exist, the latest saved discussion should be visible without making
+   the student discover a hidden history control.
+8. Tutor lesson modes expose the main POC choices in the UI: meeting, tutor,
    practice, diagnostic, and mistake review.
-7. Tutor workspace shows a compact lesson usage bar for all signed-in users.
+9. Tutor workspace shows a compact lesson usage bar for all signed-in users.
    It can expand to safe operation/model/token/image, verifier, and
    decision-policy details, but it should not look like an admin debug
    console.
-8. Settings view for language, voice, account info, and read-only profile
+10. Settings view for language, voice, account info, and read-only profile
    memory, including recent session summaries and skill progress/regression.
-9. Admin knowledge-materials view only for admin users.
+11. Admin knowledge-materials view only for admin users.
 
 The first screen after auth must be a usable app surface, not a marketing
 landing page.
@@ -74,8 +83,11 @@ landing page.
   segmented controls, file upload, alerts, badges, tables, and progress.
 - Use a segmented control for the main lesson type because it is a mode
   choice, not a command. Changing the mode starts a fresh lesson/conversation
-  boundary so tutor, practice, diagnostic, and mistake-review state do not
-  drift into each other.
+  boundary so meeting, tutor, practice, diagnostic, and mistake-review state do
+  not drift into each other.
+- Use a green primary button for the first lesson launcher action. The launcher
+  may start meeting, diagnostic, or practice only after a user click; it must
+  not trigger model calls automatically on page load.
 - Use lucide icons for buttons and navigation when an icon exists.
 - Keep route-like UI in one predictable tree: auth, first meeting, tutor,
   knowledge materials.
@@ -106,22 +118,43 @@ landing page.
   spacing between adjacent actions.
 - Use visible focus states and keep sticky/header surfaces from covering
   focused controls.
-- Voice controls must show disabled state when browser speech recognition is
-  unavailable.
+- Voice controls must show disabled state when browser speech recognition or
+  speech synthesis is unavailable.
+- Voice dialog must have an obvious on/off switch and per-answer speak/stop
+  control. It may speak a tutor answer after a user-triggered lesson action or
+  message, but it must not start speaking on page load.
+- In voice-dialog mode, the browser should hand the turn back to the student:
+  after assistant speech ends, speech recognition starts automatically when the
+  browser supports it and permissions allow it.
+- Voice input must not fail silently. If browser recognition stops because of
+  silence, permission, device, network, language, or automatic-start limits,
+  show a short status reason near the mic control and keep the manual mic
+  action visible.
+- Browser speech synthesis reads only visible tutor answer blocks locally; do
+  not add hidden prompt text, raw debug data, citations, secrets, or
+  non-visible profile facts to spoken output.
+- Browser speech quality is not a production voice layer. The POC may choose a
+  locale-matched voice and normalize obvious math phrases, but high-quality
+  Russian stress and emotional prosody require a future audio provider.
 - Tutor answers render ordered text, task, example, and image blocks inside
   one turn card.
 - Tutor turn headers show the source and lesson type so the learner can see
   whether the system is answering, practicing, checking level, or reviewing a
   mistake.
-- Image generation remains explicit user action; generated images need alt
-  text and a short caption connected to the current explanation.
+- Image generation remains explicit user action, but the create-image action
+  must be visually prominent when a turn includes an image block. Generated
+  images need alt text and a short caption connected to the current
+  explanation.
 - Recent session summaries and skill progress/regression are read-only
   learning memory. They should be compact and should not look like grades.
 - The usage bar is learner-facing transparency. Show only the signed-in user's
   own estimated usage, with no raw prompts, hidden instructions, provider
   request ids, or stack traces. Decision rows may show safe tool names,
   accepted/rejected status, evidence level, verifier result, latency, and
-  fallback status.
+  fallback status. Background-job rows may show safe job type, status,
+  attempts, sanitized result preview, and stored failure message only. Provide
+  a visible refresh action, and auto-refresh only through the safe summary
+  endpoint while details are open or jobs are active.
 - Error states must be visible near the affected workflow.
 
 ## Validation

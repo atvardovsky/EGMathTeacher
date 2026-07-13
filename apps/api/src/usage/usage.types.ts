@@ -67,11 +67,25 @@ export interface LessonUsageSummary {
   costPerVerifiedOutcomeUsd: number | null;
 }
 
+export interface BackgroundJobUsageItem {
+  id: string;
+  type: string;
+  status: string;
+  conversationId: string | null;
+  lessonSessionId: string | null;
+  attempts: number;
+  resultPreview?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserUsageSummary {
   currency: 'USD';
   today: AiUsageTotals;
   currentLesson: LessonUsageSummary | null;
   recentLessons: LessonUsageSummary[];
+  backgroundJobs: BackgroundJobUsageItem[];
 }
 
 export interface AiUsageRecord {

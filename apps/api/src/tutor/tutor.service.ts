@@ -28,6 +28,9 @@ import type {
   TutorImageBlock,
   TutorImagePriority,
   TutorImageStatus,
+  TutorLessonHistory,
+  TutorLessonHistoryItem,
+  TutorLessonHistoryTurn,
   TutorResponseBlock,
   TutorTask,
   TutorUsageSnapshot,
@@ -49,6 +52,12 @@ interface GenerateImageOptions {
   conversationId?: string;
   lessonSessionId?: string;
   lessonType?: LessonType;
+}
+
+interface LessonHistoryOptions {
+  user: AuthSession;
+  limit?: string;
+  turnLimit?: string;
 }
 
 const LESSON_TYPE_CONFIGS: Record<LessonType, LessonTypeConfig> = {
@@ -169,6 +178,69 @@ export class TutorService {
     private readonly mathVerifierService: MathVerifierService,
   ) {}
 
+  getLessonHistory(options: LessonHistoryOptions): TutorLessonHistory {
+    const limit = this.normalizePositiveInteger(options.limit, 8, 1, 12);
+    const turnLimit = this.normalizePositiveInteger(options.turnLimit, 4, 1, 8);
+    const rows = this.db.all<{
+      id: string;
+      conversation_id: string;
+      lesson_type: LessonType;
+      status: TutorLessonHistoryItem['status'];
+      goal_status: TutorLessonHistoryItem['goalStatus'];
+      goal_text: string;
+      success_criteria_json: string;
+      finish_reason: string | null;
+      active_learning_seconds: number;
+      turn_count: number;
+      started_at: string;
+      last_activity_at: string;
+      updated_at: string;
+    }>(
+      `SELECT id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds,
+              turn_count, started_at, last_activity_at, updated_at
+       FROM lesson_sessions
+       WHERE user_id = ?
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+      [options.user.id, limit],
+    );
+
+    const sessionLessons = rows.map((row) => {
+      const summary = this.getSessionSummary(options.user.id, row.conversation_id);
+      return {
+        lessonSessionId: row.id,
+        conversationId: row.conversation_id,
+        lessonType: this.normalizeLessonType(row.lesson_type) ?? 'tutor',
+        status: row.status,
+        goalStatus: row.goal_status,
+        lessonGoal: row.goal_text,
+        successCriteria: this.parseStringArray(row.success_criteria_json),
+        finishReason: row.finish_reason ?? undefined,
+        turnCount: row.turn_count,
+        activeLearningSeconds: row.active_learning_seconds,
+        startedAt: row.started_at,
+        lastActivityAt: row.last_activity_at,
+        updatedAt: row.updated_at,
+        summary: summary?.summary,
+        evidenceLevels: summary?.evidenceLevels,
+        turns: this.getLessonHistoryTurns(options.user.id, row.conversation_id, turnLimit),
+      };
+    });
+    const legacyLessons = this.getLegacyConversationHistory(
+      options.user.id,
+      new Set(sessionLessons.map((lesson) => lesson.conversationId)),
+      limit,
+      turnLimit,
+    );
+
+    return {
+      lessons: [...sessionLessons, ...legacyLessons]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, limit),
+    };
+  }
+
   async answerMessage(options: AnswerMessageOptions): Promise<TutorAnswer> {
     const message = this.normalizeMessage(options.message);
     const requestId = this.normalizeRequestId(options.requestId);
@@ -209,6 +281,7 @@ export class TutorService {
     });
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
     const studentProfileContext = this.studentProfileService.getTutorContext(options.user.id);
+    const continuityContext = this.getTutorContinuityContext(options.user.id, conversationId);
     const decisionResult = await this.lessonDecisionService.decide({
       userId: options.user.id,
       userName: options.user.name,
@@ -237,6 +310,7 @@ export class TutorService {
         vectorStoreIds,
         options.source,
         studentProfileContext,
+        continuityContext,
         lessonType,
         lifecycle,
         decisionResult,
@@ -252,7 +326,7 @@ export class TutorService {
       ),
     );
     const text = this.extractOutputText(response);
-    const answer = this.parseTutorAnswer(text, conversationId, lessonType, lifecycle);
+    const answer = this.parseTutorAnswer(text, message, conversationId, lessonType, lifecycle);
     answer.citations = this.extractCitations(response);
     answer.debug = this.buildTutorDebug(curriculum, decisionResult, verifierEvidence);
     this.mathVerifierService.ensureBackendTask({
@@ -328,6 +402,7 @@ export class TutorService {
     vectorStoreIds: string[],
     source: 'text' | 'voice',
     studentProfileContext: string | undefined,
+    continuityContext: string | undefined,
     lessonType: LessonType,
     lifecycle: LessonLifecycleDto,
     decisionResult: LessonDecisionResult,
@@ -364,6 +439,7 @@ export class TutorService {
                 this.getVerifierPrompt(verifierEvidence),
                 this.getLessonDecisionPrompt(decisionResult),
                 studentProfileContext ? studentProfileContext : 'Профиль ученика еще не создан.',
+                continuityContext ?? 'Предыдущий учебный контекст не найден.',
                 `Запрос ученика: ${message}`,
               ].join('\n'),
             },
@@ -391,6 +467,7 @@ export class TutorService {
       'Планируй ответ как ordered blocks: text, example, task, image. Текст должен работать даже если картинка не будет создана.',
       'Если ученик просит задачу, верни 1-3 task blocks и продублируй их в поле tasks.',
       'Если ученик просит пример или объяснение понятия, верни 1-3 example blocks и продублируй их в поле examples.',
+      'Если ученик прямо просит рисунок, схему, график, изображение или визуальное объяснение, image block обязателен.',
       'Если рисунок, график, схема или координатная плоскость сильно помогут, добавь image block со status="suggested", prompt, caption, altText и priority="optional|important|required"; также поставь needsImage=true и imagePrompt.',
       hasRag
         ? 'Используй file_search для материалов ЕГЭ, если вопрос связан с программой, типами заданий или правилами.'
@@ -402,16 +479,18 @@ export class TutorService {
 
   private parseTutorAnswer(
     text: string,
+    studentMessage: string,
     conversationId: string,
     lessonType: LessonType,
     lifecycle: LessonLifecycleDto,
   ): TutorAnswer {
     const parsed = this.parseJsonObject(text);
+    const requestedImagePrompt = this.buildRequestedImagePrompt(studentMessage, text);
     if (!parsed) {
-      const needsImage = this.looksVisual(text);
-      const imagePrompt = needsImage
+      const needsImage = Boolean(requestedImagePrompt || this.looksVisual(text));
+      const imagePrompt = requestedImagePrompt ?? (needsImage
         ? `Образовательная математическая схема для объяснения: ${text.slice(0, 500)}`
-        : undefined;
+        : undefined);
       const answer = text || 'Не удалось разобрать ответ модели.';
       return {
         conversationId,
@@ -430,10 +509,14 @@ export class TutorService {
     const parsedBlocks = this.normalizeBlocks(parsed.blocks);
     const answer = this.pickString(parsed, ['answer']) ?? text;
     const lessonLifecycle = this.mergeModelLifecycle(lifecycle, parsed);
-    const imagePrompt = this.pickString(parsed, ['imagePrompt', 'image_prompt']);
+    const imagePrompt =
+      this.pickString(parsed, ['imagePrompt', 'image_prompt']) ??
+      this.buildRequestedImagePrompt(studentMessage, answer);
     const initialTasks = this.normalizeTasks(parsed.tasks);
     const initialExamples = this.normalizeExamples(parsed.examples);
-    const initialNeedsImage = Boolean(parsed.needsImage ?? parsed.needs_image);
+    const initialNeedsImage = Boolean(
+      parsed.needsImage ?? parsed.needs_image ?? requestedImagePrompt,
+    );
     const blocks = this.completeResponseBlocks(
       answer,
       initialTasks,
@@ -503,6 +586,246 @@ export class TutorService {
     }
     const parsed = this.parseJsonObject(row.answer_json);
     return parsed ? (parsed as unknown as TutorAnswer) : undefined;
+  }
+
+  private getLessonHistoryTurns(
+    userId: string,
+    conversationId: string,
+    limit: number,
+  ): TutorLessonHistoryTurn[] {
+    const rows = this.db.all<{
+      id: string;
+      prompt: string;
+      answer_json: string;
+      lesson_type: LessonType;
+      created_at: string;
+    }>(
+      `SELECT id, prompt, answer_json, lesson_type, created_at
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND conversation_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, conversationId, limit],
+    );
+
+    return rows
+      .map((row): TutorLessonHistoryTurn | undefined => {
+        const parsed = this.parseJsonObject(row.answer_json);
+        if (!parsed) {
+          return undefined;
+        }
+        const lessonType =
+          this.normalizeLessonType(row.lesson_type) ??
+          this.normalizeLessonType(parsed.lessonType) ??
+          'tutor';
+        return {
+          id: row.id,
+          prompt: row.prompt,
+          lessonType,
+          source: 'text',
+          answer: {
+            ...(parsed as unknown as TutorAnswer),
+            lessonType,
+          },
+          createdAt: row.created_at,
+        };
+      })
+      .filter((turn): turn is TutorLessonHistoryTurn => Boolean(turn));
+  }
+
+  private getSessionSummary(
+    userId: string,
+    conversationId: string,
+  ): { summary: Record<string, unknown>; evidenceLevels: Record<string, unknown> } | undefined {
+    const row = this.db.get<{
+      summary_json: string;
+      evidence_levels_json: string;
+    }>(
+      `SELECT summary_json, evidence_levels_json
+       FROM student_session_summaries
+       WHERE user_id = ?
+         AND conversation_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, conversationId],
+    );
+    if (!row) {
+      return undefined;
+    }
+    return {
+      summary: this.parseJsonObject(row.summary_json) ?? {},
+      evidenceLevels: this.parseJsonObject(row.evidence_levels_json) ?? {},
+    };
+  }
+
+  private getLegacyConversationHistory(
+    userId: string,
+    knownConversationIds: Set<string>,
+    limit: number,
+    turnLimit: number,
+  ): TutorLessonHistoryItem[] {
+    const rows = this.db.all<{
+      conversation_id: string;
+      lesson_type: LessonType;
+      prompt: string;
+      answer_json: string;
+      turn_count: number;
+      started_at: string;
+      updated_at: string;
+    }>(
+      `SELECT latest.conversation_id,
+              latest.lesson_type,
+              latest.prompt,
+              latest.answer_json,
+              stats.turn_count,
+              stats.started_at,
+              stats.updated_at
+       FROM tutor_turns latest
+       JOIN (
+         SELECT conversation_id,
+                MIN(created_at) AS started_at,
+                MAX(created_at) AS updated_at,
+                COUNT(*) AS turn_count
+         FROM tutor_turns
+         WHERE user_id = ?
+         GROUP BY conversation_id
+       ) stats
+         ON stats.conversation_id = latest.conversation_id
+        AND stats.updated_at = latest.created_at
+       WHERE latest.user_id = ?
+       ORDER BY stats.updated_at DESC
+       LIMIT ?`,
+      [userId, userId, limit],
+    );
+
+    return rows
+      .filter((row) => !knownConversationIds.has(row.conversation_id))
+      .map((row): TutorLessonHistoryItem => {
+        const parsed = this.parseJsonObject(row.answer_json);
+        const summary = this.getSessionSummary(userId, row.conversation_id);
+        const lessonType =
+          this.normalizeLessonType(row.lesson_type) ??
+          this.normalizeLessonType(parsed?.lessonType) ??
+          this.normalizeLessonType(this.pickObject(parsed ?? {}, ['lessonLifecycle'])?.lessonType) ??
+          'tutor';
+        const lifecycle = this.pickObject(parsed ?? {}, ['lessonLifecycle']);
+        const lessonSessionId =
+          this.pickString(lifecycle, ['lessonSessionId', 'lesson_session_id']) ??
+          `legacy_${row.conversation_id}`;
+        const goalStatus =
+          this.normalizeGoalStatus(this.pickString(lifecycle, ['goalStatus', 'goal_status'])) ??
+          'in_progress';
+        const status =
+          this.normalizeSessionStatus(this.pickString(lifecycle, ['status'])) ?? 'active';
+        const goal =
+          this.pickString(lifecycle, ['lessonGoal', 'goalText', 'goal_text']) ??
+          this.pickString(parsed ?? {}, ['answer'])?.slice(0, 120) ??
+          'Продолжить сохраненное обсуждение.';
+        const activeLearningSeconds = this.pickNumber(lifecycle, [
+          'activeLearningSeconds',
+          'active_learning_seconds',
+        ]);
+
+        return {
+          lessonSessionId,
+          conversationId: row.conversation_id,
+          lessonType,
+          status,
+          goalStatus,
+          lessonGoal: goal,
+          successCriteria:
+            this.pickStringArray(lifecycle, ['successCriteria', 'success_criteria']) ?? [],
+          activeLearningSeconds:
+            activeLearningSeconds ?? Math.max(0, Number(row.turn_count) || 0) * 30,
+          turnCount: Number(row.turn_count) || 0,
+          startedAt: row.started_at,
+          lastActivityAt: row.updated_at,
+          updatedAt: row.updated_at,
+          summary: summary?.summary,
+          evidenceLevels: summary?.evidenceLevels,
+          turns: this.getLessonHistoryTurns(userId, row.conversation_id, turnLimit),
+        };
+      });
+  }
+
+  private getTutorContinuityContext(userId: string, conversationId: string): string | undefined {
+    const turns = this.getRecentTutorTurnsForPrompt(userId, conversationId, 4);
+    const summaries = this.getRecentSessionSummariesForPrompt(userId, 3);
+    if (turns.length === 0 && summaries.length === 0) {
+      return undefined;
+    }
+    return [
+      'Контекст продолжения из SQLite. Используй его, чтобы продолжить занятие с места предыдущего обсуждения, не начинать заново и не повторять длинно уже пройденное.',
+      turns.length > 0 ? `Последние ходы текущего диалога: ${JSON.stringify(turns)}` : undefined,
+      summaries.length > 0 ? `Недавние сводки занятий: ${JSON.stringify(summaries)}` : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 5_000);
+  }
+
+  private getRecentTutorTurnsForPrompt(
+    userId: string,
+    conversationId: string,
+    limit: number,
+  ): Array<Record<string, unknown>> {
+    const rows = this.db.all<{
+      prompt: string;
+      answer_json: string;
+      lesson_type: LessonType;
+      created_at: string;
+    }>(
+      `SELECT prompt, answer_json, lesson_type, created_at
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND conversation_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, conversationId, limit],
+    );
+
+    return rows.reverse().map((row) => {
+      const answer = this.parseJsonObject(row.answer_json) ?? {};
+      return {
+        lessonType: row.lesson_type,
+        prompt: row.prompt.slice(0, 700),
+        answer: (this.pickString(answer, ['answer']) ?? '').slice(0, 900),
+        goalStatus: this.pickString(this.pickObject(answer, ['lessonLifecycle']), [
+          'goalStatus',
+          'goal_status',
+        ]),
+        createdAt: row.created_at,
+      };
+    });
+  }
+
+  private getRecentSessionSummariesForPrompt(
+    userId: string,
+    limit: number,
+  ): Array<Record<string, unknown>> {
+    const rows = this.db.all<{
+      conversation_id: string | null;
+      lesson_type: LessonType;
+      summary_json: string;
+      evidence_levels_json: string;
+      created_at: string;
+    }>(
+      `SELECT conversation_id, lesson_type, summary_json, evidence_levels_json, created_at
+       FROM student_session_summaries
+       WHERE user_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, limit],
+    );
+
+    return rows.map((row) => ({
+      conversationId: row.conversation_id,
+      lessonType: row.lesson_type,
+      summary: this.parseJsonObject(row.summary_json) ?? {},
+      evidenceLevels: this.parseJsonObject(row.evidence_levels_json) ?? {},
+      createdAt: row.created_at,
+    }));
   }
 
   private enqueueBackgroundWork(
@@ -1153,6 +1476,30 @@ export class TutorService {
     return normalized;
   }
 
+  private normalizePositiveInteger(
+    value: string | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
+    const parsed = Number.parseInt(value ?? '', 10);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  private parseStringArray(value: string): string[] {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
   private buildTutorDebug(
     curriculum: CurriculumContext,
     decisionResult: LessonDecisionResult,
@@ -1223,6 +1570,30 @@ export class TutorService {
       .join('\n');
   }
 
+  private buildRequestedImagePrompt(message: string, context: string): string | undefined {
+    const request = message.trim();
+    if (!this.explicitlyRequestsImage(request)) {
+      return undefined;
+    }
+    const trimmedContext = context.trim();
+    return [
+      `Запрос ученика на визуальное объяснение: ${request.slice(0, 500)}`,
+      trimmedContext ? `Контекст ответа: ${trimmedContext.slice(0, 500)}` : undefined,
+      'Сделай понятную образовательную схему для ученика 14-16 лет: крупные элементы, простые подписи, без лишнего текста.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private explicitlyRequestsImage(text: string): boolean {
+    return (
+      /нарис|рисунк|картин|изображ|схем|график|визуал|чертеж|diagram|graph|image|picture|draw|plot|visual/i.test(
+        text,
+      ) ||
+      /покажи.{0,40}(схем|график|рис|картин|изображ|координат|парабол|чертеж)/i.test(text)
+    );
+  }
+
   private looksVisual(text: string): boolean {
     return /график|рисунок|схем|координат|геометр|окружност|парабол|треугольник|вектор/i.test(text);
   }
@@ -1265,6 +1636,28 @@ export class TutorService {
     return undefined;
   }
 
+  private pickNumber(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): number | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const parsed = Number.parseFloat(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+    return undefined;
+  }
+
   private pickObject(
     source: Record<string, unknown> | undefined,
     keys: string[],
@@ -1286,6 +1679,18 @@ export class TutorService {
       status === 'reached' ||
       status === 'blocked' ||
       status === 'stopped_by_limit'
+      ? status
+      : undefined;
+  }
+
+  private normalizeSessionStatus(
+    status: string | undefined,
+  ): TutorLessonHistoryItem['status'] | undefined {
+    return status === 'active' ||
+      status === 'soft_limit_reached' ||
+      status === 'hard_limit_reached' ||
+      status === 'goal_reached' ||
+      status === 'finished'
       ? status
       : undefined;
   }

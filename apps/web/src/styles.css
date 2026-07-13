@@ -266,13 +266,93 @@ textarea {
   pointer-events: none;
 }
 
-.empty-state {
-  min-height: 240px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 8px;
+.lesson-launcher {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--surface-muted);
+}
+
+.lesson-launcher-copy {
+  min-width: 0;
+}
+
+.lesson-start-button {
+  min-height: 48px;
+  min-width: 230px;
+  font-weight: 900;
+}
+
+.lesson-card {
+  background: #ffffff;
+  border-color: var(--line);
+  min-height: 214px;
+}
+
+.lesson-card-body {
+  min-height: 64px;
+}
+
+.lesson-continuity {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+.lesson-history-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdfc;
+}
+
+.lesson-history-row[data-active='true'] {
+  border-color: #2f9e44;
+  background: #f0fff4;
+}
+
+.lesson-history-empty {
+  background: var(--surface-muted);
+  border-style: dashed;
+}
+
+.lesson-history-summary {
+  color: #27312d;
+  line-height: 1.45;
+}
+
+.lesson-history-last-turn {
+  border-left: 3px solid #8ce99a;
+  padding-left: 10px;
+}
+
+.voice-dialog-row {
+  row-gap: 10px;
+}
+
+.voice-status {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.voice-status-listening {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
+.voice-status-info {
+  color: #3730a3;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.voice-status-warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .turn-card {
@@ -339,6 +419,13 @@ textarea {
 
 .image-block {
   max-width: 620px;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
+.image-block-copy {
+  flex: 1;
+  min-width: 0;
 }
 
 .file-input {
@@ -383,5 +470,27 @@ textarea {
   .language-switch {
     transform: scale(0.95);
     transform-origin: right center;
+  }
+
+  .lesson-launcher {
+    padding: 14px;
+  }
+
+  .lesson-start-button {
+    width: 100%;
+  }
+
+  .lesson-card,
+  .lesson-card-body {
+    min-height: unset;
+  }
+
+  .voice-dialog-row {
+    align-items: stretch;
+  }
+
+  .voice-dialog-row > .mantine-Group-root {
+    width: 100%;
+    justify-content: flex-end;
   }
 }

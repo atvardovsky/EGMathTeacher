@@ -8,6 +8,7 @@ import {
   AiUsageLedgerItem,
   AiUsageRecord,
   AiUsageTotals,
+  BackgroundJobUsageItem,
   UserUsageSummary,
 } from './usage.types';
 
@@ -127,6 +128,7 @@ export class UsageService {
         ? this.getLessonSummary(userId, currentLessonId, 25)
         : null,
       recentLessons: this.getRecentLessonSummaries(userId),
+      backgroundJobs: this.getBackgroundJobItems(userId, currentLessonId),
     };
   }
 
@@ -317,6 +319,63 @@ export class UsageService {
     return this.normalizeMoney(totals.estimatedCostUsd / verifiedOutcomes);
   }
 
+  private getBackgroundJobItems(
+    userId: string,
+    lessonSessionId?: string,
+  ): BackgroundJobUsageItem[] {
+    const rows = this.db.all<{
+      id: string;
+      type: string;
+      status: string;
+      conversation_id: string | null;
+      attempts: number;
+      payload_json: string;
+      result_json: string | null;
+      error_message: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `SELECT id, type, status, conversation_id, attempts, payload_json,
+              result_json, error_message, created_at, updated_at
+       FROM background_ai_jobs
+       WHERE user_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 20`,
+      [userId],
+    );
+
+    return rows
+      .map((row) => {
+        const payload = this.parseJsonObject(row.payload_json);
+        const resolvedLessonSessionId = this.pickString(payload, [
+          'lessonSessionId',
+          'lesson_session_id',
+        ]);
+        const item: BackgroundJobUsageItem = {
+          id: row.id,
+          type: row.type,
+          status: row.status,
+          conversationId: row.conversation_id,
+          lessonSessionId: resolvedLessonSessionId ?? null,
+          attempts: this.normalizeCount(row.attempts),
+          resultPreview: this.summarizeBackgroundResult(row.result_json),
+          errorMessage: row.error_message ? row.error_message.slice(0, 280) : undefined,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+        return {
+          item,
+          priority:
+            lessonSessionId && resolvedLessonSessionId === lessonSessionId
+              ? 0
+              : 1,
+        };
+      })
+      .sort((left, right) => left.priority - right.priority)
+      .slice(0, 8)
+      .map(({ item }) => item);
+  }
+
   private getLatestLessonSessionId(userId: string): string | undefined {
     const row = this.db.get<{ id: string }>(
       `SELECT id
@@ -477,6 +536,103 @@ export class UsageService {
     }
   }
 
+  private summarizeBackgroundResult(raw: string | null): string | undefined {
+    const parsed = this.parseJsonObject(raw);
+    if (!parsed) {
+      return undefined;
+    }
+
+    const sessionSummary = this.pickObject(parsed, [
+      'sessionSummary',
+      'session_summary',
+    ]);
+    const qualityReview = this.pickObject(parsed, ['qualityReview', 'quality_review']);
+    const candidates = [
+      this.pickString(parsed, ['skipped']),
+      this.pickString(parsed, ['summary', 'aiSummary', 'ai_summary']),
+      this.pickString(sessionSummary, ['summary', 'text']),
+      this.pickString(qualityReview, ['summary', 'risk']),
+    ].filter((value): value is string => Boolean(value));
+
+    if (candidates.length > 0) {
+      return candidates[0].slice(0, 280);
+    }
+
+    const compact = this.compactBackgroundResult(parsed);
+    const serialized = JSON.stringify(compact);
+    return serialized && serialized !== '{}' ? serialized.slice(0, 280) : undefined;
+  }
+
+  private compactBackgroundResult(source: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of [
+      'profileUpdateRecommended',
+      'qualityReview',
+      'signals',
+      'teachingStrategyHints',
+      'skillProgressSignals',
+      'knowledgeDelta',
+      'learningPreferencesPatch',
+      'explanationStrategyPatch',
+    ]) {
+      const value = source[key];
+      if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+        result[key] = value;
+      } else if (Array.isArray(value)) {
+        result[key] = value.slice(0, 2);
+      } else if (value && typeof value === 'object') {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  private parseJsonObject(raw: string | null | undefined): Record<string, unknown> | undefined {
+    if (!raw?.trim()) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private pickString(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): string | undefined {
+    if (!source) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private pickObject(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): Record<string, unknown> {
+    if (!source) {
+      return {};
+    }
+    for (const key of keys) {
+      const value = source[key];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+      }
+    }
+    return {};
+  }
+
   private pickNumber(source: Record<string, unknown>, keys: string[]): number {
     for (const key of keys) {
       const value = source[key];
@@ -485,19 +641,6 @@ export class UsageService {
       }
     }
     return 0;
-  }
-
-  private pickObject(
-    source: Record<string, unknown>,
-    keys: string[],
-  ): Record<string, unknown> {
-    for (const key of keys) {
-      const value = source[key];
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return value as Record<string, unknown>;
-      }
-    }
-    return {};
   }
 
   private normalizePrice(value: unknown, fallback: number): number {

@@ -16,6 +16,7 @@ describe('TutorService', () => {
     const db = {
       get: jest.fn(),
       run: jest.fn(),
+      all: jest.fn((_sql: string, _params?: unknown[]) => [] as Record<string, unknown>[]),
     };
     const lifecycle = {
       lessonSessionId: 'lesson-1',
@@ -357,6 +358,39 @@ describe('TutorService', () => {
     );
   });
 
+  it('adds an image block when the student explicitly asks for a visual', async () => {
+    const { service } = createService({
+      response: {
+        output_text: JSON.stringify({
+          answer: 'Покажу идею через короткое объяснение.',
+          blocks: [{ type: 'text', text: 'Покажу идею через короткое объяснение.' }],
+          tasks: [],
+          examples: [],
+          needsImage: false,
+        }),
+      },
+    });
+
+    const result = await service.answerMessage({
+      user,
+      message: 'Нарисуй схему параболы с корнями',
+      conversationId: 'conv-explicit-image',
+      source: 'text',
+    });
+
+    const imageBlock = result.blocks.find((block) => block.type === 'image');
+    expect(result.lessonType).toBe('visual_explanation');
+    expect(result.needsImage).toBe(true);
+    expect(result.imagePrompt).toContain('Нарисуй схему параболы с корнями');
+    expect(imageBlock).toEqual(
+      expect.objectContaining({
+        id: 'image-1',
+        type: 'image',
+        prompt: expect.stringContaining('Нарисуй схему параболы с корнями'),
+      }),
+    );
+  });
+
   it('adds stored student profile context to tutor prompts', async () => {
     const { service, aiModel, studentProfile } = createService();
 
@@ -374,6 +408,210 @@ describe('TutorService', () => {
     );
     expect(JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1])).toContain(
       'Состояние занятия',
+    );
+  });
+
+  it('adds recent conversation context to tutor prompts when continuing', async () => {
+    const { service, aiModel, db } = createService();
+    db.all.mockImplementation((sql: string) => {
+      if (sql.includes('FROM tutor_turns')) {
+        return [
+          {
+            prompt: 'Я остановился на x = 6',
+            answer_json: JSON.stringify({
+              answer: 'Да, это верный шаг. Следующий шаг - проверить подстановкой.',
+              lessonLifecycle: { goalStatus: 'in_progress' },
+            }),
+            lesson_type: 'practice',
+            created_at: '2026-07-12T10:00:00.000Z',
+          },
+        ];
+      }
+      if (sql.includes('FROM student_session_summaries')) {
+        return [
+          {
+            conversation_id: 'conv-profile',
+            lesson_type: 'practice',
+            summary_json: JSON.stringify({ summary: 'Практика линейных уравнений.' }),
+            evidence_levels_json: JSON.stringify({ L2: 'summary' }),
+            created_at: '2026-07-12T10:05:00.000Z',
+          },
+        ];
+      }
+      return [];
+    });
+
+    await service.answerMessage({
+      user,
+      message: 'Продолжим',
+      conversationId: 'conv-profile',
+      source: 'text',
+      lessonType: 'practice',
+    });
+
+    const requestText = JSON.stringify((aiModel.createOperationResponse as jest.Mock).mock.calls[0][1]);
+    expect(requestText).toContain('Контекст продолжения из SQLite');
+    expect(requestText).toContain('Я остановился на x = 6');
+    expect(requestText).toContain('Практика линейных уравнений');
+  });
+
+  it('returns recent lesson history with stored tutor turns', () => {
+    const { service, db } = createService();
+    db.all
+      .mockReturnValueOnce([
+        {
+          id: 'lesson-history',
+          conversation_id: 'conv-history',
+          lesson_type: 'practice',
+          status: 'active',
+          goal_status: 'in_progress',
+          goal_text: 'Продолжить практику.',
+          success_criteria_json: JSON.stringify(['самостоятельная попытка']),
+          finish_reason: null,
+          active_learning_seconds: 360,
+          turn_count: 2,
+          started_at: '2026-07-12T10:00:00.000Z',
+          last_activity_at: '2026-07-12T10:10:00.000Z',
+          updated_at: '2026-07-12T10:10:00.000Z',
+        },
+      ])
+      .mockReturnValueOnce([
+        {
+          id: 'turn-history',
+          prompt: 'Я решил x = 6',
+          answer_json: JSON.stringify({
+            conversationId: 'conv-history',
+            lessonType: 'practice',
+            lessonLifecycle: {
+              lessonSessionId: 'lesson-history',
+              conversationId: 'conv-history',
+              lessonType: 'practice',
+              status: 'active',
+              goalStatus: 'in_progress',
+              goalStatusEvidence: 'none',
+              goalEvidenceLevel: 'none',
+              lessonGoal: 'Продолжить практику.',
+              successCriteria: ['самостоятельная попытка'],
+              turnCount: 2,
+              activeLearningSeconds: 360,
+              dayActiveLearningSeconds: 360,
+              dailyLimit: { status: 'ok', softLimitSeconds: 5400, hardLimitSeconds: 7200, usedSeconds: 360, remainingSeconds: 6840 },
+              continuousLimit: { status: 'ok', softLimitSeconds: 2700, hardLimitSeconds: 3600, usedSeconds: 360, remainingSeconds: 3240 },
+              shouldSuggestBreak: false,
+              shouldStop: false,
+              strategySignal: { direction: 'stable', summary: 'Стабильно.', recommendedAdjustment: 'Продолжать.' },
+            },
+            answer: 'Верно, дальше проверяем подстановкой.',
+            blocks: [{ id: 'text-1', type: 'text', text: 'Верно, дальше проверяем подстановкой.' }],
+            tasks: [],
+            examples: [],
+            needsImage: false,
+            citations: [],
+          }),
+          lesson_type: 'practice',
+          created_at: '2026-07-12T10:10:00.000Z',
+        },
+      ]);
+    db.get.mockReturnValueOnce({
+      summary_json: JSON.stringify({ summary: 'Решали линейное уравнение.' }),
+      evidence_levels_json: JSON.stringify({ L2: 'summary' }),
+    });
+
+    const history = service.getLessonHistory({ user });
+
+    expect(history.lessons).toHaveLength(1);
+    expect(history.lessons[0]).toEqual(
+      expect.objectContaining({
+        lessonSessionId: 'lesson-history',
+        conversationId: 'conv-history',
+        lessonType: 'practice',
+        summary: { summary: 'Решали линейное уравнение.' },
+      }),
+    );
+    expect(history.lessons[0].turns[0]).toEqual(
+      expect.objectContaining({
+        id: 'turn-history',
+        prompt: 'Я решил x = 6',
+        lessonType: 'practice',
+        answer: expect.objectContaining({ answer: 'Верно, дальше проверяем подстановкой.' }),
+      }),
+    );
+  });
+
+  it('returns legacy tutor-turn conversations when no lesson session exists', () => {
+    const { service, db } = createService();
+    db.all
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([
+        {
+          conversation_id: 'conv-legacy-history',
+          lesson_type: 'tutor',
+          prompt: 'Объясни производную',
+          answer_json: JSON.stringify({
+            conversationId: 'conv-legacy-history',
+            lessonType: 'tutor',
+            answer: 'Говорили про производную как скорость изменения.',
+            blocks: [
+              {
+                id: 'text-1',
+                type: 'text',
+                text: 'Говорили про производную как скорость изменения.',
+              },
+            ],
+            tasks: [],
+            examples: [],
+            needsImage: false,
+            citations: [],
+          }),
+          turn_count: 1,
+          started_at: '2026-07-11T10:00:00.000Z',
+          updated_at: '2026-07-11T10:00:00.000Z',
+        },
+      ])
+      .mockReturnValueOnce([
+        {
+          id: 'turn-legacy-history',
+          prompt: 'Объясни производную',
+          answer_json: JSON.stringify({
+            conversationId: 'conv-legacy-history',
+            lessonType: 'tutor',
+            answer: 'Говорили про производную как скорость изменения.',
+            blocks: [
+              {
+                id: 'text-1',
+                type: 'text',
+                text: 'Говорили про производную как скорость изменения.',
+              },
+            ],
+            tasks: [],
+            examples: [],
+            needsImage: false,
+            citations: [],
+          }),
+          lesson_type: 'tutor',
+          created_at: '2026-07-11T10:00:00.000Z',
+        },
+      ]);
+
+    const history = service.getLessonHistory({ user });
+
+    expect(history.lessons).toHaveLength(1);
+    expect(history.lessons[0]).toEqual(
+      expect.objectContaining({
+        lessonSessionId: 'legacy_conv-legacy-history',
+        conversationId: 'conv-legacy-history',
+        lessonType: 'tutor',
+        status: 'active',
+        goalStatus: 'in_progress',
+        lessonGoal: 'Говорили про производную как скорость изменения.',
+        turnCount: 1,
+      }),
+    );
+    expect(history.lessons[0].turns[0]).toEqual(
+      expect.objectContaining({
+        id: 'turn-legacy-history',
+        prompt: 'Объясни производную',
+      }),
     );
   });
 

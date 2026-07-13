@@ -35,8 +35,10 @@ decisions.
 
 - `npm run e2e` runs Playwright browser tests against mocked API routes and
   headless Chromium.
-- The browser suite covers auth/localization, first meeting, tutor response
-  rendering, citations, and explicit image rendering.
+- The browser suite covers auth/localization, first meeting, lesson launcher
+  visibility/start, mocked speech-synthesis handoff for tutor voice output,
+  automatic speech-recognition restart, tutor response rendering, citations,
+  and explicit image rendering.
 
 ### AI Teaching Safety And Profile Governance
 
@@ -80,6 +82,10 @@ decisions.
 - Accepted `mark_goal_blocked` policy now updates durable lesson goal state.
 - Profile-delta proposals from the immediate decision path are routed into
   sanitized background observations instead of mutating the profile.
+- Tutor-side lesson continuity now shows saved lessons, previous questions,
+  summaries or last answers, an explicit empty-history state, and a resume
+  action. The latest saved discussion is loaded when stored turns exist, and
+  legacy `tutor_turns` without `lesson_sessions` remain resumable.
 
 ## Remaining Gaps By Logical Set
 
@@ -175,3 +181,7 @@ Remaining teaching-engine gaps:
 - adaptive/embedding-based task-bank selection beyond imported supported
   verifier kinds and simple prior-use ordering
 - conversational first meeting still needs to replace the form-first fallback
+- real cross-browser audio playback quality, Russian stress, and emotional
+  prosody remain POC concerns; current automated E2E checks browser
+  speech-synthesis handoff and automatic mic restart, but not real audio
+  naturalness

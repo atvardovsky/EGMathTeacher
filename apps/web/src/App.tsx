@@ -43,7 +43,10 @@ import {
   Languages,
   Loader2,
   LogOut,
+  History,
   Mic,
+  PlayCircle,
+  PlusCircle,
   RefreshCw,
   Send,
   Settings as SettingsIcon,
@@ -52,6 +55,8 @@ import {
   Square,
   Upload,
   User as UserIcon,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { api } from './api';
 import {
@@ -74,6 +79,8 @@ import {
   TutorAnswer,
   TutorImageBlock,
   TutorImageResult,
+  TutorLessonHistory,
+  TutorLessonHistoryItem,
   TutorLessonLifecycle,
   TutorResponseBlock,
   TutorTurn,
@@ -84,6 +91,26 @@ import {
 
 type View = 'tutor' | 'knowledge' | 'settings';
 type AuthMode = 'login' | 'register';
+const VOICE_OUTPUT_STORAGE_KEY = 'egmathteacher.voiceOutputEnabled';
+const MAX_SPEECH_TEXT_LENGTH = 1800;
+const VOICE_AUTO_RESTART_DELAY_MS = 450;
+const VOICE_MAX_AUTO_RESTARTS = 1;
+const USAGE_POLL_INTERVAL_MS = 5000;
+
+type VoiceStatus = {
+  tone: 'listening' | 'info' | 'warning';
+  text: string;
+};
+
+type LessonLauncherItem = {
+  id: 'meeting' | 'diagnostic' | 'practice' | 'explain' | 'mistake';
+  lessonType: LessonType;
+  title: string;
+  body: string;
+  action: string;
+  prompt: string;
+  startImmediately: boolean;
+};
 
 function App() {
   const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
@@ -821,11 +848,32 @@ function TutorWorkspace({
   const [voiceInterim, setVoiceInterim] = useState('');
   const [usageSummary, setUsageSummary] = useState<UserUsageSummary | null>(null);
   const [usageExpanded, setUsageExpanded] = useState(false);
+  const [usageRefreshing, setUsageRefreshing] = useState(false);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(
+    () => window.localStorage.getItem(VOICE_OUTPUT_STORAGE_KEY) !== 'false',
+  );
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [speakingTurnId, setSpeakingTurnId] = useState<string | null>(null);
+  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [lessonHistory, setLessonHistory] = useState<TutorLessonHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [activeLessonSessionId, setActiveLessonSessionId] = useState<string | undefined>();
+  const [continuityNotice, setContinuityNotice] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lessonFocusRef = useRef<HTMLDivElement | null>(null);
+  const voiceOutputEnabledRef = useRef(voiceOutputEnabled);
+  const autoListenAfterSpeechRef = useRef(false);
+  const manualVoiceStopRef = useRef(false);
+  const autoVoiceRestartCountRef = useRef(0);
 
   const speechSupported = useMemo(
     () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
+    [],
+  );
+  const speechOutputSupported = useMemo(
+    () => Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance),
     [],
   );
 
@@ -837,62 +885,231 @@ function TutorWorkspace({
         : undefined,
     [conversationId, turns],
   );
+  const hasActiveBackgroundJobs = useMemo(
+    () =>
+      (usageSummary?.backgroundJobs ?? []).some((job) =>
+        ['pending', 'running'].includes(job.status),
+      ),
+    [usageSummary],
+  );
+  const launcherCards = useMemo<LessonLauncherItem[]>(
+    () => [
+      {
+        id: 'meeting',
+        lessonType: 'meeting',
+        title: t.tutor.launcher.cards.meeting.title,
+        body: t.tutor.launcher.cards.meeting.body,
+        action: t.tutor.launcher.cards.meeting.action,
+        prompt: t.tutor.launcher.cards.meeting.prompt,
+        startImmediately: true,
+      },
+      {
+        id: 'diagnostic',
+        lessonType: 'diagnostic',
+        title: t.tutor.launcher.cards.diagnostic.title,
+        body: t.tutor.launcher.cards.diagnostic.body,
+        action: t.tutor.launcher.cards.diagnostic.action,
+        prompt: t.tutor.launcher.cards.diagnostic.prompt,
+        startImmediately: true,
+      },
+      {
+        id: 'practice',
+        lessonType: 'practice',
+        title: t.tutor.launcher.cards.practice.title,
+        body: t.tutor.launcher.cards.practice.body,
+        action: t.tutor.launcher.cards.practice.action,
+        prompt: t.tutor.launcher.cards.practice.prompt,
+        startImmediately: true,
+      },
+      {
+        id: 'explain',
+        lessonType: 'tutor',
+        title: t.tutor.launcher.cards.explain.title,
+        body: t.tutor.launcher.cards.explain.body,
+        action: t.tutor.launcher.cards.explain.action,
+        prompt: t.tutor.launcher.cards.explain.prompt,
+        startImmediately: false,
+      },
+      {
+        id: 'mistake',
+        lessonType: 'mistake_review',
+        title: t.tutor.launcher.cards.mistake.title,
+        body: t.tutor.launcher.cards.mistake.body,
+        action: t.tutor.launcher.cards.mistake.action,
+        prompt: t.tutor.launcher.cards.mistake.prompt,
+        startImmediately: false,
+      },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     void refreshUsage();
+    void refreshLessonHistory(true);
   }, []);
+
+  useEffect(
+    () => () => {
+      autoListenAfterSpeechRef.current = false;
+      window.speechSynthesis?.cancel();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    voiceOutputEnabledRef.current = voiceOutputEnabled;
+  }, [voiceOutputEnabled]);
+
+  useEffect(() => {
+    if (!usageExpanded && !hasActiveBackgroundJobs) {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void refreshUsage(activeLessonSessionId);
+    }, USAGE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [activeLessonSessionId, hasActiveBackgroundJobs, usageExpanded]);
+
+  useEffect(() => {
+    if (!speechOutputSupported) {
+      return undefined;
+    }
+    const loadVoices = () => setSpeechVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+  }, [speechOutputSupported]);
 
   async function refreshUsage(lessonSessionId?: string) {
     const query = lessonSessionId ? `?lessonSessionId=${encodeURIComponent(lessonSessionId)}` : '';
+    setUsageRefreshing(true);
     try {
       setUsageSummary(await api<UserUsageSummary>(`/usage/me/summary${query}`));
     } catch {
       // Usage visibility must not block tutoring when the POC API is unavailable.
+    } finally {
+      setUsageRefreshing(false);
     }
+  }
+
+  async function refreshLessonHistory(hydrateLatest = false) {
+    setHistoryLoading(true);
+    try {
+      const history = await api<TutorLessonHistory>('/tutor/lessons?limit=8&turnLimit=6');
+      setLessonHistory(history.lessons);
+      if (hydrateLatest && turns.length === 0 && history.lessons[0]?.turns.length > 0) {
+        loadLessonFromHistory(history.lessons[0], { announce: false, focus: false });
+      }
+    } catch {
+      // Lesson continuity is helpful, but it must not block a new tutor turn.
+    } finally {
+      setHistoryLoaded(true);
+      setHistoryLoading(false);
+    }
+  }
+
+  function loadLessonFromHistory(
+    lesson: TutorLessonHistoryItem,
+    options: { announce?: boolean; focus?: boolean } = {},
+  ) {
+    stopTutorSpeech();
+    stopVoice();
+    setConversationId(lesson.conversationId);
+    setActiveLessonSessionId(lesson.lessonSessionId);
+    setLessonType(lesson.lessonType);
+    setDraft('');
+    setVoiceInterim('');
+    setTurns(lesson.turns);
+    if (options.announce !== false) {
+      setContinuityNotice(
+        lesson.turns.length > 0
+          ? t.tutor.continuity.openedNotice
+          : t.tutor.continuity.openedWithoutTurnsNotice,
+      );
+    }
+    if (options.focus !== false) {
+      focusLessonWorkspace();
+    }
+    void refreshUsage(lesson.lessonSessionId);
+  }
+
+  function focusLessonWorkspace() {
+    window.setTimeout(() => {
+      lessonFocusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      textareaRef.current?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function clearLessonBoundary() {
+    setConversationId(undefined);
+    setActiveLessonSessionId(undefined);
+    setUsageSummary((currentSummary) =>
+      currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
+    );
+  }
+
+  function startNewLesson() {
+    stopTutorSpeech();
+    stopVoice();
+    clearLessonBoundary();
+    setContinuityNotice(null);
+    setTurns([]);
+    setDraft('');
+    setVoiceInterim('');
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
   function changeLessonType(value: string) {
     const nextLessonType = toLessonType(value);
-    setLessonType((currentLessonType) => {
-      if (nextLessonType !== currentLessonType) {
-        setConversationId(undefined);
-        setUsageSummary((currentSummary) =>
-          currentSummary ? { ...currentSummary, currentLesson: null } : currentSummary,
-        );
-      }
-      return nextLessonType;
-    });
+    if (nextLessonType !== lessonType) {
+      clearLessonBoundary();
+      setContinuityNotice(null);
+    }
+    setLessonType(nextLessonType);
   }
 
-  async function sendMessage(rawPrompt = draft, source: 'text' | 'voice' = 'text') {
+  async function sendMessage(
+    rawPrompt = draft,
+    source: 'text' | 'voice' = 'text',
+    overrideLessonType?: LessonType,
+    forceNewConversation = false,
+  ) {
     const prompt = rawPrompt.trim();
     if (!prompt || sending) {
       return;
     }
     setSending(true);
     setError(null);
+    setContinuityNotice(null);
     setDraft('');
     setVoiceInterim('');
+    setVoiceStatus(null);
     const id = crypto.randomUUID();
     const requestId = crypto.randomUUID();
-    const currentLessonType = lessonType;
+    const currentLessonType = overrideLessonType ?? lessonType;
+    const currentConversationId = forceNewConversation ? undefined : conversationId;
     setTurns((current) => [{ id, prompt, source, lessonType: currentLessonType }, ...current]);
     try {
       const answer = await api<TutorAnswer>('/tutor/message', {
         method: 'POST',
         body: JSON.stringify({
           message: prompt,
-          conversationId,
+          conversationId: currentConversationId,
           requestId,
           source,
           lessonType: currentLessonType,
         }),
       });
       setConversationId(answer.conversationId);
+      setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
+      if (voiceOutputEnabled) {
+        speakTutorAnswer(id, answer, true);
+      }
       void refreshUsage(answer.lessonLifecycle?.lessonSessionId);
+      void refreshLessonHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.tutor);
       setTurns((current) => current.filter((turn) => turn.id !== id));
@@ -901,17 +1118,68 @@ function TutorWorkspace({
     }
   }
 
-  function startVoice() {
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Recognition) {
-      setError(t.errors.speechUnsupported);
+  function startVoice(auto = false) {
+    if (listening || recognitionRef.current) {
       return;
     }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) {
+      if (!auto) {
+        setError(t.errors.speechUnsupported);
+      }
+      setVoiceStatus({
+        tone: 'warning',
+        text: t.tutor.voiceStatus.unsupported,
+      });
+      return;
+    }
+    manualVoiceStopRef.current = false;
     const recognition = new Recognition();
     recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.continuous = false;
+    recognition.continuous = voiceOutputEnabledRef.current;
     recognition.interimResults = true;
     let finalText = '';
+    let latestError: string | undefined;
+    let completed = false;
+    const finishRecognition = () => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      setListening(false);
+      setVoiceInterim('');
+      recognitionRef.current = null;
+      const spoken = finalText.trim();
+      if (spoken) {
+        autoVoiceRestartCountRef.current = 0;
+        setVoiceStatus(null);
+        void sendMessage(spoken, 'voice');
+        return;
+      }
+      if (manualVoiceStopRef.current) {
+        manualVoiceStopRef.current = false;
+        autoVoiceRestartCountRef.current = 0;
+        setVoiceStatus(null);
+        return;
+      }
+      const canRetry =
+        auto &&
+        voiceOutputEnabledRef.current &&
+        speechSupported &&
+        shouldRetryVoiceInput(latestError) &&
+        autoVoiceRestartCountRef.current < VOICE_MAX_AUTO_RESTARTS;
+      if (canRetry) {
+        autoVoiceRestartCountRef.current += 1;
+        setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.retrying });
+        window.setTimeout(() => startVoice(true), VOICE_AUTO_RESTART_DELAY_MS);
+        return;
+      }
+      autoVoiceRestartCountRef.current = 0;
+      setVoiceStatus({
+        tone: 'warning',
+        text: getVoiceStopMessage(latestError, t),
+      });
+    };
     recognition.onresult = (event) => {
       let interim = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -924,34 +1192,114 @@ function TutorWorkspace({
         }
       }
       setVoiceInterim(interim.trim());
+      setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
     };
-    recognition.onerror = () => {
-      setListening(false);
-      setVoiceInterim('');
-      setError(t.errors.speechFailed);
+    recognition.onerror = (event) => {
+      const errorCode = (event as { error?: unknown }).error;
+      latestError = typeof errorCode === 'string' ? errorCode : undefined;
+      if (!auto && !isExpectedSpeechSilence(latestError)) {
+        setError(t.errors.speechFailed);
+      }
+      finishRecognition();
     };
     recognition.onend = () => {
-      setListening(false);
-      setVoiceInterim('');
-      const spoken = finalText.trim();
-      if (spoken) {
-        void sendMessage(spoken, 'voice');
-      }
+      finishRecognition();
     };
     recognitionRef.current = recognition;
     setListening(true);
-    recognition.start();
+    setVoiceStatus({
+      tone: 'listening',
+      text: auto ? t.tutor.voiceStatus.autoListening : t.tutor.voiceStatus.listening,
+    });
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      if (!auto) {
+        setError(t.errors.speechFailed);
+      }
+      setVoiceStatus({
+        tone: 'warning',
+        text: auto ? t.tutor.voiceStatus.restartBlocked : t.tutor.voiceStatus.browserStopped,
+      });
+    }
   }
 
   function stopVoice() {
-    recognitionRef.current?.stop();
+    manualVoiceStopRef.current = true;
+    autoVoiceRestartCountRef.current = 0;
+    const recognition = recognitionRef.current;
+    recognition?.stop();
     recognitionRef.current = null;
     setListening(false);
+    setVoiceStatus(null);
   }
 
   function useQuickPrompt(text: string) {
     setDraft(text);
     textareaRef.current?.focus();
+  }
+
+  function toggleVoiceOutput(checked: boolean) {
+    setVoiceOutputEnabled(checked);
+    window.localStorage.setItem(VOICE_OUTPUT_STORAGE_KEY, checked ? 'true' : 'false');
+    if (!checked) {
+      stopTutorSpeech();
+    }
+  }
+
+  function speakTutorAnswer(turnId: string, answer: TutorAnswer, continueDialog = false) {
+    if (!speechOutputSupported) {
+      setError(t.errors.speechOutputUnsupported);
+      return;
+    }
+    const speechText = getTutorSpeechText(answer, t.tutor.imageAlt, locale);
+    if (!speechText) {
+      return;
+    }
+    autoListenAfterSpeechRef.current = false;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    utterance.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
+    utterance.voice = selectSpeechVoice(speechVoices, locale);
+    utterance.rate = locale === 'ru' ? 0.92 : 0.96;
+    utterance.pitch = locale === 'ru' ? 1.03 : 1;
+    autoListenAfterSpeechRef.current = continueDialog;
+    utterance.onend = () => {
+      setSpeakingTurnId((current) => (current === turnId ? null : current));
+      if (autoListenAfterSpeechRef.current && voiceOutputEnabledRef.current && speechSupported) {
+        autoListenAfterSpeechRef.current = false;
+        window.setTimeout(() => startVoice(true), 250);
+      }
+    };
+    utterance.onerror = () => {
+      autoListenAfterSpeechRef.current = false;
+      setSpeakingTurnId((current) => (current === turnId ? null : current));
+      setError(t.errors.speechOutputFailed);
+    };
+    setSpeakingTurnId(turnId);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopTutorSpeech() {
+    autoListenAfterSpeechRef.current = false;
+    window.speechSynthesis?.cancel();
+    setSpeakingTurnId(null);
+  }
+
+  function startLauncherLesson(item: LessonLauncherItem) {
+    clearLessonBoundary();
+    setLessonType(item.lessonType);
+    void sendMessage(item.prompt, 'text', item.lessonType, true);
+  }
+
+  function prepareLauncherLesson(item: LessonLauncherItem) {
+    clearLessonBoundary();
+    setLessonType(item.lessonType);
+    setDraft(item.prompt);
+    setVoiceInterim('');
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
   async function generateImage(turn: TutorTurn, block: TutorImageBlock) {
@@ -1033,6 +1381,7 @@ function TutorWorkspace({
             value={lessonType}
             onChange={changeLessonType}
             data={[
+              { value: 'meeting', label: t.tutor.lessonModeOptions.meeting },
               { value: 'tutor', label: t.tutor.lessonModeOptions.tutor },
               { value: 'practice', label: t.tutor.lessonModeOptions.practice },
               { value: 'diagnostic', label: t.tutor.lessonModeOptions.diagnostic },
@@ -1064,13 +1413,34 @@ function TutorWorkspace({
           ))}
         </Group>
 
+        {historyLoaded && (
+          <LessonContinuityPanel
+            t={t}
+            locale={locale}
+            lessons={lessonHistory}
+            activeLessonSessionId={activeLessonSessionId}
+            loading={historyLoading}
+            onResume={loadLessonFromHistory}
+            onNewLesson={startNewLesson}
+            onRefresh={() => void refreshLessonHistory()}
+          />
+        )}
+
+        {continuityNotice && (
+          <Alert color="teal" variant="light">
+            {continuityNotice}
+          </Alert>
+        )}
+
         <UsageBar
           t={t}
           locale={locale}
           summary={usageSummary}
           lifecycle={activeLifecycle}
           expanded={usageExpanded}
+          refreshing={usageRefreshing}
           onToggle={() => setUsageExpanded((current) => !current)}
+          onRefresh={() => void refreshUsage(activeLessonSessionId)}
         />
 
         <Card withBorder shadow="sm" padding="md" className="tutor-composer">
@@ -1092,30 +1462,60 @@ function TutorWorkspace({
                 disabled={listening}
                 size="md"
               />
-              <Group justify="flex-end" gap="sm">
-                <Tooltip label={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}>
-                  <ActionIcon
-                    size="xl"
-                    variant={listening ? 'filled' : 'light'}
-                    color={listening ? 'red' : 'teal'}
-                    onClick={listening ? stopVoice : startVoice}
-                    disabled={!speechSupported || sending}
-                    title={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}
-                  >
-                    {listening ? <Square size={18} /> : <Mic size={18} />}
-                  </ActionIcon>
-                </Tooltip>
-                <Button
-                  type="submit"
-                  size="md"
-                  color="teal"
-                  loading={sending}
-                  disabled={!draft.trim()}
-                  leftSection={<Send size={18} />}
+              <Group justify="space-between" gap="sm" align="center" className="voice-dialog-row">
+                <Tooltip
+                  label={
+                    speechOutputSupported
+                      ? t.tutor.voiceOutputHelp
+                      : t.tutor.voiceOutputUnavailable
+                  }
                 >
-                  {t.tutor.ask}
-                </Button>
+                  <Switch
+                    label={t.tutor.voiceOutput}
+                    checked={voiceOutputEnabled && speechOutputSupported}
+                    onChange={(event) => toggleVoiceOutput(event.currentTarget.checked)}
+                    disabled={!speechOutputSupported}
+                    size="md"
+                  />
+                </Tooltip>
+                <Group justify="flex-end" gap="sm">
+                  <Tooltip label={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}>
+                    <ActionIcon
+                      size="xl"
+                      variant={listening ? 'filled' : 'light'}
+                      color={listening ? 'red' : 'teal'}
+                      onClick={listening ? stopVoice : () => startVoice()}
+                      disabled={!speechSupported || sending}
+                      title={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}
+                    >
+                      {listening ? <Square size={18} /> : <Mic size={18} />}
+                    </ActionIcon>
+                  </Tooltip>
+                  <Button
+                    type="submit"
+                    size="md"
+                    color="teal"
+                    loading={sending}
+                    disabled={!draft.trim()}
+                    leftSection={<Send size={18} />}
+                  >
+                    {t.tutor.ask}
+                  </Button>
+                </Group>
               </Group>
+              {voiceStatus && (
+                <Group
+                  gap="xs"
+                  className={`voice-status voice-status-${voiceStatus.tone}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Mic size={14} />
+                  <Text size="sm" fw={700}>
+                    {voiceStatus.text}
+                  </Text>
+                </Group>
+              )}
             </Stack>
           </form>
         </Card>
@@ -1126,25 +1526,287 @@ function TutorWorkspace({
           </Alert>
         )}
 
-        <Stack gap="md">
+        <Stack gap="md" ref={lessonFocusRef}>
           {turns.length === 0 && (
-            <Paper withBorder radius="lg" p="xl" className="empty-state">
-              <ThemeIcon size="xl" variant="light" color="teal">
-                <FileText size={28} />
-              </ThemeIcon>
-              <Text fw={800}>{t.tutor.emptyTitle}</Text>
-              <Text c="dimmed" size="sm" ta="center">
-                {t.tutor.emptyBody}
-              </Text>
-            </Paper>
+            <LessonLauncher
+              t={t}
+              items={launcherCards}
+              sending={sending}
+              listening={listening}
+              onStart={startLauncherLesson}
+              onPrepare={prepareLauncherLesson}
+            />
           )}
           {turns.map((turn) => (
-            <TutorTurnCard key={turn.id} t={t} turn={turn} onGenerateImage={generateImage} />
+            <TutorTurnCard
+              key={turn.id}
+              t={t}
+              turn={turn}
+              speechOutputSupported={speechOutputSupported}
+              speaking={speakingTurnId === turn.id}
+              onSpeak={() => {
+                if (turn.answer) {
+                  speakTutorAnswer(turn.id, turn.answer, voiceOutputEnabled);
+                }
+              }}
+              onStopSpeech={stopTutorSpeech}
+              onGenerateImage={generateImage}
+            />
           ))}
         </Stack>
       </Stack>
     </Container>
   );
+}
+
+function LessonLauncher({
+  t,
+  items,
+  sending,
+  listening,
+  onStart,
+  onPrepare,
+}: {
+  t: Copy;
+  items: LessonLauncherItem[];
+  sending: boolean;
+  listening: boolean;
+  onStart: (item: LessonLauncherItem) => void;
+  onPrepare: (item: LessonLauncherItem) => void;
+}) {
+  const primaryItem = items.find((item) => item.id === 'meeting') ?? items[0];
+  const disabled = sending || listening;
+
+  return (
+    <Box className="lesson-launcher">
+      <Stack gap="md">
+        <Group justify="space-between" align="flex-start" gap="md">
+          <Group gap="sm" align="flex-start" wrap="nowrap" className="lesson-launcher-copy">
+            <ThemeIcon size="xl" radius="md" color="teal" variant="light">
+              <Sparkles size={24} />
+            </ThemeIcon>
+            <Box>
+              <Title order={2}>{t.tutor.emptyTitle}</Title>
+              <Text c="dimmed">{t.tutor.emptyBody}</Text>
+              <Text c="dimmed" size="sm" mt={4}>
+                {t.tutor.launcher.body}
+              </Text>
+            </Box>
+          </Group>
+          {primaryItem && (
+            <Button
+              size="lg"
+              color="green"
+              className="lesson-start-button"
+              leftSection={<PlayCircle size={20} />}
+              onClick={() => onStart(primaryItem)}
+              disabled={disabled}
+            >
+              {t.tutor.launcher.start}
+            </Button>
+          )}
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, xs: 2, md: 5 }} spacing="sm">
+          {items.map((item) => (
+            <Paper key={item.id} withBorder radius="md" p="md" className="lesson-card">
+              <Stack gap="sm" h="100%">
+                <Group gap="xs" wrap="nowrap" align="flex-start">
+                  <ThemeIcon variant="light" color={lessonLauncherColor(item.id)}>
+                    {lessonLauncherIcon(item.id)}
+                  </ThemeIcon>
+                  <Text fw={900} className="break-anywhere">
+                    {item.title}
+                  </Text>
+                </Group>
+                <Text size="sm" c="dimmed" className="lesson-card-body">
+                  {item.body}
+                </Text>
+                <Button
+                  fullWidth
+                  mt="auto"
+                  color={item.id === 'meeting' ? 'green' : 'teal'}
+                  variant={item.startImmediately ? 'light' : 'default'}
+                  onClick={() => (item.startImmediately ? onStart(item) : onPrepare(item))}
+                  disabled={disabled}
+                >
+                  {item.action}
+                </Button>
+              </Stack>
+            </Paper>
+          ))}
+        </SimpleGrid>
+      </Stack>
+    </Box>
+  );
+}
+
+function LessonContinuityPanel({
+  t,
+  locale,
+  lessons,
+  activeLessonSessionId,
+  loading,
+  onResume,
+  onNewLesson,
+  onRefresh,
+}: {
+  t: Copy;
+  locale: Locale;
+  lessons: TutorLessonHistoryItem[];
+  activeLessonSessionId?: string;
+  loading: boolean;
+  onResume: (lesson: TutorLessonHistoryItem) => void;
+  onNewLesson: () => void;
+  onRefresh: () => void;
+}) {
+  const latestLesson = lessons[0];
+  const latestLessonActive = latestLesson?.lessonSessionId === activeLessonSessionId;
+  return (
+    <Paper withBorder radius="md" p="md" className="lesson-continuity">
+      <Stack gap="md">
+        <Group justify="space-between" align="flex-start" gap="md">
+          <Group gap="sm" align="flex-start" wrap="nowrap">
+            <ThemeIcon size="lg" radius="md" color="teal" variant="light">
+              <History size={20} />
+            </ThemeIcon>
+            <Box>
+              <Text fw={900}>{t.tutor.continuity.title}</Text>
+              <Text size="sm" c="dimmed">
+                {t.tutor.continuity.subtitle}
+              </Text>
+            </Box>
+          </Group>
+          <Group gap="xs" justify="flex-end">
+            {latestLesson && (
+              <Button
+                color={latestLessonActive ? 'teal' : 'green'}
+                variant={latestLessonActive ? 'light' : 'filled'}
+                leftSection={<PlayCircle size={16} />}
+                onClick={() => onResume(latestLesson)}
+              >
+                {latestLessonActive
+                  ? t.tutor.continuity.goToOpened
+                  : t.tutor.continuity.resumeLatest}
+              </Button>
+            )}
+            <Button variant="light" leftSection={<PlusCircle size={16} />} onClick={onNewLesson}>
+              {t.tutor.continuity.newLesson}
+            </Button>
+            <ActionIcon
+              variant="subtle"
+              color="teal"
+              onClick={onRefresh}
+              loading={loading}
+              title={t.common.refresh}
+            >
+              <RefreshCw size={18} />
+            </ActionIcon>
+          </Group>
+        </Group>
+
+        {lessons.length === 0 ? (
+          <Paper withBorder radius="md" p="md" className="lesson-history-empty">
+            <Text fw={900}>{t.tutor.continuity.emptyTitle}</Text>
+            <Text size="sm" c="dimmed">
+              {t.tutor.continuity.emptyBody}
+            </Text>
+          </Paper>
+        ) : (
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
+            {lessons.slice(0, 4).map((lesson) => {
+              const active = lesson.lessonSessionId === activeLessonSessionId;
+              const latestTurn = lesson.turns[0];
+              return (
+                <Box
+                  key={lesson.lessonSessionId}
+                  className="lesson-history-row"
+                  data-active={active}
+                >
+                  <Group justify="space-between" gap="xs" align="flex-start">
+                    <Group gap={6}>
+                      <Badge color={lessonColor(lesson.lessonType)} variant="light">
+                        {t.tutor.lessonModes[lesson.lessonType]}
+                      </Badge>
+                      <Badge color={lesson.goalStatus === 'reached' ? 'teal' : 'gray'} variant="light">
+                        {formatGoalStatus(lesson.goalStatus, t)}
+                      </Badge>
+                    </Group>
+                    {active && (
+                      <Badge color="green" variant="filled">
+                        {t.tutor.continuity.opened}
+                      </Badge>
+                    )}
+                  </Group>
+                  <Text fw={900} mt="xs" className="break-anywhere">
+                    {lesson.lessonGoal}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {formatDateTime(lesson.updatedAt, locale)}
+                    {' · '}
+                    {lesson.turnCount} {t.tutor.continuity.turns}
+                    {' · '}
+                    {formatDuration(lesson.activeLearningSeconds)}
+                  </Text>
+                  <Text size="sm" mt="xs" className="lesson-history-summary">
+                    {getLessonHistorySummary(lesson, t)}
+                  </Text>
+                  {latestTurn && (
+                    <Box mt="xs" className="lesson-history-last-turn">
+                      <Text size="xs" c="dimmed">
+                        {t.tutor.continuity.lastQuestion}
+                      </Text>
+                      <Text size="sm" className="break-anywhere">
+                        {latestTurn.prompt}
+                      </Text>
+                    </Box>
+                  )}
+                  <Button
+                    fullWidth
+                    mt="sm"
+                    color={active ? 'gray' : 'teal'}
+                    variant={active ? 'light' : 'filled'}
+                    onClick={() => onResume(lesson)}
+                  >
+                    {active ? t.tutor.continuity.goToOpened : t.tutor.continuity.resume}
+                  </Button>
+                </Box>
+              );
+            })}
+          </SimpleGrid>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function lessonLauncherIcon(id: LessonLauncherItem['id']) {
+  if (id === 'meeting') {
+    return <Brain size={18} />;
+  }
+  if (id === 'diagnostic') {
+    return <FileText size={18} />;
+  }
+  if (id === 'practice') {
+    return <Sparkles size={18} />;
+  }
+  if (id === 'mistake') {
+    return <Shield size={18} />;
+  }
+  return <BookOpen size={18} />;
+}
+
+function lessonLauncherColor(id: LessonLauncherItem['id']): string {
+  if (id === 'diagnostic') {
+    return 'indigo';
+  }
+  if (id === 'practice') {
+    return 'orange';
+  }
+  if (id === 'mistake') {
+    return 'red';
+  }
+  return 'teal';
 }
 
 function UsageBar({
@@ -1153,19 +1815,27 @@ function UsageBar({
   summary,
   lifecycle,
   expanded,
+  refreshing,
   onToggle,
+  onRefresh,
 }: {
   t: Copy;
   locale: Locale;
   summary: UserUsageSummary | null;
   lifecycle?: TutorLessonLifecycle;
   expanded: boolean;
+  refreshing: boolean;
   onToggle: () => void;
+  onRefresh: () => void;
 }) {
   const today = summary?.today ?? emptyUsageTotals();
   const lesson = summary?.currentLesson?.total ?? emptyUsageTotals();
   const details = summary?.currentLesson?.items ?? [];
   const decisions = summary?.currentLesson?.decisions ?? [];
+  const backgroundJobs = summary?.backgroundJobs ?? [];
+  const hasActiveBackgroundJobs = backgroundJobs.some((job) =>
+    ['pending', 'running'].includes(job.status),
+  );
   const verifiedOutcomes = summary?.currentLesson?.verifiedOutcomes ?? 0;
   const costPerVerifiedOutcome = summary?.currentLesson?.costPerVerifiedOutcomeUsd ?? null;
   const needsPricingNote =
@@ -1183,13 +1853,28 @@ function UsageBar({
             <Box>
               <Text fw={900}>{t.tutor.usage.title}</Text>
               <Text size="xs" c="dimmed">
-                {needsPricingNote ? t.tutor.usage.pricingNotConfigured : t.tutor.usage.subtitle}
+                {needsPricingNote
+                  ? t.tutor.usage.pricingNotConfigured
+                  : hasActiveBackgroundJobs
+                    ? t.tutor.usage.autoRefreshing
+                    : t.tutor.usage.subtitle}
               </Text>
             </Box>
           </Group>
-          <Button variant="subtle" size="xs" onClick={onToggle}>
-            {expanded ? t.tutor.usage.hideDetails : t.tutor.usage.details}
-          </Button>
+          <Group gap="xs" wrap="nowrap">
+            <Button
+              variant="light"
+              size="xs"
+              leftSection={<RefreshCw size={14} />}
+              loading={refreshing}
+              onClick={onRefresh}
+            >
+              {t.tutor.usage.refresh}
+            </Button>
+            <Button variant="subtle" size="xs" onClick={onToggle}>
+              {expanded ? t.tutor.usage.hideDetails : t.tutor.usage.details}
+            </Button>
+          </Group>
         </Group>
 
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
@@ -1284,7 +1969,24 @@ function UsageBar({
                         </Text>
                       </Table.Td>
                       <Table.Td>{item.imageCount}</Table.Td>
-                      <Table.Td>{formatCurrency(item.estimatedCostUsd)}</Table.Td>
+                      <Table.Td>
+                        <Text size="sm">
+                          {formatUsageCost({
+                            estimatedCostUsd: item.estimatedCostUsd,
+                            inputTokens: item.inputTokens,
+                            cachedInputTokens: item.cachedInputTokens,
+                            outputTokens: item.outputTokens,
+                            totalTokens: item.totalTokens,
+                            imageCount: item.imageCount,
+                            pricingConfigured: item.pricingSource !== 'not_configured',
+                          })}
+                        </Text>
+                        <Text size="xs" c="dimmed" className="break-anywhere">
+                          {item.pricingSource === 'not_configured'
+                            ? t.tutor.usage.pricingMissingShort
+                            : item.pricingSource}
+                        </Text>
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -1353,6 +2055,66 @@ function UsageBar({
                 </Table>
               </>
             )}
+            <Divider my="sm" />
+            <Text size="sm" fw={900} mb="xs">
+              {t.tutor.usage.backgroundJobs}
+            </Text>
+            {backgroundJobs.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                {t.tutor.usage.noBackgroundJobs}
+              </Text>
+            ) : (
+              <Table striped highlightOnHover withTableBorder={false}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>{t.tutor.usage.job}</Table.Th>
+                    <Table.Th>{t.tutor.usage.status}</Table.Th>
+                    <Table.Th>{t.tutor.usage.response}</Table.Th>
+                    <Table.Th>{t.tutor.usage.updated}</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {backgroundJobs.map((job) => (
+                    <Table.Tr key={job.id}>
+                      <Table.Td>
+                        <Text size="sm" fw={700} className="break-anywhere">
+                          {job.type}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {t.tutor.usage.attempts}: {job.attempts}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge color={backgroundJobStatusColor(job.status)} variant="light">
+                          {job.status}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        {job.resultPreview ? (
+                          <Text size="sm" className="break-anywhere">
+                            {job.resultPreview}
+                          </Text>
+                        ) : (
+                          <Text size="sm" c="dimmed">
+                            {t.tutor.usage.noBackgroundResponse}
+                          </Text>
+                        )}
+                        {job.errorMessage && (
+                          <Text size="xs" c="red" className="break-anywhere">
+                            {job.errorMessage}
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="xs" c="dimmed" className="break-anywhere">
+                          {job.updatedAt}
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
           </Box>
         )}
       </Stack>
@@ -1376,10 +2138,18 @@ function UsageMetric({ label, value }: { label: string; value: string }) {
 function TutorTurnCard({
   t,
   turn,
+  speechOutputSupported,
+  speaking,
+  onSpeak,
+  onStopSpeech,
   onGenerateImage,
 }: {
   t: Copy;
   turn: TutorTurn;
+  speechOutputSupported: boolean;
+  speaking: boolean;
+  onSpeak: () => void;
+  onStopSpeech: () => void;
   onGenerateImage: (turn: TutorTurn, block: TutorImageBlock) => Promise<void>;
 }) {
   return (
@@ -1406,6 +2176,28 @@ function TutorTurnCard({
 
         {turn.answer && (
           <Stack gap="lg">
+            <Group justify="flex-end">
+              <Tooltip
+                label={
+                  speechOutputSupported
+                    ? speaking
+                      ? t.tutor.stopSpeaking
+                      : t.tutor.speakAnswer
+                    : t.tutor.voiceOutputUnavailable
+                }
+              >
+                <Button
+                  size="xs"
+                  variant={speaking ? 'filled' : 'light'}
+                  color={speaking ? 'red' : 'teal'}
+                  leftSection={speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  onClick={speaking ? onStopSpeech : onSpeak}
+                  disabled={!speechOutputSupported}
+                >
+                  {speaking ? t.tutor.stopSpeaking : t.tutor.speakAnswer}
+                </Button>
+              </Tooltip>
+            </Group>
             <TutorBlockList t={t} turn={turn} onGenerateImage={onGenerateImage} />
 
             {turn.answer.citations.length > 0 && (
@@ -1442,16 +2234,69 @@ function emptyUsageTotals(): UsageTotals {
 }
 
 function formatUsageCost(totals: UsageTotals): string {
-  return `${formatCurrency(totals.estimatedCostUsd)}${totals.pricingConfigured ? '' : '*'}`;
+  const hasUsage = totals.totalTokens > 0 || totals.imageCount > 0;
+  return `${formatCurrency(totals.estimatedCostUsd)}${
+    hasUsage && !totals.pricingConfigured ? '*' : ''
+  }`;
 }
 
 function formatCurrency(value: number): string {
+  if (value > 0 && value < 0.0001) {
+    return '<$0.0001';
+  }
   return `$${value.toFixed(value >= 1 ? 2 : 4)}`;
+}
+
+function backgroundJobStatusColor(status: string): string {
+  if (status === 'succeeded') {
+    return 'teal';
+  }
+  if (status === 'failed') {
+    return 'red';
+  }
+  if (status === 'running') {
+    return 'blue';
+  }
+  return 'gray';
 }
 
 function formatDuration(seconds: number): string {
   const minutes = Math.max(0, Math.round(seconds / 60));
   return `${minutes}m`;
+}
+
+function formatGoalStatus(status: TutorLessonHistoryItem['goalStatus'], t: Copy): string {
+  return t.tutor.usage.goalStatuses[status] ?? status;
+}
+
+function getLessonHistorySummary(lesson: TutorLessonHistoryItem, t: Copy): string {
+  const summary = pickSummaryText(lesson.summary);
+  if (summary) {
+    return summary;
+  }
+  const latestAnswer = lesson.turns[0]?.answer?.answer?.trim();
+  if (latestAnswer) {
+    return latestAnswer.slice(0, 220);
+  }
+  return t.tutor.continuity.noSummary;
+}
+
+function pickSummaryText(value: Record<string, unknown> | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  for (const key of ['summary', 'text', 'goalProgress', 'nextStep']) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().slice(0, 220);
+    }
+  }
+  for (const candidate of Object.values(value)) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().slice(0, 220);
+    }
+  }
+  return undefined;
 }
 
 function TutorBlockList({
@@ -1546,10 +2391,20 @@ function TutorBlock({
   const imageUrl = block.url ?? turn.imageUrls?.[block.id];
   const loading = Boolean(turn.loadingImages?.[block.id]);
   return (
-    <Box className="image-block">
-      <Text fw={800} size="sm" mb={6}>
-        {block.caption}
-      </Text>
+    <Paper withBorder radius="md" p="md" className="image-block">
+      <Group gap="sm" align="flex-start" mb={imageUrl ? 'sm' : 0}>
+        <ThemeIcon color="teal" variant="light" size="lg">
+          <ImageIcon size={18} />
+        </ThemeIcon>
+        <Box className="image-block-copy">
+          <Text fw={900}>{block.caption}</Text>
+          {!imageUrl && (
+            <Text size="sm" c="dimmed" className="break-anywhere">
+              {block.prompt}
+            </Text>
+          )}
+        </Box>
+      </Group>
       {imageUrl ? (
         <Image
           src={imageUrl}
@@ -1559,8 +2414,9 @@ function TutorBlock({
         />
       ) : (
         <Button
-          variant={block.priority === 'required' ? 'filled' : 'light'}
-          color="indigo"
+          mt="sm"
+          variant="filled"
+          color="teal"
           leftSection={loading ? <Loader2 className="spin" size={18} /> : <ImageIcon size={18} />}
           onClick={() => void onGenerateImage(turn, block)}
           disabled={loading}
@@ -1568,13 +2424,26 @@ function TutorBlock({
           {t.tutor.showImage}
         </Button>
       )}
-    </Box>
+    </Paper>
   );
 }
 
 function getTutorBlocks(answer: TutorAnswer, imageAlt: string): TutorResponseBlock[] {
   if (Array.isArray(answer.blocks) && answer.blocks.length > 0) {
-    return answer.blocks;
+    const blocks = [...answer.blocks];
+    const hasImageBlock = blocks.some((block) => block.type === 'image');
+    if (!hasImageBlock && answer.needsImage && answer.imagePrompt) {
+      blocks.push({
+        id: 'image-1',
+        type: 'image',
+        status: 'suggested',
+        prompt: answer.imagePrompt,
+        caption: imageAlt,
+        altText: imageAlt,
+        priority: 'optional',
+      });
+    }
+    return blocks;
   }
 
   const blocks: TutorResponseBlock[] = [];
@@ -1610,6 +2479,120 @@ function getTutorBlocks(answer: TutorAnswer, imageAlt: string): TutorResponseBlo
     });
   }
   return blocks;
+}
+
+function getTutorSpeechText(answer: TutorAnswer, imageAlt: string, locale: Locale): string {
+  const parts = getTutorBlocks(answer, imageAlt)
+    .map((block) => {
+      if (block.type === 'text') {
+        return block.text;
+      }
+      if (block.type === 'example') {
+        return `${block.title}. ${block.explanation}`;
+      }
+      if (block.type === 'task') {
+        return `${block.title}. ${block.prompt}`;
+      }
+      if (block.type === 'image') {
+        return block.caption;
+      }
+      return '';
+    })
+    .map((part) => part.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const text = normalizeTutorSpeechText(parts.join(' '), locale);
+  if (text.length <= MAX_SPEECH_TEXT_LENGTH) {
+    return text;
+  }
+  return `${text.slice(0, MAX_SPEECH_TEXT_LENGTH).trim()}...`;
+}
+
+function selectSpeechVoice(
+  voices: SpeechSynthesisVoice[],
+  locale: Locale,
+): SpeechSynthesisVoice | null {
+  if (voices.length === 0) {
+    return null;
+  }
+
+  const languagePrefix = locale === 'ru' ? 'ru' : 'en';
+  const preferredNames =
+    locale === 'ru'
+      ? ['google русский', 'microsoft svetlana', 'microsoft irina', 'milena', 'russian']
+      : ['google us english', 'microsoft aria', 'samantha', 'english'];
+  const languageMatches = voices
+    .filter((voice) => voice.lang.toLowerCase().startsWith(languagePrefix))
+    .map((voice) => {
+      const name = voice.name.toLowerCase();
+      const preferredIndex = preferredNames.findIndex((candidate) => name.includes(candidate));
+      return {
+        voice,
+        score:
+          (preferredIndex === -1 ? 0 : 30 - preferredIndex) +
+          (voice.localService ? 2 : 0) +
+          (voice.default ? 1 : 0),
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  return languageMatches[0]?.voice ?? voices.find((voice) => voice.default) ?? voices[0] ?? null;
+}
+
+function normalizeTutorSpeechText(text: string, locale: Locale): string {
+  let normalized = text
+    .replace(/\bf\s*\(\s*[xх]\s*\)/gi, locale === 'ru' ? 'эф от икс' : 'f of x')
+    .replace(/\bf[’']\s*\(\s*[xх]\s*\)/gi, locale === 'ru' ? 'эф штрих от икс' : 'f prime of x')
+    .replace(/\b([xх])\s*\^\s*2\b/gi, locale === 'ru' ? '$1 в квадрате' : '$1 squared')
+    .replace(/\b([xх])\s*²/gi, locale === 'ru' ? '$1 в квадрате' : '$1 squared')
+    .replace(/\b([xх])\s*\^\s*3\b/gi, locale === 'ru' ? '$1 в кубе' : '$1 cubed')
+    .replace(/\b([xх])\s*³/gi, locale === 'ru' ? '$1 в кубе' : '$1 cubed')
+    .replace(/\b(\d+)\s*([xх])\b/gi, locale === 'ru' ? '$1 икс' : '$1 x')
+    .replace(/\b([xх])\b/gi, locale === 'ru' ? 'икс' : 'x')
+    .replace(/\s*=\s*/g, locale === 'ru' ? ' равно ' : ' equals ')
+    .replace(/\s*[→⇒]\s*/g, locale === 'ru' ? ' значит ' : ' means ')
+    .replace(/[–—]/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (locale === 'ru') {
+    normalized = normalized
+      .replace(/\bЕГЭ\b/g, 'Е Г Э')
+      .replace(/\bНачнем\b/g, 'Начнём')
+      .replace(/\bначнем\b/g, 'начнём')
+      .replace(/\bеще\b/gi, 'ещё')
+      .replace(/\bлегк/g, 'лёгк')
+      .replace(/\bберем\b/gi, 'берём')
+      .replace(/\bнайдем\b/gi, 'найдём');
+  }
+
+  return normalized;
+}
+
+function shouldRetryVoiceInput(error: string | undefined): boolean {
+  return !error || error === 'no-speech' || error === 'aborted';
+}
+
+function isExpectedSpeechSilence(error: string | undefined): boolean {
+  return !error || error === 'no-speech' || error === 'aborted';
+}
+
+function getVoiceStopMessage(error: string | undefined, t: Copy): string {
+  if (error === 'not-allowed' || error === 'service-not-allowed') {
+    return t.tutor.voiceStatus.permissionBlocked;
+  }
+  if (error === 'audio-capture') {
+    return t.tutor.voiceStatus.noMicrophone;
+  }
+  if (error === 'network') {
+    return t.tutor.voiceStatus.network;
+  }
+  if (error === 'language-not-supported') {
+    return t.tutor.voiceStatus.languageUnsupported;
+  }
+  if (error === 'no-speech' || error === 'aborted' || !error) {
+    return t.tutor.voiceStatus.silenceStopped;
+  }
+  return t.tutor.voiceStatus.browserStopped;
 }
 
 function toLessonType(value: string): LessonType {

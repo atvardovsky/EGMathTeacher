@@ -22,7 +22,17 @@ visible next actions.
 - Signed HTTP-only cookie sessions.
 - First-login student meeting that gathers learning, motivation, confidence,
   weak-topic, diagnostic, and explanation-preference signals before the normal
-  tutor workspace.
+  tutor workspace. After setup, the tutor workspace starts with a lesson
+  launcher instead of a blank state: a prominent green first-lesson button plus
+  cards for first meeting, level check, linear-equation practice, topic
+  explanation, and mistake review.
+- Tutor-side saved lesson continuity: the workspace loads recent lessons,
+  last questions, summaries, and stored turns from `GET /tutor/lessons`,
+  shows an explicit saved-lessons/empty-history panel, auto-opens the latest
+  saved discussion when stored turns exist, and resumes with the previous
+  `conversationId` so the backend prompt can continue from DB-backed context.
+  Legacy saved `tutor_turns` without a `lesson_sessions` row are still shown
+  as resumable discussions.
 - Specialist AI profile pipeline for first-login onboarding:
   math knowledge diagnostician, tutoring-focused psychopedagogical profiler,
   and teaching strategy planner.
@@ -32,12 +42,22 @@ visible next actions.
 - Student profile memory is filtered to teaching-useful signals; sensitive
   family, health, clinical, political, religious, and other non-teaching
   personal details must not be stored or used for tutoring strategy.
-- Tutor messages submitted from text or browser voice recognition.
+- Tutor messages submitted from text or browser voice recognition. The tutor
+  workspace also supports browser speech-synthesis output for visible tutor
+  answers: voice dialog is enabled by default when supported, can be switched
+  off by the student, speaks the tutor response, then automatically reopens the
+  mic for the next student turn. Each tutor turn has a speak/stop control. This
+  is local browser text-to-speech, not a backend audio-generation call, so
+  Russian stress and emotional prosody are limited by the installed browser
+  voices. Browser speech-recognition timeouts, no-speech stops, permission
+  blocks, device errors, and network errors are surfaced near the mic control;
+  voice-dialog auto-listen retries once after silence before falling back to
+  manual mic start.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
-  exposes tutor, practice, diagnostic, and mistake-review modes and the API
-  infers a safe default for older clients. Switching the lesson mode in the
+  exposes meeting, tutor, practice, diagnostic, and mistake-review modes and
+  the API infers a safe default for older clients. Switching the lesson mode in the
   UI starts a new conversation boundary, and the API finishes any active
   session if an older client sends a different lesson type for the same
   conversation id.
@@ -74,10 +94,13 @@ visible next actions.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
   image blocks carrying prompt, caption, alt text, status, and priority.
+- Explicit student visual requests are guaranteed to surface an image block
+  and visible create-diagram action, while actual bitmap generation remains a
+  separate user-triggered step.
 - Structured tutor answers include lesson lifecycle state and a compact usage
   snapshot for the current lesson/day.
 - Static web UI text supports Russian and English locale switching across
-  auth, first meeting, tutor, and admin views.
+  auth, first meeting, tutor launcher, tutor, and admin views.
 - Authenticated users can open a settings view for language, voice input
   language, account info, and read-only DB-backed learning profile memory,
   including recent session summaries and skill progress/regression signals.
@@ -86,9 +109,20 @@ visible next actions.
   operation/model/token/image details. The expanded bar also shows
   action-level Lesson Decision Agent outcomes, verifier result, evidence
   level, fallback marker, latency, verified learning outcome count, and local
-  cost per verified outcome when mastery evidence exists.
+  cost per verified outcome when mastery evidence exists. If local pricing is
+  not configured, cost values are marked as missing-pricing estimates while
+  token and image counts remain visible.
+- The expanded usage bar shows recent safe background job status, attempts,
+  compact sanitized result previews, and stored failure messages for the
+  signed-in user. It must not expose raw prompts, hidden instructions, or
+  another user's job rows. The web client offers a manual refresh action and
+  polls `GET /usage/me/summary` while the usage details panel is open or while
+  any visible background job is `pending` or `running`.
 - Tutor prompts include the stored student profile summary when available so
   explanations adapt to the teenager across compacted sessions.
+- Tutor prompts also include DB-backed continuity context for the active
+  conversation and recent session summaries so compacted chat context does not
+  erase where the previous lesson stopped.
 - Tutor turns enqueue delayed background AI work for learning-signal
   extraction, session summaries, student profile refreshes, teaching strategy
   refreshes, and rare quality review. These updates are eventually consistent
@@ -173,7 +207,10 @@ visible next actions.
     learning observations, grouped learning-window analysis, summaries,
     profile/strategy refresh, and quality review. Legacy per-turn extraction
     is still available through configuration.
-  - `TutorModule`: RAG tutor response and image generation endpoints.
+  - `TutorModule`: RAG tutor response, image generation, and saved lesson
+    history endpoints. Lesson history is read from `lesson_sessions` plus
+    legacy `tutor_turns` fallback so the web client can resume prior
+    discussions.
   - `KnowledgeModule`: admin file upload, local knowledge-pack structured
     import, idempotent RAG sync, vector store status, and local project vector
     store id persistence.
@@ -248,6 +285,8 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
 - `knowledge_files`: local metadata for OpenAI file and vector store records.
 - `tutor_turns`: user prompt, conversation id, lesson type, answer JSON, and
   timestamp.
+  `GET /tutor/lessons` uses these rows for turn previews and for legacy
+  resumable discussions when a conversation predates `lesson_sessions`.
 
 OpenAI stores remote files, vector stores, generated model responses, realtime
 session data, and image generation outputs. Those external objects are not
@@ -265,6 +304,8 @@ local source of truth.
 - OpenAI Files and Vector Stores API for RAG knowledge.
 - OpenAI Realtime API for WebRTC voice sessions.
 - Browser speech recognition API for local voice input in the web client.
+- Browser speech synthesis API for local tutor answer output in the web
+  client.
 - Optional STUN/TURN endpoints configured through `WEBRTC_ICE_SERVERS`.
 
 No assistant should call live external services unless the task requires it and

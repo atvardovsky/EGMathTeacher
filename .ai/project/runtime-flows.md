@@ -69,6 +69,55 @@ This file records runtime flows from current source evidence.
    `student_profiles`.
 10. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
+11. After profile creation, the web client opens the normal tutor workspace
+    with a lesson launcher instead of a blank waiting state. The launcher shows
+    a green first-lesson button and cards for first meeting, level check,
+    linear-equation practice, topic explanation, and mistake review. No tutor
+    model call is made until the student chooses a launcher action or sends a
+    message.
+
+## Tutor Lesson Launcher Flow
+
+1. When the authenticated tutor workspace has no local turns, the web client
+   renders the lesson launcher above the composer.
+2. Clicking the green first-lesson button starts a new `meeting` lesson by
+   sending a starter prompt to `POST /tutor/message` with no
+   `conversationId`.
+3. Clicking level check or practice starts a new `diagnostic` or `practice`
+   lesson with a starter prompt and no `conversationId`.
+4. Clicking topic explanation or mistake review pre-fills the composer and
+   switches the selected lesson mode, but waits for the student to add the
+   topic or solution before sending.
+5. The launcher is user-triggered and cost-controlled: page load and setup
+   completion do not automatically call OpenAI.
+
+## Tutor Lesson Continuity Flow
+
+1. When the authenticated tutor workspace loads, the web client calls
+   `GET /tutor/lessons?limit=8&turnLimit=6` in addition to usage refresh.
+2. The API returns the signed-in user's recent lesson sessions with
+   conversation id, lesson type, goal/status, active-learning time, latest
+   session summary/evidence levels, and recent stored tutor turns.
+3. If older tutor discussions exist in `tutor_turns` but no matching
+   `lesson_sessions` row exists, the API returns them as legacy resumable
+   discussions with a synthetic `legacy_<conversationId>` session id. This
+   keeps pre-lifecycle conversations visible after schema/runtime upgrades.
+4. The tutor workspace shows a saved-lessons panel even when history is empty.
+   Empty history explicitly says no lessons have been saved yet; non-empty
+   history shows recent lesson rows, last question previews, summaries or the
+   last answer, a continue-latest action, and a new-lesson action.
+5. If the latest saved lesson has stored turns and the local tutor view is
+   empty, the web client hydrates those turns immediately so the student sees
+   the previous discussion without clicking through a hidden history surface.
+6. When the student continues a saved lesson, the web client keeps the saved
+   `conversationId` and lesson type. The next `POST /tutor/message` therefore
+   reaches the same conversation boundary.
+7. `TutorService` adds DB-backed continuity context to the tutor prompt:
+   recent turns from the active conversation plus recent session summaries.
+   The tutor is instructed to continue from the previous discussion instead
+   of restarting long explanations.
+8. Starting a new lesson clears the local conversation boundary and starts the
+   next tutor request without a `conversationId`.
 
 ## Tutor Message Flow
 
@@ -144,6 +193,8 @@ This file records runtime flows from current source evidence.
      progress/regression strategy signal
    - Lesson Decision Agent action results and backend policy outcome
    - optional DB-backed student profile context
+   - optional DB-backed continuity context from the active conversation and
+     recent session summaries
    - user prompt
    - optional `file_search` tool
    - local-only usage context for user, conversation, lesson session, and
@@ -183,9 +234,44 @@ This file records runtime flows from current source evidence.
     for current lesson/day, and user-visible debug facts for curriculum,
     decision policy, and verifier result.
 25. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
-    then
-    renders ordered response blocks, lesson-type badge, citations, and
+    then renders ordered response blocks, lesson-type badge, citations, and
     optional image actions inside the same tutor turn.
+26. If browser speech synthesis is supported and the student has voice dialog
+    enabled, the web client speaks the visible tutor answer locally. The spoken
+    text is derived from the ordered response blocks, capped for length, and is
+    not sent to the API or stored as generated audio.
+27. After the spoken tutor answer ends, the web client automatically starts
+    browser speech recognition for the next student turn when voice dialog is
+    still enabled and speech-recognition support is available.
+
+## Browser Voice Dialog Flow
+
+1. The tutor workspace detects browser support for speech recognition and
+   speech synthesis separately.
+2. Speech recognition remains the student input path: the browser transcript
+   is sent to `POST /tutor/message` with `source=voice`.
+3. Speech synthesis is the assistant output path: when a tutor answer arrives
+   after a user-triggered message or launcher action, the browser reads the
+   visible ordered answer blocks aloud if voice dialog is enabled.
+4. The voice-dialog switch is visible in the tutor composer, persisted in
+   local storage, and disabled when browser speech synthesis is unavailable.
+5. When assistant speech ends and voice dialog is still enabled, the web client
+   automatically starts speech recognition to capture the next student turn.
+   If the browser blocks automatic mic start or speech recognition is
+   unsupported, the visible mic button remains the manual fallback.
+6. If browser speech recognition ends without a transcript because of silence,
+   `no-speech`, `aborted`, permission, device, language, or network errors,
+   the UI clears listening state and shows a short reason. In voice-dialog
+   auto-listen mode, a silence/no-speech stop retries once before leaving the
+   mic button as the manual fallback.
+7. Each tutor turn has a speak/stop action so the student can replay or stop
+   the assistant voice. Stopping speech is local browser state and does not
+   affect lesson, usage, or tutor-turn persistence.
+8. The POC voice output does not use OpenAI audio generation, does not upload
+   generated audio, and does not store spoken audio.
+9. Russian pronunciation improvements are limited to browser voice selection,
+   slower speech rate, and light math-text normalization; stress and emotional
+   prosody remain browser-voice limitations.
 
 ## Background AI Flow
 
@@ -237,7 +323,8 @@ This file records runtime flows from current source evidence.
 12. Profile refresh jobs merge sanitized patches into `student_profiles` using
     recent learning signals, session summaries, and skill progress rows.
 13. Failed jobs are retried up to `AI_BACKGROUND_MAX_ATTEMPTS`; final failures
-   stay visible in `background_ai_jobs`.
+    stay visible in `background_ai_jobs` and appear as safe error previews in
+    the signed-in user's expanded usage panel.
 14. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
@@ -245,7 +332,10 @@ This file records runtime flows from current source evidence.
 
 1. Tutor response includes an image block with prompt, caption, alt text,
    status, and priority, or legacy `needsImage=true` plus `imagePrompt`.
-2. User clicks image generation in the web client. The current POC keeps image
+   Explicit student requests for a drawing, diagram, graph, image, or visual
+   explanation are normalized into an image block if the model omitted one.
+2. User clicks the prominent create-diagram action in the web client. The
+   current POC keeps image
    generation explicit instead of blocking the immediate tutor response.
 3. Web client calls `POST /tutor/image` with prompt/context plus optional
    conversation id, lesson session id, and lesson type for usage attribution.
@@ -255,8 +345,8 @@ This file records runtime flows from current source evidence.
 5. `AiModelService` writes image usage to `ai_usage_ledger` when user and
    lesson context are present.
 6. API returns a PNG data URL and optional usage snapshot.
-7. Web client refreshes usage and renders the generated image in the same tutor turn and image
-   block where the visual was requested.
+7. Web client refreshes usage and renders the generated image in the same
+   tutor turn and image block where the visual was requested.
 
 ## Usage Summary Flow
 
@@ -272,12 +362,20 @@ This file records runtime flows from current source evidence.
    - recent Lesson Decision Agent actions and policy outcomes
    - verified learning outcome count and cost per verified outcome when
      mastery evidence exists
+   - recent background job status, attempts, compact sanitized result preview,
+     and stored error message for the signed-in user
 5. The web tutor workspace renders a compact user-visible usage/debug bar and
    an expanded table with operation, assistant role, model, service tier,
    token counts, image counts, local estimated cost, decision tool, evidence,
-   verifier result, acceptance/rejection, fallback marker, and latency.
-6. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
-   provider request ids, secrets, stack traces, or another user's rows.
+   verifier result, acceptance/rejection, fallback marker, latency, and recent
+   background job results or failures.
+6. The web client refreshes the summary after tutor/image actions, through a
+   visible manual refresh button, and through lightweight polling while the
+   usage details panel is open or any visible background job is `pending` or
+   `running`.
+7. Usage summaries do not expose raw prompts, hidden instructions, RAG chunks,
+   background job payloads, provider request ids, secrets, stack traces, or
+   another user's rows.
 
 ## Settings Flow
 

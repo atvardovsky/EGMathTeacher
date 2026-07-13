@@ -234,7 +234,7 @@ describe('BackgroundAiService', () => {
       expect.objectContaining({
         prompt_cache_key: expect.stringMatching(/^egmt:learningwind:[a-f0-9]{32}$/),
         metadata: expect.objectContaining({
-          background_ai: true,
+          background_ai: 'true',
           background_specialist: 'learning-window-analyzer',
         }),
       }),
@@ -245,7 +245,7 @@ describe('BackgroundAiService', () => {
       expect.objectContaining({
         prompt_cache_key: expect.stringMatching(/^egmt:profilestrat:[a-f0-9]{32}$/),
         metadata: expect.objectContaining({
-          background_ai: true,
+          background_ai: 'true',
           background_specialist: 'profile-strategy-background-refresher',
         }),
         tools: [expect.objectContaining({ type: 'file_search', vector_store_ids: ['vs_background'] })],

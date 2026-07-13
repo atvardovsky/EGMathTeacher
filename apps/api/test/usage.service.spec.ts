@@ -105,6 +105,69 @@ describe('UsageService', () => {
     );
   });
 
+  it('returns signed-in user background job responses and failures', () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO background_ai_jobs (
+         id, type, status, user_id, conversation_id, attempts, payload_json,
+         result_json, error_message, scheduled_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, 'succeeded', ?, ?, 1, ?, ?, NULL, ?, ?, ?, ?)`,
+      [
+        'job-success',
+        'session_summary',
+        'student-1',
+        'conv-1',
+        JSON.stringify({ lessonSessionId: 'lesson-1' }),
+        JSON.stringify({
+          sessionSummary: {
+            summary: 'Ученик закрепил линейное уравнение и готов к повторной задаче.',
+          },
+        }),
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO background_ai_jobs (
+         id, type, status, user_id, conversation_id, attempts, payload_json,
+         result_json, error_message, scheduled_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, 'failed', ?, ?, 2, ?, NULL, ?, ?, ?, ?, ?)`,
+      [
+        'job-failed',
+        'learning_window_analysis',
+        'student-1',
+        'conv-1',
+        JSON.stringify({ lessonSessionId: 'lesson-1' }),
+        'OpenAI request failed with status 400',
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.backgroundJobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'job-success',
+          resultPreview: 'Ученик закрепил линейное уравнение и готов к повторной задаче.',
+          lessonSessionId: 'lesson-1',
+        }),
+        expect.objectContaining({
+          id: 'job-failed',
+          errorMessage: 'OpenAI request failed with status 400',
+          attempts: 2,
+        }),
+      ]),
+    );
+  });
+
   it('returns decision observability and cost per verified outcome', () => {
     service.recordOperation(
       policy,
