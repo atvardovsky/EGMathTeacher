@@ -243,8 +243,9 @@ Rules from current implementation:
 - The default student profile creation path uses
   `POST /student-profile/me/from-conversation` after an AI-led `meeting`
   lesson has passed backend meeting-readiness scoring. The legacy
-  `PUT /student-profile/me` contract remains available for trusted
-  fallback/import use.
+  `PUT /student-profile/me` contract is disabled for students by default and
+  only available when `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` for a
+  trusted fallback/import workflow.
 - Admin users do not require onboarding by default.
 - The meeting screen is voice-first: a green start button begins the AI-led
   conversation, tutor answers are spoken when browser speech synthesis is
@@ -261,6 +262,9 @@ Rules from current implementation:
   contentful math reply. The technical starter prompt is ignored.
 - If the first-meeting page reloads before setup is complete, the client
   restores the latest active saved `meeting` lesson and its stored turns.
+- If the meeting reaches a terminal lifecycle before profile creation, the
+  client stops auto-listening, disables manual input for that transcript, and
+  shows create-profile or start-new-meeting actions.
 - The wording avoids presenting the diagnostic as a school test or static
   questionnaire.
 - The API creates the profile through specialist AI evaluator calls:
@@ -272,6 +276,10 @@ Rules from current implementation:
   first meeting `conversationId` and `lessonSessionId` in local usage context,
   so the usage ledger can attribute onboarding cost to the lesson as well as
   the day.
+- Conversation-based profile creation is idempotent per authenticated user,
+  conversation id, and transcript hash through `student_profile_creation_runs`.
+  Repeated calls after success return the stored profile without rerunning the
+  extractor or three specialist calls.
 - Specialist outputs should include confidence and evidence for meaningful
   inferences when possible.
 - OpenAI is the implemented model provider for those specialist calls in the

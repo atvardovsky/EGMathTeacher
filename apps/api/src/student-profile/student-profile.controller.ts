@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { StudentProfileService } from './student-profile.service';
@@ -11,7 +22,10 @@ import {
 @Controller('student-profile')
 @UseGuards(AuthGuard)
 export class StudentProfileController {
-  constructor(private readonly studentProfileService: StudentProfileService) {}
+  constructor(
+    private readonly studentProfileService: StudentProfileService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get('me')
   me(@Req() request: AuthenticatedRequest): StudentProfileStatus {
@@ -31,6 +45,14 @@ export class StudentProfileController {
     @Req() request: AuthenticatedRequest,
     @Body() body: StudentOnboardingAnswers,
   ): Promise<StudentProfileStatus> {
+    const structuredOnboardingEnabled = Boolean(
+      this.configService.get<boolean>('app.structuredOnboardingEnabled'),
+    );
+    if (request.user!.role === 'student' && !structuredOnboardingEnabled) {
+      throw new BadRequestException(
+        'Conversation-based first meeting is required for student onboarding',
+      );
+    }
     return this.studentProfileService.completeOnboarding({
       user: request.user!,
       answers: body,

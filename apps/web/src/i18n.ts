@@ -214,10 +214,12 @@ export const TEXT = {
       meetingStatus: 'AI сам задаст вопросы и соберет профиль обучения.',
       readyBadge: 'можно создать профиль',
       inProgressBadge: 'идет встреча',
+      finishedBadge: 'встреча завершена',
       voiceTitle: 'Голосовая встреча',
       voiceBody: 'Ответь как в обычном диалоге. Репетитор будет задавать короткие вопросы по одному.',
       voiceStart: 'Начать голосовую встречу',
       restartMeeting: 'Начать заново',
+      startNewMeeting: 'Начать новую встречу',
       voiceStartPrompt:
         'Начни первую голосовую встречу с учеником для AI-репетитора ЕГЭ по математике. Задавай по одному короткому вопросу. Сначала узнай цель, класс или экзамен, как сейчас с математикой и какой формат объяснения удобнее. Не проводи анкету списком. После 2-3 ответов дай одну очень короткую учебную мини-ситуацию или вопрос для диагностики. Говори по-русски простыми фразами для подростка 14-16 лет.',
       startedTranscript: 'Начинаем первую встречу',
@@ -226,6 +228,12 @@ export const TEXT = {
         'Ответь хотя бы на пару вопросов репетитора. После этого можно создать профиль обучения.',
       conversationReady:
         'Данных уже достаточно для предварительного профиля. Можно продолжить разговор или создать профиль.',
+      meetingFinished:
+        'Эта первая встреча завершена. Продолжить ее нельзя, чтобы профиль строился по закрытому разговору.',
+      meetingFinishedReady:
+        'Встреча завершена. Можно создать предварительный профиль обучения из этого разговора или начать новую встречу.',
+      meetingFinishedStartOver:
+        'Встреча завершена, но данных для профиля пока недостаточно. Начни новую встречу зеленой кнопкой.',
       textFallbackPlaceholder: 'Можно ответить голосом или написать здесь',
       sendFallback: 'Ответить',
       transcriptTitle: 'Разговор первой встречи',
@@ -567,10 +575,12 @@ export const TEXT = {
       meetingStatus: 'The AI will ask questions and build the learning profile.',
       readyBadge: 'profile can be created',
       inProgressBadge: 'meeting in progress',
+      finishedBadge: 'meeting finished',
       voiceTitle: 'Voice meeting',
       voiceBody: 'Answer like in a normal dialog. The tutor will ask short questions one by one.',
       voiceStart: 'Start voice meeting',
       restartMeeting: 'Start over',
+      startNewMeeting: 'Start new meeting',
       voiceStartPrompt:
         'Start the first voice meeting with a student for an EGE math AI tutor. Ask one short question at a time. First learn the goal, grade or exam, how math feels now, and which explanation format is comfortable. Do not run a questionnaire as a list. After 2-3 student replies, give one very short learning situation or diagnostic question. Speak in simple language for a 14-16 year old teenager.',
       startedTranscript: 'Starting the first meeting',
@@ -579,6 +589,12 @@ export const TEXT = {
         'Answer at least a couple of tutor questions. After that the learning profile can be created.',
       conversationReady:
         'There is enough information for a preliminary profile. You can keep talking or create the profile.',
+      meetingFinished:
+        'This first meeting is finished. It cannot be continued, so the profile is built from a closed conversation.',
+      meetingFinishedReady:
+        'The meeting is finished. You can create a preliminary learning profile from this conversation or start a new meeting.',
+      meetingFinishedStartOver:
+        'The meeting is finished, but there is not enough profile evidence yet. Start a new meeting with the green button.',
       textFallbackPlaceholder: 'You can answer by voice or type here',
       sendFallback: 'Answer',
       transcriptTitle: 'First meeting conversation',

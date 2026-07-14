@@ -492,6 +492,7 @@ function FirstMeetingScreen({
   const [draft, setDraft] = useState('');
   const [turns, setTurns] = useState<TutorTurn[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
+  const [profileConversationId, setProfileConversationId] = useState<string | undefined>();
   const [activeLessonSessionId, setActiveLessonSessionId] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -513,6 +514,7 @@ function FirstMeetingScreen({
   const autoListenAfterSpeechRef = useRef(false);
   const manualVoiceStopRef = useRef(false);
   const autoVoiceRestartCountRef = useRef(0);
+  const meetingReadinessRequestRef = useRef(0);
 
   const speechSupported = useMemo(
     () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
@@ -523,8 +525,10 @@ function FirstMeetingScreen({
     [],
   );
   const answeredTurnCount = turns.filter((turn) => turn.answer).length;
+  const meetingTerminal = turns.some((turn) => turn.answer && isTerminalTutorAnswer(turn.answer));
+  const finalizableConversationId = profileConversationId ?? conversationId;
   const canBuildProfile = Boolean(
-    meetingReadiness?.canCreateProfile && conversationId && !sending && !finalizing,
+    meetingReadiness?.canCreateProfile && finalizableConversationId && !sending && !finalizing,
   );
 
   useEffect(
@@ -546,8 +550,8 @@ function FirstMeetingScreen({
   }, []);
 
   useEffect(() => {
-    void refreshMeetingReadiness(conversationId);
-  }, [answeredTurnCount, conversationId]);
+    void refreshMeetingReadiness(finalizableConversationId);
+  }, [answeredTurnCount, finalizableConversationId]);
 
   useEffect(() => {
     voiceOutputEnabledRef.current = voiceOutputEnabled;
@@ -575,6 +579,7 @@ function FirstMeetingScreen({
       }
       conversationIdRef.current = meeting.conversationId;
       setConversationId(meeting.conversationId);
+      setProfileConversationId(meeting.conversationId);
       setActiveLessonSessionId(meeting.lessonSessionId);
       setTurns(meeting.turns);
       void refreshMeetingReadiness(meeting.conversationId);
@@ -586,15 +591,22 @@ function FirstMeetingScreen({
   }
 
   async function refreshMeetingReadiness(nextConversationId = conversationIdRef.current) {
+    const requestIndex = meetingReadinessRequestRef.current + 1;
+    meetingReadinessRequestRef.current = requestIndex;
     const query = nextConversationId
       ? `?conversationId=${encodeURIComponent(nextConversationId)}`
       : '';
     try {
-      setMeetingReadiness(
-        await api<StudentMeetingReadiness>(`/student-profile/me/meeting-readiness${query}`),
+      const readiness = await api<StudentMeetingReadiness>(
+        `/student-profile/me/meeting-readiness${query}`,
       );
+      if (meetingReadinessRequestRef.current === requestIndex) {
+        setMeetingReadiness(readiness);
+      }
     } catch {
-      setMeetingReadiness(null);
+      if (meetingReadinessRequestRef.current === requestIndex) {
+        setMeetingReadiness(null);
+      }
     }
   }
 
@@ -606,6 +618,7 @@ function FirstMeetingScreen({
     stopVoice();
     setTurns([]);
     setMeetingReadiness(null);
+    setProfileConversationId(undefined);
     conversationIdRef.current = undefined;
     setConversationId(undefined);
     setActiveLessonSessionId(undefined);
@@ -625,6 +638,10 @@ function FirstMeetingScreen({
   ) {
     const prompt = rawPrompt.trim();
     if (!prompt || sending) {
+      return;
+    }
+    if (meetingTerminal && !forceNewConversation) {
+      setSubmitError(t.onboarding.meetingFinished);
       return;
     }
     if (source === 'voice' && shouldConfirmVoiceTranscript(prompt)) {
@@ -662,9 +679,18 @@ function FirstMeetingScreen({
           lessonType: 'meeting',
         }),
       });
-      conversationIdRef.current = answer.conversationId;
-      setConversationId(answer.conversationId);
-      setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
+      const terminalAnswer = isTerminalTutorAnswer(answer);
+      setProfileConversationId(answer.conversationId);
+      if (terminalAnswer) {
+        conversationIdRef.current = undefined;
+        setConversationId(undefined);
+        setActiveLessonSessionId(undefined);
+        stopVoice();
+      } else {
+        conversationIdRef.current = answer.conversationId;
+        setConversationId(answer.conversationId);
+        setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
+      }
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
@@ -681,7 +707,8 @@ function FirstMeetingScreen({
   }
 
   async function finalizeFromConversation() {
-    if (!conversationId || finalizing) {
+    const conversationForProfile = finalizableConversationId;
+    if (!conversationForProfile || finalizing) {
       return;
     }
     setFinalizing(true);
@@ -691,7 +718,7 @@ function FirstMeetingScreen({
     try {
       const result = await api<StudentProfileStatus>('/student-profile/me/from-conversation', {
         method: 'POST',
-        body: JSON.stringify({ conversationId }),
+        body: JSON.stringify({ conversationId: conversationForProfile }),
       });
       onComplete(result);
     } catch (err) {
@@ -702,6 +729,12 @@ function FirstMeetingScreen({
   }
 
   function startVoice(auto = false) {
+    if (meetingTerminal) {
+      if (!auto) {
+        setSubmitError(t.onboarding.meetingFinished);
+      }
+      return;
+    }
     if (listening || recognitionRef.current) {
       return;
     }
@@ -903,8 +936,12 @@ function FirstMeetingScreen({
                   </Text>
                 </Box>
               </Group>
-              <Badge color={canBuildProfile ? 'green' : 'gray'} variant="light">
-                {canBuildProfile ? t.onboarding.readyBadge : t.onboarding.inProgressBadge}
+              <Badge color={meetingTerminal ? 'blue' : canBuildProfile ? 'green' : 'gray'} variant="light">
+                {meetingTerminal
+                  ? t.onboarding.finishedBadge
+                  : canBuildProfile
+                    ? t.onboarding.readyBadge
+                    : t.onboarding.inProgressBadge}
               </Badge>
             </Group>
           </Paper>
@@ -938,7 +975,11 @@ function FirstMeetingScreen({
                   onClick={startMeeting}
                   disabled={!meetingHydrated}
                 >
-                  {turns.length === 0 ? t.onboarding.voiceStart : t.onboarding.restartMeeting}
+                  {turns.length === 0
+                    ? t.onboarding.voiceStart
+                    : meetingTerminal
+                      ? t.onboarding.startNewMeeting
+                      : t.onboarding.restartMeeting}
                 </Button>
               </Group>
 
@@ -965,7 +1006,7 @@ function FirstMeetingScreen({
                       variant={listening ? 'filled' : 'light'}
                       color={listening ? 'red' : 'teal'}
                       onClick={listening ? stopVoice : () => startVoice()}
-                      disabled={!speechSupported || sending || turns.length === 0}
+                      disabled={!speechSupported || sending || turns.length === 0 || meetingTerminal}
                       title={speechSupported ? t.tutor.voiceTitle : t.tutor.voiceUnavailable}
                     >
                       {listening ? <Square size={18} /> : <Mic size={18} />}
@@ -999,13 +1040,13 @@ function FirstMeetingScreen({
                     autosize
                     minRows={2}
                     maxRows={5}
-                    disabled={listening || turns.length === 0}
+                    disabled={listening || turns.length === 0 || meetingTerminal}
                   />
                   <Button
                     type="submit"
                     color="teal"
                     loading={sending && turns.length > 0}
-                    disabled={!draft.trim() || turns.length === 0}
+                    disabled={!draft.trim() || turns.length === 0 || meetingTerminal}
                     leftSection={<Send size={18} />}
                   >
                     {t.onboarding.sendFallback}
@@ -1027,8 +1068,14 @@ function FirstMeetingScreen({
                 </Group>
               )}
 
-              <Alert color={canBuildProfile ? 'green' : 'teal'} variant="light">
-                {canBuildProfile ? t.onboarding.conversationReady : t.onboarding.needMoreConversation}
+              <Alert color={meetingTerminal || canBuildProfile ? 'green' : 'teal'} variant="light">
+                {meetingTerminal
+                  ? canBuildProfile
+                    ? t.onboarding.meetingFinishedReady
+                    : t.onboarding.meetingFinishedStartOver
+                  : canBuildProfile
+                    ? t.onboarding.conversationReady
+                    : t.onboarding.needMoreConversation}
               </Alert>
             </Stack>
           </Paper>

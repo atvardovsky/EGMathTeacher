@@ -22,6 +22,9 @@ App
 │  ├─ Mic action
 │  ├─ Text fallback composer
 │  ├─ Backend readiness-gated create-profile-from-conversation action
+│  ├─ Terminal meeting read-only state
+│  │  ├─ Disabled mic and text fallback input
+│  │  └─ Create profile or start-new-meeting actions
 │  ├─ Voice status and readiness alerts
 │  └─ First-meeting transcript list
 │     ├─ Student prompt bubble

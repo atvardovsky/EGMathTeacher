@@ -31,7 +31,10 @@ visible next actions.
   weak topic, explanation preference, and a diagnostic or contentful reply.
   The technical starter prompt does not count as student evidence. Reloading
   the first-meeting page restores an unfinished active `meeting` transcript
-  from saved lesson history. After setup, the tutor workspace starts with a
+  from saved lesson history. A terminal meeting response makes the first
+  meeting read-only in the UI: voice and text input are disabled for that
+  transcript, while create-profile and start-new-meeting actions remain
+  visible. After setup, the tutor workspace starts with a
   lesson launcher instead of a blank state: a prominent green first-lesson
   button plus cards for first meeting, level check, linear-equation practice,
   topic explanation, and mistake review.
@@ -46,8 +49,13 @@ visible next actions.
 - Specialist AI profile pipeline for first-login onboarding: conversation
   extraction from stored `meeting` turns, math knowledge diagnostician,
   tutoring-focused psychopedagogical profiler, and teaching strategy planner.
-  After successful conversation-based profile creation, the `meeting` lesson
-  session is marked `finished` with goal reached.
+  Conversation-based profile creation is idempotent by signed-in user,
+  conversation id, and transcript hash; after success, duplicate calls return
+  the stored profile instead of rerunning the extractor or three specialist AI
+  calls. After successful profile creation, the `meeting` lesson session is
+  marked `finished` with goal reached. The legacy structured JSON onboarding
+  endpoint is a trusted fallback/import path only and is disabled for student
+  use unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`.
 - DB-backed student profile memory with onboarding answers, knowledge state,
   learning preferences, tutoring-focused psychopedagogical profile, explanation
   strategy, and compact AI summary.

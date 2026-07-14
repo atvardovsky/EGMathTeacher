@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
 import { AiOperationKey } from '../ai-model/ai-model.types';
 import { AuthSession } from '../auth/auth.types';
@@ -45,6 +46,26 @@ interface OnboardingConversationTurn {
   answer_json: string;
   lesson_type: string;
   created_at: string;
+}
+
+interface ProfileCreationRunRecord {
+  id: string;
+  user_id: string;
+  conversation_id: string;
+  transcript_hash: string;
+  status: 'running' | 'completed' | 'failed';
+  attempts: number;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProfileCreationClaim {
+  runId: string;
+  status: 'claimed' | 'completed';
+  transcriptHash: string;
 }
 
 const REQUIRED_MEETING_SIGNALS: StudentMeetingSignal[] = [
@@ -180,6 +201,14 @@ export class StudentProfileService {
   async completeOnboardingFromConversation(
     context: StudentProfileConversationContext,
   ): Promise<StudentProfileStatus> {
+    const existingProfile = this.getProfile(context.user.id);
+    if (existingProfile) {
+      return {
+        onboardingRequired: false,
+        profile: existingProfile,
+      };
+    }
+
     const conversationId =
       this.cleanString(context.conversationId, 160) ??
       this.getLatestMeetingConversationId(context.user.id);
@@ -195,21 +224,51 @@ export class StudentProfileService {
       );
     }
 
-    const answers = await this.extractOnboardingAnswersFromConversation(
-      context.user,
+    const transcriptHash = this.hashMeetingTranscript(turns);
+    const claim = this.claimProfileCreationRun(
+      context.user.id,
       conversationId,
-      turns,
-      readiness.lessonSessionId,
+      transcriptHash,
     );
-    const status = await this.completeOnboarding({
-      user: context.user,
-      answers,
-      conversationId,
-      lessonSessionId: readiness.lessonSessionId,
-      lessonType: 'meeting',
-    });
-    this.finishMeetingLessonAfterProfileCreation(context.user.id, conversationId);
-    return status;
+    if (claim.status === 'completed') {
+      const profile = this.getProfile(context.user.id);
+      if (profile) {
+        return {
+          onboardingRequired: false,
+          profile,
+        };
+      }
+      this.markProfileCreationRunFailed(
+        claim.runId,
+        'Completed profile creation run has no stored student profile',
+      );
+      throw new BadRequestException('Stored profile creation state is inconsistent');
+    }
+
+    try {
+      const answers = await this.extractOnboardingAnswersFromConversation(
+        context.user,
+        conversationId,
+        turns,
+        readiness.lessonSessionId,
+      );
+      const status = await this.completeOnboarding({
+        user: context.user,
+        answers,
+        conversationId,
+        lessonSessionId: readiness.lessonSessionId,
+        lessonType: 'meeting',
+      });
+      this.finishMeetingLessonAfterProfileCreation(context.user.id, conversationId);
+      this.markProfileCreationRunCompleted(claim.runId);
+      return status;
+    } catch (error) {
+      this.markProfileCreationRunFailed(
+        claim.runId,
+        error instanceof Error ? error.message : 'Profile creation failed',
+      );
+      throw error;
+    }
   }
 
   private async generateProfile(
@@ -574,6 +633,112 @@ export class StudentProfileService {
         ].join('\n');
       })
       .join('\n\n');
+  }
+
+  private hashMeetingTranscript(turns: OnboardingConversationTurn[]): string {
+    const stableTurns = turns.map((turn) => ({
+      id: turn.id,
+      prompt: turn.prompt,
+      answer_json: turn.answer_json,
+      lesson_type: turn.lesson_type,
+      created_at: turn.created_at,
+    }));
+    return createHash('sha256')
+      .update(JSON.stringify(stableTurns))
+      .digest('hex');
+  }
+
+  private claimProfileCreationRun(
+    userId: string,
+    conversationId: string,
+    transcriptHash: string,
+  ): ProfileCreationClaim {
+    const now = new Date().toISOString();
+    const runId = randomUUID();
+    const inserted = this.db.run(
+      `INSERT OR IGNORE INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [runId, userId, conversationId, transcriptHash, now, now, now],
+    );
+    if (inserted.changes > 0) {
+      return {
+        runId,
+        status: 'claimed',
+        transcriptHash,
+      };
+    }
+
+    const existing = this.db.get<ProfileCreationRunRecord>(
+      `SELECT id, user_id, conversation_id, transcript_hash, status, attempts,
+              error_message, started_at, completed_at, created_at, updated_at
+       FROM student_profile_creation_runs
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND transcript_hash = ?
+       LIMIT 1`,
+      [userId, conversationId, transcriptHash],
+    );
+    if (!existing) {
+      throw new ConflictException('Profile creation claim could not be acquired');
+    }
+    if (existing.status === 'completed') {
+      return {
+        runId: existing.id,
+        status: 'completed',
+        transcriptHash,
+      };
+    }
+    if (existing.status === 'running') {
+      throw new ConflictException('Profile creation is already in progress');
+    }
+
+    this.db.run(
+      `UPDATE student_profile_creation_runs
+       SET status = 'running',
+           attempts = attempts + 1,
+           error_message = NULL,
+           started_at = ?,
+           completed_at = NULL,
+           updated_at = ?
+       WHERE id = ?
+         AND status = 'failed'`,
+      [now, now, existing.id],
+    );
+    return {
+      runId: existing.id,
+      status: 'claimed',
+      transcriptHash,
+    };
+  }
+
+  private markProfileCreationRunCompleted(runId: string): void {
+    const now = new Date().toISOString();
+    this.db.run(
+      `UPDATE student_profile_creation_runs
+       SET status = 'completed',
+           error_message = NULL,
+           completed_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      [now, now, runId],
+    );
+  }
+
+  private markProfileCreationRunFailed(runId: string, errorMessage: string): void {
+    const now = new Date().toISOString();
+    this.db.run(
+      `UPDATE student_profile_creation_runs
+       SET status = 'failed',
+           error_message = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND status = 'running'`,
+      [this.cleanString(errorMessage, 600) ?? 'Profile creation failed', now, now, runId],
+    );
   }
 
   private extractAnswerText(answer: Record<string, unknown>): string {

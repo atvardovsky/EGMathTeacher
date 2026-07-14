@@ -179,8 +179,8 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `GET /auth/me` | none | Return current cookie session or null. |
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
 | `GET /student-profile/me/meeting-readiness` | authenticated | Return backend first-meeting completeness score, required/missing teaching signals, and whether profile creation is allowed. |
-| `PUT /student-profile/me` | authenticated | Create or replace the first-meeting student profile from trusted structured answers. |
-| `POST /student-profile/me/from-conversation` | authenticated | Create or replace the student profile from the signed-in user's stored AI-led `meeting` conversation after readiness checks pass; onboarding usage context includes conversation and lesson session ids. |
+| `PUT /student-profile/me` | authenticated | Legacy trusted structured onboarding fallback. Student use is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`. |
+| `POST /student-profile/me/from-conversation` | authenticated | Create the student profile from the signed-in user's stored AI-led `meeting` conversation after readiness checks pass; onboarding usage context includes conversation and lesson session ids, and duplicate calls are idempotent by user, conversation id, and transcript hash. |
 | `GET /tutor/lessons?scope=active\|history\|all` | authenticated | Return signed-in user's active resumable lesson sessions and read-only historical/legacy lesson records with summaries and stored turns. |
 | `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session, enqueue closure review only on the first actual transition, and move it to read-only history. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. Terminal lesson `conversationId` values are rejected instead of reopened. |

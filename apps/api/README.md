@@ -70,6 +70,10 @@ This repository houses a NestJS orchestration service that now handles both sign
     verifier skills require an active imported `curriculum_mastery_criteria`
     row before a correct answer can write mastery evidence or complete a
     practice goal.
+  - `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED` – defaults to `false`. Student
+    onboarding uses the AI-led conversation endpoint by default; set this flag
+    only for trusted fallback/import use of the legacy JSON `PUT
+    /student-profile/me` endpoint.
   - `KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS` and
     `KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS` – tune how long `--wait-ready` polls
     vector-store file indexing before leaving the sync job attached but not
@@ -186,7 +190,12 @@ Tutor/product API surfaces also include:
   profile from the stored first-meeting transcript. Conversation extraction
   and the three specialist onboarding calls carry the `conversationId` and
   `lessonSessionId` in local usage context so first-meeting cost can be
-  attributed to that lesson.
+  attributed to that lesson. Repeated calls for the same authenticated user,
+  conversation id, and transcript hash return the stored profile after
+  success instead of rerunning the specialist calls.
+- `PUT /student-profile/me` for the legacy structured JSON onboarding payload.
+  Student access is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED`
+  is explicitly enabled for a trusted fallback/import workflow.
 - `GET /tutor/lessons?scope=active|history|all` for the signed-in user's
   active lesson sessions, read-only historical records, stored turns, summaries,
   and legacy saved discussions. Only non-terminal active lessons are resumable

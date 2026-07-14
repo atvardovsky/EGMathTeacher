@@ -144,6 +144,18 @@ Current data-minimization rule:
 - verifier rows must store only task/answer evidence needed for teaching and
   debugging; expected answers must not be exposed to the student before an
   attempt is submitted
+- conversation-based first-meeting profile creation is idempotent by signed-in
+  user, conversation id, and transcript hash so HTTP retries or duplicate tabs
+  do not repeatedly send the same transcript through the four onboarding AI
+  calls after success
+- the legacy structured JSON onboarding endpoint is disabled for student use
+  by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
+  trusted fallback/import workflows
+
+Raw student prompts and tutor answer JSON still remain in `tutor_turns` during
+the POC. Profile sanitation limits long-term teaching memory, but it does not
+delete the source transcript. Production use requires a separate transcript
+retention, redaction, deletion, consent, and storage-protection policy.
 
 The authenticated web settings view may display the signed-in user's own
 read-only tutoring profile memory. It must not add profile editing, export,
@@ -173,6 +185,7 @@ Gaps:
 
 - no formal privacy policy
 - no retention policy
+- no transcript redaction/deletion lifecycle for accidental sensitive details
 - no delete/export workflow
 - no production compliance review
 

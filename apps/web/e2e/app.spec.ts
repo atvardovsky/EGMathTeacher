@@ -400,15 +400,21 @@ async function mockStudentSession(
   await page.route('**/auth/logout', (route) => fulfillJson(route, {}));
   await page.route('**/student-profile/me**', async (route) => {
     if (new URL(route.request().url()).pathname.endsWith('/meeting-readiness')) {
+      const terminalMeetingReady = tutorRequests.some(
+        (request) =>
+          typeof request.message === 'string' &&
+          request.message.toLowerCase().includes('заверши'),
+      );
+      const enoughMeetingTurns = tutorRequests.length >= 4 || terminalMeetingReady;
       return fulfillJson(route, {
         conversationId: 'conv-e2e',
         lessonSessionId: 'lesson-e2e',
-        canCreateProfile: tutorRequests.length >= 4,
-        score: tutorRequests.length >= 4 ? 100 : 40,
+        canCreateProfile: enoughMeetingTurns,
+        score: enoughMeetingTurns ? 100 : 40,
         tutorTurnCount: tutorRequests.length,
         meaningfulStudentTurnCount: Math.max(0, tutorRequests.length - 1),
         presentSignals:
-          tutorRequests.length >= 4
+          enoughMeetingTurns
             ? [
                 'preparation_goal',
                 'self_assessment',
@@ -418,7 +424,7 @@ async function mockStudentSession(
               ]
             : ['preparation_goal'],
         missingSignals:
-          tutorRequests.length >= 4
+          enoughMeetingTurns
             ? []
             : [
                 'self_assessment',
@@ -736,6 +742,65 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
 
   await page.getByRole('button', { name: 'Создать схему' }).click();
   await expect(page.getByAltText('Схема графика функции с касательной в точке')).toBeVisible();
+});
+
+test('terminal first meeting becomes read-only and keeps profile creation available', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: true });
+
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Начать голосовую встречу' }).click();
+  await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: {
+            transcript:
+              'Заверши встречу, я готовлюсь к ЕГЭ, уровень средний, сложны производные, хочу примеры',
+          },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+
+  await expect(page.getByText('Цель занятия достигнута. Я остановлю урок здесь.')).toBeVisible();
+  await expect(page.getByText('встреча завершена', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Встреча завершена. Можно создать предварительный профиль обучения'),
+  ).toBeVisible();
+  await expect(page.getByPlaceholder('Можно ответить голосом или написать здесь')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Ответить' })).toBeDisabled();
+  await expect(page.getByTitle('Голосовой ввод')).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+
+  await page.getByRole('button', { name: 'Создать профиль из разговора' }).click();
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  expect(tutorRequests[1]).toMatchObject({
+    lessonType: 'meeting',
+    source: 'voice',
+  });
 });
 
 test('student sees saved lessons and continues the previous discussion', async ({ page }) => {

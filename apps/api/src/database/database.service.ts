@@ -1270,6 +1270,30 @@ export class DatabaseService implements OnModuleDestroy {
       WHERE source = 'backend_generated'
         AND source_task_id LIKE 'generated:%';
     `);
+
+    this.applyMigration('013_student_profile_creation_idempotency', `
+      CREATE TABLE IF NOT EXISTS student_profile_creation_runs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        transcript_hash TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 1,
+        error_message TEXT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE(user_id, conversation_id, transcript_hash)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_student_profile_creation_runs_user_updated
+        ON student_profile_creation_runs(user_id, updated_at);
+
+      CREATE INDEX IF NOT EXISTS idx_student_profile_creation_runs_status
+        ON student_profile_creation_runs(status, updated_at);
+    `);
   }
 
   private applyMigration(

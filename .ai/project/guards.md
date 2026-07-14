@@ -37,6 +37,13 @@ Protected endpoints:
 - `GET /usage/me/summary`
 - `POST /usage/me/background/recover`
 
+Additional endpoint-specific rules:
+
+- `PUT /student-profile/me` is a legacy structured onboarding fallback.
+  Student use is rejected unless
+  `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`; the default first-login path
+  is `POST /student-profile/me/from-conversation`.
+
 ### `AdminGuard`
 
 Current behavior:

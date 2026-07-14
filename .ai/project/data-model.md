@@ -50,7 +50,9 @@ tasks, migration `011_task_identity_and_indexing_state` after adding
 canonical `source_task_id`, common-error ids, and RAG indexing state, and
 migration `012_generated_task_identity_normalization` after normalizing
 backend-generated fallback task identities to the same generated formula used
-at runtime.
+at runtime, and migration `013_student_profile_creation_idempotency` after
+adding a conversation-profile creation run ledger for idempotent first-meeting
+profile creation.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -248,6 +250,32 @@ The JSON profile sections are produced by specialist AI calls:
 
 These fields remain flexible JSON in the POC. Sensitive non-teaching personal
 details are filtered before storage and before later profile specialist calls.
+
+### `student_profile_creation_runs`
+
+| Column | Type | Rule |
+| --- | --- | --- |
+| `id` | `TEXT` | primary key |
+| `user_id` | `TEXT` | required, references `users(id)` |
+| `conversation_id` | `TEXT` | required stored first-meeting conversation |
+| `transcript_hash` | `TEXT` | required SHA-256 hash of the transcript rows used for profile creation |
+| `status` | `TEXT` | required; `running`, `completed`, or `failed` |
+| `attempts` | `INTEGER` | required retry count |
+| `error_message` | `TEXT` | optional sanitized failure detail |
+| `started_at` | `TEXT` | required ISO timestamp for current attempt |
+| `completed_at` | `TEXT` | optional ISO timestamp for terminal run state |
+| `created_at` | `TEXT` | required ISO timestamp |
+| `updated_at` | `TEXT` | required ISO timestamp |
+
+Unique key: `(user_id, conversation_id, transcript_hash)`.
+
+Source owner: `apps/api/src/student-profile` and
+`apps/api/src/database/database.service.ts`.
+
+This table prevents duplicate first-meeting profile work. Repeated successful
+calls to `POST /student-profile/me/from-conversation` return the stored
+profile without rerunning the conversation extractor or three specialist AI
+calls. Running duplicate claims are rejected, and failed claims can be retried.
 
 Background student profile and strategy refresh jobs can merge sanitized JSON
 patches into these fields after tutor turns. Batched mode combines profile and

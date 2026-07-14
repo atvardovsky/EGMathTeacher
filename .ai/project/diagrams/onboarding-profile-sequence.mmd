@@ -58,6 +58,12 @@ sequenceDiagram
   Profile->>DB: Read stored meeting tutor_turns for user and conversation
   DB-->>Profile: Meeting transcript
   Profile->>Profile: Recheck readiness and required teaching signals
+  Profile->>DB: Claim student_profile_creation_runs by user + conversation + transcript hash
+  alt Duplicate completed run
+    Profile->>DB: Read stored student_profiles
+    Profile-->>API: Existing profile status
+    API-->>Web: onboardingRequired=false and profile
+  else New or retryable run
   Profile->>AIModel: Extract onboarding answers from transcript with lessonSessionId
   AIModel->>Policy: Resolve onboardingConversationExtraction policy
   Policy-->>AIModel: Extractor role, model, metadata, optional service tier
@@ -87,6 +93,8 @@ sequenceDiagram
   AIModel-->>Profile: strategy and summary
   Profile->>DB: Upsert student_profiles
   Profile->>DB: Mark meeting lesson_session finished with goal reached
+  Profile->>DB: Mark student_profile_creation_runs completed
   Profile-->>API: Profile status
   API-->>Web: onboardingRequired=false and profile
   Web-->>Student: Open tutor workspace with lesson launcher
+  end

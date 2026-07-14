@@ -21,6 +21,9 @@ flowchart TB
   MeetingHydration --> ActiveMeetingApi[GET /tutor/lessons scope active]
   Meeting --> MeetingReadiness[Backend readiness score and missing signals]
   MeetingReadiness --> MeetingReadinessApi[GET /student-profile/me/meeting-readiness]
+  Meeting --> TerminalMeeting[Terminal meeting read-only state]
+  TerminalMeeting --> DisabledMeetingInput[Mic and text input disabled]
+  TerminalMeeting --> ProfileOrRestart[Create profile or start new meeting]
   VoiceStart --> MeetingTutorApi[POST /tutor/message lessonType meeting]
   TextFallback --> MeetingTutorApi
   MeetingAutoMic --> MeetingTutorApi

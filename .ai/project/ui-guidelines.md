@@ -42,7 +42,9 @@ The web UI follows this tree:
    tutor speech is enabled when the browser supports it, the mic reopens in
    voice-dialog mode only while the meeting remains non-terminal, text input
    is only a fallback, and unfinished meetings are restored from saved lesson
-   history after reload.
+   history after reload. If the meeting becomes terminal, show a read-only
+   transcript with create-profile or start-new-meeting actions and disable mic
+   plus text input for that conversation.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
 6. When the tutor workspace has no turns, show a lesson launcher with a

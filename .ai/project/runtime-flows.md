@@ -54,6 +54,10 @@ This file records runtime flows from current source evidence.
    while the meeting lifecycle is non-terminal.
    Browser text input remains a fallback for unavailable or stopped speech
    recognition.
+   If a meeting response is terminal, the web client clears the active
+   conversation boundary, disables manual voice/text input for that meeting,
+   shows the transcript as finished, and keeps only the create-profile and
+   start-new-meeting actions.
 5. The meeting gathers tutoring-relevant context through the AI dialog:
    exam/goal context, current math confidence and emotional relation to math,
    weak topics, explanation style, pacing, hint/practice/visual preference,
@@ -72,35 +76,40 @@ This file records runtime flows from current source evidence.
    calls `POST /student-profile/me/from-conversation` with the
    `conversationId`. The API reads `tutor_turns` for the authenticated user
    and conversation; it does not trust frontend-submitted profile facts.
-9. `StudentProfileService` runs `onboardingConversationExtraction` to convert
+9. `StudentProfileService` claims a
+   `student_profile_creation_runs` idempotency row by authenticated user,
+   conversation id, and transcript hash. A completed profile is returned
+   without rerunning AI calls; a still-running matching claim is rejected with
+   conflict; a failed claim can be retried.
+10. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
    facts, drops non-teaching sensitive details, and must return the required
    teaching signals before specialist calls are spent.
-10. `StudentProfileService` normalizes extracted answers, drops non-teaching
+11. `StudentProfileService` normalizes extracted answers, drops non-teaching
    sensitive details, and reads active vector store ids.
-11. `AiModelService` resolves role/operation policy and runs three specialist
+12. `AiModelService` resolves role/operation policy and runs three specialist
    model calls:
    - math knowledge diagnostician creates `knowledgeState`
    - tutoring-focused psychopedagogical profiler creates `learningPreferences`
      and `psychologicalProfile`
    - teaching strategy planner creates `explanationStrategy` and compact
      `aiSummary`
-12. The conversation extractor and all specialist calls carry local
+13. The conversation extractor and all specialist calls carry local
     `usageContext` with user id, conversation id, lesson session id, and
     `lessonType=meeting`.
-13. Specialist prompts ask for confidence and evidence for meaningful profile
+14. Specialist prompts ask for confidence and evidence for meaningful profile
    inferences when possible.
-14. RAG is used only for shared AI knowledge such as questionnaire strategy,
+15. RAG is used only for shared AI knowledge such as questionnaire strategy,
    diagnostic rubrics, task strategy, and teaching playbooks.
-15. SQLite stores only teaching-useful personal profile signals in
+16. SQLite stores only teaching-useful personal profile signals in
     `student_profiles`.
-16. After successful conversation-based profile creation, the corresponding
+17. After successful conversation-based profile creation, the corresponding
     non-terminal `meeting` lesson session is marked `finished`,
     `goal_status=reached`, and `finish_reason=profile_created_from_meeting`.
-17. Future tutor requests reload the DB profile so context compaction does not
+18. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
-18. After profile creation, the web client opens the normal tutor workspace
+19. After profile creation, the web client opens the normal tutor workspace
     with a lesson launcher instead of a blank waiting state. The launcher shows
     a green first-lesson button and cards for first meeting, level check,
     linear-equation practice, topic explanation, and mistake review. No tutor

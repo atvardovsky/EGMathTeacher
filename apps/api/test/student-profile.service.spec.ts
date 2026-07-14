@@ -397,6 +397,32 @@ describe('StudentProfileService', () => {
       goal_status: 'reached',
       finish_reason: 'profile_created_from_meeting',
     });
+    expect(
+      db.get<{
+        status: string;
+        attempts: number;
+        transcript_hash: string;
+      }>(
+        `SELECT status, attempts, transcript_hash
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?`,
+        [user.id, conversationId],
+      ),
+    ).toEqual({
+      status: 'completed',
+      attempts: 1,
+      transcript_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+
+    aiModel.createOperationResponse.mockClear();
+    const repeatedStatus = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+    expect(repeatedStatus.onboardingRequired).toBe(false);
+    expect(repeatedStatus.profile?.userId).toBe(user.id);
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
   });
 
   it('reports meeting readiness and ignores the technical starter prompt', async () => {
@@ -545,6 +571,11 @@ describe('StudentProfileService', () => {
         '012_generated_task_identity_normalization',
       ]),
     ).toEqual({ version: '012_generated_task_identity_normalization' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '013_student_profile_creation_idempotency',
+      ]),
+    ).toEqual({ version: '013_student_profile_creation_idempotency' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

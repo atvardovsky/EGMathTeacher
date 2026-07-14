@@ -52,8 +52,13 @@ Production domain:
   converted into the student profile only after backend meeting-readiness
   checks find enough real teaching context. The technical starter prompt does
   not count as student evidence. After successful profile creation, the
-  meeting lesson is closed and moved to history. If the page reloads during an
-  unfinished meeting, the client restores the active meeting transcript from
+  meeting lesson is closed and moved to history; terminal meeting answers make
+  the first-meeting transcript read-only while keeping profile creation
+  available for that closed conversation. Conversation-based profile creation
+  is idempotent for an authenticated user, conversation id, and transcript
+  hash, so retries or multiple tabs do not repeat the four onboarding AI
+  calls after success. If the page reloads during an unfinished meeting, the
+  client restores the active meeting transcript from
   saved lessons. After setup, the tutor workspace opens with a lesson launcher
   and a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads

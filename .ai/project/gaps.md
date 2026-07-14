@@ -67,6 +67,15 @@ decisions.
 - First-meeting profile creation is gated by backend readiness scoring and
   ignores the technical starter prompt; reloads restore unfinished active
   meeting lessons.
+- Terminal first-meeting answers stop voice auto-restart, clear the active
+  conversation boundary, disable manual voice/text input for that transcript,
+  and keep create-profile/start-new-meeting actions visible.
+- Conversation-based profile creation is idempotent by signed-in user,
+  conversation id, and transcript hash; repeated success returns the stored
+  profile without rerunning the extractor or specialist onboarding calls.
+- The legacy structured JSON onboarding endpoint is disabled for student use
+  unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` enables a trusted
+  fallback/import workflow.
 - First tutor turn no longer immediately adds active-learning seconds, and the
   default minimum turn heuristic is 30 seconds instead of 120 seconds.
 - Model-suggested `goalStatus=reached` no longer completes a lesson by itself;
@@ -110,6 +119,8 @@ Still requires product/legal decisions before production implementation:
   transcripts, and uploaded knowledge metadata
 - delete/export workflow and confirmation semantics
 - consent and parent/guardian model
+- transcript redaction/deletion lifecycle for accidental sensitive personal
+  details in raw `tutor_turns`
 - production compliance review
 
 ### AI Teaching Safety And Profile Governance

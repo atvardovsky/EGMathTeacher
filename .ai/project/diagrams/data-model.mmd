@@ -109,6 +109,20 @@ erDiagram
     TEXT updated_at
   }
 
+  STUDENT_PROFILE_CREATION_RUNS {
+    TEXT id PK
+    TEXT user_id FK
+    TEXT conversation_id
+    TEXT transcript_hash
+    TEXT status
+    INTEGER attempts
+    TEXT error_message
+    TEXT started_at
+    TEXT completed_at
+    TEXT created_at
+    TEXT updated_at
+  }
+
   TUTOR_TURNS {
     TEXT id PK
     TEXT user_id FK
@@ -513,6 +527,7 @@ erDiagram
   }
 
   USERS ||--o| STUDENT_PROFILES : has
+  USERS ||--o{ STUDENT_PROFILE_CREATION_RUNS : claims
   USERS ||--o{ TUTOR_TURNS : owns
   USERS ||--o{ BACKGROUND_AI_JOBS : queues
   USERS ||--o{ BACKGROUND_LEARNING_OBSERVATIONS : has
