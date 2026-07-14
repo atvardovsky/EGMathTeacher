@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { ResolvedAiOperationPolicy } from '../ai-model/ai-model.types';
+import {
+  AiOperationFailureReason,
+  ResolvedAiOperationPolicy,
+} from '../ai-model/ai-model.types';
 import { DatabaseService } from '../database/database.service';
 import {
   AiUsageContext,
@@ -52,6 +55,47 @@ export class UsageService {
         : this.extractTokenUsage(response);
     const pricing = this.resolvePricing(policy.model, policy.serviceTier);
     const estimatedCostUsd = this.estimateCost(counts, pricing);
+    return this.insertLedgerItem(
+      policy,
+      context,
+      counts,
+      estimatedCostUsd,
+      pricing.source,
+    );
+  }
+
+  recordOperationFailure(
+    policy: ResolvedAiOperationPolicy,
+    context: AiUsageContext | undefined,
+    _request: Record<string, unknown>,
+    failureReason: AiOperationFailureReason,
+  ): AiUsageLedgerItem | null {
+    if (!this.trackingEnabled || !context?.userId) {
+      return null;
+    }
+
+    return this.insertLedgerItem(
+      policy,
+      context,
+      {
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        imageCount: 0,
+      },
+      0,
+      `usage_unavailable:${failureReason}`,
+    );
+  }
+
+  private insertLedgerItem(
+    policy: ResolvedAiOperationPolicy,
+    context: AiUsageContext,
+    counts: UsageCounts,
+    estimatedCostUsd: number,
+    pricingSource: string,
+  ): AiUsageLedgerItem {
     const id = randomUUID();
     const now = new Date().toISOString();
 
@@ -84,7 +128,7 @@ export class UsageService {
         counts.totalTokens,
         counts.imageCount,
         estimatedCostUsd,
-        pricing.source,
+        pricingSource,
         now,
       ],
     );
@@ -108,7 +152,7 @@ export class UsageService {
       outputTokens: counts.outputTokens,
       totalTokens: counts.totalTokens,
       imageCount: counts.imageCount,
-      pricingSource: pricing.source,
+      pricingSource,
       createdAt: now,
     };
   }
@@ -406,7 +450,14 @@ export class UsageService {
          SUM(output_tokens) AS output_tokens,
          SUM(total_tokens) AS total_tokens,
          SUM(image_count) AS image_count,
-         SUM(CASE WHEN pricing_source != 'not_configured' THEN 1 ELSE 0 END) AS configured_count,
+         SUM(
+           CASE
+             WHEN pricing_source != 'not_configured'
+              AND pricing_source NOT LIKE 'usage_unavailable:%'
+             THEN 1
+             ELSE 0
+           END
+         ) AS configured_count,
          COUNT(*) AS total_count
        FROM ai_usage_ledger
        ${whereSql}`,

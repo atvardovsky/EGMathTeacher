@@ -68,6 +68,11 @@ export interface AiUsageContext {
   correlationId?: string;
 }
 
+export type AiOperationFailureReason =
+  | 'caller_abort'
+  | 'timeout'
+  | 'provider_failure';
+
 export interface AiProviderRequestOptions {
   signal?: AbortSignal;
 }

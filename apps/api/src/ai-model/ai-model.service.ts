@@ -5,6 +5,7 @@ import {
   AiOperationPayload,
   AiModelProvider,
   AiOperationKey,
+  AiOperationFailureReason,
   ResolvedAiOperationPolicy,
   AiProviderRequestOptions,
 } from './ai-model.types';
@@ -115,11 +116,21 @@ export class AiModelService implements AiModelProvider {
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const options = this.getProviderRequestOptions(payload);
-    const response = options
-      ? await this.provider.createResponse(request, options)
-      : await this.provider.createResponse(request);
-    this.usageService?.recordOperation(policy, payload.usageContext, request, response);
-    return response;
+    try {
+      const response = options
+        ? await this.provider.createResponse(request, options)
+        : await this.provider.createResponse(request);
+      this.usageService?.recordOperation(policy, payload.usageContext, request, response);
+      return response;
+    } catch (error) {
+      this.usageService?.recordOperationFailure(
+        policy,
+        payload.usageContext,
+        request,
+        this.getProviderFailureReason(error),
+      );
+      throw error;
+    }
   }
 
   private async callImageProvider(
@@ -127,9 +138,19 @@ export class AiModelService implements AiModelProvider {
     payload: AiOperationPayload,
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const response = await this.provider.generateImage(request);
-    this.usageService?.recordOperation(policy, payload.usageContext, request, response);
-    return response;
+    try {
+      const response = await this.provider.generateImage(request);
+      this.usageService?.recordOperation(policy, payload.usageContext, request, response);
+      return response;
+    } catch (error) {
+      this.usageService?.recordOperationFailure(
+        policy,
+        payload.usageContext,
+        request,
+        this.getProviderFailureReason(error),
+      );
+      throw error;
+    }
   }
 
   private withoutUsageContext(payload: AiOperationPayload): Record<string, unknown> {
@@ -145,6 +166,48 @@ export class AiModelService implements AiModelProvider {
     payload: AiOperationPayload,
   ): AiProviderRequestOptions | undefined {
     return payload.abortSignal ? { signal: payload.abortSignal } : undefined;
+  }
+
+  private getProviderFailureReason(error: unknown): AiOperationFailureReason {
+    const status = this.getHttpStatus(error);
+    const message = this.extractErrorMessage(error).toLowerCase();
+    if (status === 504 || message.includes('timed out')) {
+      return 'timeout';
+    }
+    if (
+      (status === 503 && message.includes('aborted by caller')) ||
+      (message.includes('abort') && !message.includes('timeout'))
+    ) {
+      return 'caller_abort';
+    }
+    return 'provider_failure';
+  }
+
+  private getHttpStatus(error: unknown): number | undefined {
+    const maybeHttp = error as { getStatus?: unknown };
+    if (typeof maybeHttp?.getStatus === 'function') {
+      const status = maybeHttp.getStatus();
+      return typeof status === 'number' ? status : undefined;
+    }
+    return undefined;
+  }
+
+  private extractErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    const response = (error as { getResponse?: unknown })?.getResponse;
+    if (typeof response === 'function') {
+      const value = response.call(error);
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (value && typeof value === 'object') {
+        const message = (value as Record<string, unknown>).message;
+        return Array.isArray(message) ? message.join(' ') : String(message ?? '');
+      }
+    }
+    return String(error ?? '');
   }
 
   private mergeMetadata(

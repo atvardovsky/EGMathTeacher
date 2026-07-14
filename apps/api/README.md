@@ -75,14 +75,17 @@ This repository houses a NestJS orchestration service that now handles both sign
     only for trusted fallback/import use of the legacy JSON `PUT
     /student-profile/me` endpoint.
   - `PROFILE_CREATION_RUNNING_TIMEOUT_MS` – defaults to `900000`. A
-    conversation-profile creation claim with no heartbeat update longer than
-    this lease is treated as stale and can be retried.
+    user-level conversation-profile creation claim with no heartbeat update
+    longer than this lease is treated as stale and can be retried.
   - `KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS` and
     `KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS` – tune how long `--wait-ready` polls
     vector-store file indexing before leaving the sync job attached but not
     indexed.
   - `AI_USAGE_*` – local usage-ledger settings. Prices are configured locally
-    for user-visible estimates and are not provider billing proof.
+    for user-visible estimates and are not provider billing proof. Failed,
+    timed-out, or caller-aborted provider attempts are stored as
+    `usage_unavailable:*` rows with zero tokens so debug views show attempted
+    provider work whose real billing cannot be proven locally.
   - `OPENAI_VECTOR_STORE_IDS` – optional comma-separated vector store ids.
     If empty, manual admin upload or knowledge-pack sync creates/reuses a
     local project vector store recorded in SQLite.

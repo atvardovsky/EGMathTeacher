@@ -79,10 +79,11 @@ decisions.
   conversation. Repeated success returns the stored profile without rerunning
   the extractor or specialist onboarding calls.
 - Fresh running claims block duplicate profile creation even if another tab
-  changed the transcript. Stale running claims can be retried after the
+  changed the transcript or another meeting conversation exists. Stale running claims can be retried after the
   configured heartbeat lease, failed/stale claim reclaims are conditional on
   the old row version, active runs heartbeat during long provider requests and
-  best-effort abort the active request if the claim is lost,
+  best-effort abort the active request if the claim is lost, failed provider
+  attempts are visible as `usage_unavailable:*` local ledger rows,
   completed-without-profile rows are recoverable, reconciliation preserves
   failed/superseded history rows, existing-profile retries without
   `conversationId` can reconcile the current running conversation, and final

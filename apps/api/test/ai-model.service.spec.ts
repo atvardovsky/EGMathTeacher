@@ -95,6 +95,85 @@ describe('AiModelService', () => {
     );
   });
 
+  it('records failed provider attempts without raw usage when a response call fails', async () => {
+    const provider = {
+      id: 'openai',
+      createResponse: jest.fn(async () => {
+        throw new Error('provider unavailable');
+      }),
+      generateImage: jest.fn(),
+      createVectorStore: jest.fn(),
+      uploadFile: jest.fn(),
+      attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
+      listVectorStoreFiles: jest.fn(),
+    };
+    const usage = {
+      recordOperation: jest.fn(),
+      recordOperationFailure: jest.fn(),
+    };
+    const service = new AiModelService(provider, undefined, usage as any);
+
+    await expect(
+      service.createOperationResponse('tutorAnswer', {
+        instructions: 'answer',
+        usageContext: {
+          userId: 'student-1',
+          conversationId: 'conv-1',
+          lessonSessionId: 'lesson-1',
+        },
+      }),
+    ).rejects.toThrow('provider unavailable');
+
+    expect(usage.recordOperation).not.toHaveBeenCalled();
+    expect(usage.recordOperationFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ operationKey: 'tutorAnswer' }),
+      expect.objectContaining({ userId: 'student-1' }),
+      expect.objectContaining({ model: 'gpt-5.5' }),
+      'provider_failure',
+    );
+  });
+
+  it('classifies provider abort failures separately from provider outages', async () => {
+    const provider = {
+      id: 'openai',
+      createResponse: jest.fn(async () => {
+        throw Object.assign(new Error('operation aborted by caller'), {
+          getStatus: () => 503,
+        });
+      }),
+      generateImage: jest.fn(),
+      createVectorStore: jest.fn(),
+      uploadFile: jest.fn(),
+      attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
+      listVectorStoreFiles: jest.fn(),
+    };
+    const usage = {
+      recordOperation: jest.fn(),
+      recordOperationFailure: jest.fn(),
+    };
+    const service = new AiModelService(provider, undefined, usage as any);
+
+    await expect(
+      service.createOperationResponse('tutorAnswer', {
+        instructions: 'answer',
+        usageContext: {
+          userId: 'student-1',
+          conversationId: 'conv-1',
+          lessonSessionId: 'lesson-1',
+        },
+      }),
+    ).rejects.toThrow('operation aborted by caller');
+
+    expect(usage.recordOperationFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ operationKey: 'tutorAnswer' }),
+      expect.objectContaining({ userId: 'student-1' }),
+      expect.objectContaining({ model: 'gpt-5.5' }),
+      'caller_abort',
+    );
+  });
+
   it('keeps abort signals local while passing them to the provider request options', async () => {
     const provider = {
       id: 'openai',

@@ -1088,6 +1088,49 @@ describe('StudentProfileService', () => {
     expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
   });
 
+  it('rejects a fresh running profile claim from another meeting conversation for the same user', async () => {
+    aiModel.createOperationResponse.mockReset();
+    const now = new Date().toISOString();
+    const activeConversationId = 'meeting-conv-user-active';
+    const newConversationId = 'meeting-conv-user-second';
+    insertReadyMeeting(activeConversationId, now);
+    insertReadyMeeting(newConversationId, now);
+    const activeTranscriptHash = getMeetingTranscriptHash(user.id, activeConversationId);
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-user-active',
+        user.id,
+        activeConversationId,
+        activeTranscriptHash,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    await expect(
+      service.completeOnboardingFromConversation({
+        user,
+        conversationId: newConversationId,
+      }),
+    ).rejects.toThrow('Profile creation is already in progress');
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+    expect(
+      db.all<{ id: string }>(
+        `SELECT id
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND status = 'running'`,
+        [user.id],
+      ),
+    ).toEqual([{ id: 'profile-run-user-active' }]);
+  });
+
   it('rejects a second running conversation profile claim when transcript hash changed', async () => {
     aiModel.createOperationResponse.mockReset();
     const now = new Date().toISOString();
@@ -1215,6 +1258,70 @@ describe('StudentProfileService', () => {
         error_message: 'Stale profile creation run superseded by newer meeting transcript',
       },
       {
+        status: 'completed',
+        transcript_hash: newTranscriptHash,
+        error_message: null,
+      },
+    ]);
+  });
+
+  it('supersedes a stale profile claim from another meeting conversation before creating the user profile', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const staleConversationId = 'meeting-conv-stale-other-user-lock';
+    const newConversationId = 'meeting-conv-new-user-lock';
+    insertReadyMeeting(staleConversationId, now);
+    insertReadyMeeting(newConversationId, now);
+    const staleTranscriptHash = getMeetingTranscriptHash(user.id, staleConversationId);
+    const newTranscriptHash = getMeetingTranscriptHash(user.id, newConversationId);
+    const staleAt = new Date(Date.now() - 3_600_000).toISOString();
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-stale-other-user-lock',
+        user.id,
+        staleConversationId,
+        staleTranscriptHash,
+        staleAt,
+        staleAt,
+        staleAt,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId: newConversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.all<{
+        conversation_id: string;
+        status: string;
+        transcript_hash: string;
+        error_message: string | null;
+      }>(
+        `SELECT conversation_id, status, transcript_hash, error_message
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+         ORDER BY created_at ASC, id ASC`,
+        [user.id],
+      ),
+    ).toEqual([
+      {
+        conversation_id: staleConversationId,
+        status: 'failed',
+        transcript_hash: staleTranscriptHash,
+        error_message:
+          'Stale profile creation run superseded by another meeting conversation',
+      },
+      {
+        conversation_id: newConversationId,
         status: 'completed',
         transcript_hash: newTranscriptHash,
         error_message: null,
@@ -1423,6 +1530,11 @@ describe('StudentProfileService', () => {
         '014_profile_creation_conversation_lock',
       ]),
     ).toEqual({ version: '014_profile_creation_conversation_lock' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '015_profile_creation_user_lock',
+      ]),
+    ).toEqual({ version: '015_profile_creation_user_lock' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

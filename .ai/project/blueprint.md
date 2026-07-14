@@ -52,16 +52,20 @@ visible next actions.
   extraction from stored `meeting` turns, math knowledge diagnostician,
   tutoring-focused psychopedagogical profiler, and teaching strategy planner.
   Conversation-based profile creation stores the transcript hash used as
-  input, but allows only one running claim for the same signed-in user and
-  conversation. After success, duplicate calls return the stored profile
+  input, but allows only one running claim for the same signed-in user because
+  the stored profile is user-level. After success, duplicate calls return the stored profile
   instead of rerunning the extractor or three specialist AI calls. Fresh
-  running claims are rejected even when the transcript changed in another tab,
-  while failed claims and stale running claims can be retried after the
+  running claims are rejected even when another meeting conversation or
+  transcript changed in another tab, while failed claims and stale running claims can be retried after the
   configured heartbeat lease. Active profile runs refresh their lease during
   each onboarding AI request as well as between requests. If a heartbeat
   detects that the local claim was lost, the in-flight provider request is
   aborted on a best-effort basis through the model provider boundary before
-  the next AI stage can start. Completed run rows without a stored profile are
+  the next AI stage can start. The OpenAI client distinguishes caller aborts,
+  request timeouts, and provider/network failures; failed or aborted
+  operation attempts with usage context are recorded in the local usage ledger
+  as zero-token `usage_unavailable:*` rows because provider billing cannot be
+  proven locally after cancellation. Completed run rows without a stored profile are
   treated as inconsistent failed rows and can be retried. When a profile
   already exists, reconciliation may finish the meeting and close only the
   still-running creation row; this also applies when the retry omitted

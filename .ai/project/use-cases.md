@@ -282,15 +282,18 @@ Rules from current implementation:
   the day.
 - Conversation-based profile creation records the transcript hash through
   `student_profile_creation_runs`, but only one running claim is allowed per
-  authenticated user and conversation. Repeated calls after success return the
+  authenticated user because `student_profiles` is user-level. Repeated calls after success return the
   stored profile without rerunning the extractor or three specialist calls.
   Fresh running claims are rejected to avoid duplicate spend even when another
-  tab changed the transcript; failed claims and stale running claims after
+  tab changed the transcript or started another meeting conversation; failed claims and stale running claims after
   `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are retryable. Live long-running
   pipelines heartbeat the row during each onboarding AI request and between
   AI calls. If a heartbeat fails because the claim is no longer active, the
   current provider request receives a local abort signal before any later AI
-  stage starts. A completed run without a stored profile is treated as
+  stage starts. Caller aborts, timeouts, and provider/network failures are
+  separated by the OpenAI client; failed or aborted attempts with usage
+  context are stored as zero-token `usage_unavailable:*` local ledger rows.
+  A completed run without a stored profile is treated as
   inconsistent/failed so it can recover. If a stored profile already exists,
   reconciliation closes only the still-running creation row for that
   conversation and leaves failed or superseded rows intact as history; when a

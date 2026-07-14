@@ -145,7 +145,10 @@ When a caller supplies local usage context, `AiModelService` records the model
 operation in `ai_usage_ledger` after the provider returns. The usage context is
 stripped before the provider request. The ledger stores operation/model/token/
 image counts, local correlation ids, and local cost estimates only; it is not
-a provider billing source of truth.
+a provider billing source of truth. Failed, timed-out, or caller-aborted
+attempts with usage context are stored as zero-token `usage_unavailable:*`
+rows so debug views show attempted provider work whose real provider billing
+cannot be proven locally.
 Callers may also supply a local abort signal for long-running guarded
 operations. `AiModelService` strips that signal from the provider JSON payload
 and passes it only as request-control metadata to providers that support
@@ -184,7 +187,7 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `GET /student-profile/me` | authenticated | Return profile status and stored profile if present. |
 | `GET /student-profile/me/meeting-readiness` | authenticated | Return backend first-meeting completeness score, required/missing teaching signals, and whether profile creation is allowed. |
 | `PUT /student-profile/me` | authenticated | Legacy trusted structured onboarding fallback. Student use is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`. |
-| `POST /student-profile/me/from-conversation` | authenticated | Create the student profile from the signed-in user's stored AI-led `meeting` conversation after readiness checks pass; onboarding usage context includes conversation and lesson session ids, duplicate calls are idempotent by user/conversation/transcript hash after success, one active run is allowed per conversation, stale running claims are heartbeat-lease recovered with heartbeats during long provider requests, lost claims abort the current provider request on a best-effort basis, empty active meeting shells are ignored by fallback selection, existing-profile reconciliation can use the current running conversation when the request omits `conversationId`, and final profile/meeting/run writes commit together. |
+| `POST /student-profile/me/from-conversation` | authenticated | Create the student profile from the signed-in user's stored AI-led `meeting` conversation after readiness checks pass; onboarding usage context includes conversation and lesson session ids, duplicate calls are idempotent by user/conversation/transcript hash after success, one active profile-generation run is allowed per user, stale running claims are heartbeat-lease recovered with heartbeats during long provider requests, lost claims abort the current provider request on a best-effort basis, empty active meeting shells are ignored by fallback selection, existing-profile reconciliation can use the current running conversation when the request omits `conversationId`, and final profile/meeting/run writes commit together. |
 | `GET /tutor/lessons?scope=active\|history\|all` | authenticated | Return signed-in user's active resumable lesson sessions and read-only historical/legacy lesson records with summaries and stored turns. |
 | `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session, enqueue closure review only on the first actual transition, and move it to read-only history. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. Terminal lesson `conversationId` values are rejected instead of reopened. |

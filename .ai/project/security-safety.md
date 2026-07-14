@@ -145,14 +145,16 @@ Current data-minimization rule:
   debugging; expected answers must not be exposed to the student before an
   attempt is submitted
 - conversation-based first-meeting profile creation records the transcript
-  hash used as input but permits only one running claim per signed-in user and
-  conversation, so HTTP retries or duplicate tabs do not repeatedly send the
-  same or slightly changed transcript through the four onboarding AI calls
+  hash used as input but permits only one running claim per signed-in user,
+  so HTTP retries, duplicate tabs, or two meeting conversations do not
+  repeatedly send transcripts through the four onboarding AI calls
   while a fresh run is active; stale running claims are retryable after the
   configured heartbeat lease while fresh running claims remain blocked to
   avoid duplicate spend; active claims heartbeat during individual provider
   requests as well as between calls, and a lost claim sends a best-effort
-  local abort signal to the active provider request
+  local abort signal to the active provider request; local usage rows for
+  failed or aborted attempts are marked `usage_unavailable:*` because provider
+  billing can differ after a request has left the process
 - the legacy structured JSON onboarding endpoint is disabled for student use
   by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
   trusted fallback/import workflows

@@ -54,7 +54,9 @@ at runtime, and migration `013_student_profile_creation_idempotency` after
 adding a conversation-profile creation run ledger for idempotent first-meeting
 profile creation, and migration `014_profile_creation_conversation_lock` after
 adding a partial unique lock that allows only one running profile-creation row
-per user and conversation.
+per user and conversation. Migration `015_profile_creation_user_lock` upgrades
+that invariant to one running profile-creation row per user, matching the
+single-row `student_profiles` ownership model.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -276,6 +278,9 @@ Unique keys:
 - Partial unique index `(user_id, conversation_id) WHERE status='running'`
   so one conversation cannot run two profile pipelines at once when the
   transcript changes in another tab.
+- Partial unique index `(user_id) WHERE status='running'` so one student
+  cannot run two profile pipelines from different meeting conversations while
+  only one `student_profiles` row can be stored.
 
 Source owner: `apps/api/src/student-profile` and
 `apps/api/src/database/database.service.ts`.
@@ -283,18 +288,21 @@ Source owner: `apps/api/src/student-profile` and
 This table prevents duplicate first-meeting profile work. Repeated successful
 calls to `POST /student-profile/me/from-conversation` return the stored
 profile without rerunning the conversation extractor or three specialist AI
-calls. Fresh running duplicate claims are rejected at the conversation level
-even when a newer transcript hash exists, failed claims can be retried, and
-running claims whose `updated_at` heartbeat is older than
+calls. Fresh running duplicate claims are rejected at the user level even
+when a newer transcript hash or another meeting conversation exists, failed
+claims can be retried, and running claims whose `updated_at` heartbeat is older than
 `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are treated as stale. A stale running
-claim with a different transcript hash is first marked failed/superseded,
-then the new transcript can claim a fresh row. Reclaim updates are conditional
+claim for a different transcript or meeting conversation is first marked
+failed/superseded, then the new transcript can claim a fresh row. Reclaim updates are conditional
 on the previously read row version so concurrent retry workers cannot both
 acquire the same failed or stale claim. While the profile pipeline is live,
 the service heartbeats `updated_at` before, during, and after each onboarding
 AI call. If a heartbeat detects that the run is no longer active, the current
 provider request is aborted locally on a best-effort basis and the worker
-cannot continue to the next AI stage. Completed run rows that lost their profile row are marked
+cannot continue to the next AI stage. Canceled, timed-out, and failed provider
+attempts with usage context are recorded in `ai_usage_ledger` with zero tokens
+and `pricing_source='usage_unavailable:<reason>'`; these rows are debug
+observability and not billing proof. Completed run rows that lost their profile row are marked
 inconsistent/failed and then retried. After AI calls complete, profile upsert,
 meeting finish, and run completion are written in one SQLite transaction. If
 a stored profile already exists, reconciliation completes only the still

@@ -699,25 +699,23 @@ export class StudentProfileService {
     transcriptHash: string,
   ): ProfileCreationClaim {
     const now = new Date().toISOString();
-    const active = this.getActiveProfileCreationRunForConversation(
-      userId,
-      conversationId,
-    );
+    const active = this.getActiveProfileCreationRunForUser(userId);
     if (active) {
-      if (active.transcript_hash !== transcriptHash) {
-        if (!this.isProfileCreationRunStale(active, now)) {
-          throw new ConflictException('Profile creation is already in progress');
-        }
-        this.markProfileCreationRunSuperseded(
-          active,
-          now,
-          'Stale profile creation run superseded by newer meeting transcript',
-        );
-      } else if (this.isProfileCreationRunStale(active, now)) {
+      const sameConversation = active.conversation_id === conversationId;
+      const sameTranscript = sameConversation && active.transcript_hash === transcriptHash;
+      if (sameTranscript && this.isProfileCreationRunStale(active, now)) {
         return this.reclaimProfileCreationRun(active, now, 'running');
-      } else {
+      }
+      if (!this.isProfileCreationRunStale(active, now)) {
         throw new ConflictException('Profile creation is already in progress');
       }
+      this.markProfileCreationRunSuperseded(
+        active,
+        now,
+        sameConversation
+          ? 'Stale profile creation run superseded by newer meeting transcript'
+          : 'Stale profile creation run superseded by another meeting conversation',
+      );
     }
 
     const existing = this.getProfileCreationRunByTranscript(
@@ -761,23 +759,25 @@ export class StudentProfileService {
       };
     }
 
+    const currentActive = this.getActiveProfileCreationRunForUser(userId);
+    if (currentActive) {
+      throw new ConflictException('Profile creation is already in progress');
+    }
     throw new ConflictException('Profile creation claim could not be acquired');
   }
 
-  private getActiveProfileCreationRunForConversation(
+  private getActiveProfileCreationRunForUser(
     userId: string,
-    conversationId: string,
   ): ProfileCreationRunRecord | undefined {
     return this.db.get<ProfileCreationRunRecord>(
       `SELECT id, user_id, conversation_id, transcript_hash, status, attempts,
               error_message, started_at, completed_at, created_at, updated_at
        FROM student_profile_creation_runs
        WHERE user_id = ?
-         AND conversation_id = ?
          AND status = 'running'
        ORDER BY updated_at DESC
        LIMIT 1`,
-      [userId, conversationId],
+      [userId],
     );
   }
 

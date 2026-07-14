@@ -109,6 +109,37 @@ describe('UsageService', () => {
     );
   });
 
+  it('records failed provider attempts as usage-unavailable debug ledger rows', () => {
+    service.recordOperationFailure(
+      policy,
+      {
+        userId: 'student-1',
+        conversationId: 'conv-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'tutor',
+        correlationId: 'turn-aborted',
+      },
+      { model: 'gpt-test' },
+      'caller_abort',
+    );
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.today.estimatedCostUsd).toBe(0);
+    expect(summary.today.totalTokens).toBe(0);
+    expect(summary.today.pricingConfigured).toBe(false);
+    expect(summary.currentLesson?.items[0]).toEqual(
+      expect.objectContaining({
+        operation: 'tutor.answer',
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        pricingSource: 'usage_unavailable:caller_abort',
+        correlationId: 'turn-aborted',
+      }),
+    );
+  });
+
   it('uses service-tier model pricing overrides when they are configured', () => {
     db.onModuleDestroy();
     const sqlitePath = join(tmpdir(), `egmathteacher-usage-${randomUUID()}.sqlite`);

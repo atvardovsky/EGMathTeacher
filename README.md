@@ -56,13 +56,17 @@ Production domain:
   the first-meeting transcript read-only while keeping profile creation
   available for that closed conversation. Conversation-based profile creation
   stores the transcript hash used as input, but allows only one running
-  profile-creation claim per authenticated user and conversation. Retries or
-  multiple tabs do not repeat the four onboarding AI calls after success,
-  fresh in-progress claims are blocked even if the transcript changed, and
+  profile-creation claim per authenticated user because the stored profile is
+  user-level. Retries or multiple tabs do not repeat the four onboarding AI
+  calls after success, fresh in-progress claims are blocked even if another
+  meeting conversation or transcript changed, and
   stale in-progress claims can be retried after a lease timeout. Long
   onboarding AI calls refresh the lease while a provider request is still in
   flight, not only between specialist calls, and the API makes a best-effort
-  abort of the active provider request if the local claim is lost. If the
+  abort of the active provider request if the local claim is lost. Aborted,
+  timed-out, and failed provider attempts are visible in the local usage
+  ledger as `usage_unavailable:*` rows with zero tokens because provider
+  billing may still differ from local accounting. If the
   page reloads during an
   unfinished or terminal pre-profile meeting, the client and API fallback
   restore the saved meeting transcript from active meetings with turns or

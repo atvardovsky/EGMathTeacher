@@ -35,12 +35,14 @@ Current covered areas:
   extraction, backend meeting-readiness scoring, AI profile storage, lesson
   usage attribution for onboarding specialist calls, and tutor context summary
   behavior, including specialist profile pipeline calls, idempotent
-  conversation-profile creation, conversation-level active-run locking,
-  changed-transcript duplicate-run rejection, stale changed-transcript
+  conversation-profile creation, user-level active-run locking,
+  changed-transcript and cross-conversation duplicate-run rejection, stale changed-transcript
   recovery, completed-without-profile recovery, stale running profile-creation
   claim recovery, fresh running claim rejection, empty active meeting fallback
   avoidance, long-request lease heartbeat, provider-request abort on lost
-  profile claim, existing-profile no-conversation reconciliation,
+  profile claim, typed caller-abort/timeout/provider-failure handling,
+  `usage_unavailable:*` local ledger rows for failed provider attempts,
+  existing-profile no-conversation reconciliation,
   preservation of historical failed run rows during reconciliation,
   finalization transaction use, and the disabled-by-default legacy structured
   onboarding endpoint for students

@@ -58,7 +58,7 @@ sequenceDiagram
   Profile->>DB: Read stored meeting tutor_turns for user and conversation, ignoring empty active meeting fallback
   DB-->>Profile: Meeting transcript
   Profile->>Profile: Recheck readiness and required teaching signals
-  Profile->>DB: Claim student_profile_creation_runs with one running run per conversation and transcript hash
+  Profile->>DB: Claim student_profile_creation_runs with one running run per user plus conversation/transcript idempotency
   opt Completed run has no stored profile
     Profile->>DB: Mark completed run inconsistent and failed
     Profile->>DB: Reclaim failed run if old row version still matches
@@ -71,7 +71,7 @@ sequenceDiagram
     Profile->>DB: Read stored student_profiles
     Profile-->>API: Existing profile status
     API-->>Web: onboardingRequired=false and profile
-  else Fresh running conversation claim
+  else Fresh running user-level claim
     Profile-->>API: Conflict until lease timeout
     API-->>Web: Profile creation already in progress
   else Claim acquired for new, failed, stale, recovered completed, or newer transcript
@@ -88,6 +88,7 @@ sequenceDiagram
     Profile->>DB: Heartbeat running claim during and after extraction
     opt Heartbeat detects lost claim
       Profile->>AIModel: Abort in-flight provider request
+      AIModel->>DB: Insert usage_unavailable caller-abort ledger row when usage context exists
       Profile-->>API: Conflict without later AI stages or profile write
     end
     Profile->>Knowledge: getActiveVectorStoreIds()

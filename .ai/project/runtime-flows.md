@@ -86,11 +86,12 @@ This file records runtime flows from current source evidence.
    and conversation; it does not trust frontend-submitted profile facts.
 9. `StudentProfileService` claims a
    `student_profile_creation_runs` row by authenticated user, conversation id,
-   and transcript hash, while enforcing one running claim per user and
-   conversation. A completed profile is returned without rerunning AI calls; a
-   still-running conversation claim is rejected with conflict until its
-   heartbeat lease expires even if a newer transcript hash exists; a stale
-   running claim or failed claim can be atomically reclaimed for retry.
+   and transcript hash, while enforcing one running claim per user because
+   `student_profiles` stores one row per user. A completed profile is
+   returned without rerunning AI calls; any still-running user-level claim is
+   rejected with conflict until its heartbeat lease expires even if a newer
+   transcript hash or another meeting conversation exists; a stale running
+   claim or failed claim can be atomically reclaimed for retry.
    Completed run rows without a stored profile are marked inconsistent/failed
    and reclaimed instead of remaining permanently stuck.
 10. During the extraction and specialist pipeline, `StudentProfileService`
@@ -99,7 +100,11 @@ This file records runtime flows from current source evidence.
    not only on the first attempt start time. If a heartbeat fails because the
    running claim was lost, the current provider request is aborted on a
    best-effort basis through `AbortSignal`; no later onboarding AI stage runs
-   and the old worker cannot save the profile.
+   and the old worker cannot save the profile. Provider calls distinguish
+   caller abort, timeout, and provider/network failure. Operation calls with
+   usage context write a zero-token `usage_unavailable:*` ledger row for
+   failed or aborted attempts, while successful responses still write token or
+   image usage from provider output.
 11. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing

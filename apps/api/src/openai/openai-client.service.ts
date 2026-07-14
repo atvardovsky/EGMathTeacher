@@ -1,4 +1,11 @@
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  GatewayTimeoutException,
+  HttpException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AiProviderRequestOptions } from '../ai-model/ai-model.types';
 
@@ -107,9 +114,18 @@ export class OpenAiClientService {
     const timeoutMs =
       options.timeoutMs ?? this.configService.get<number>('ai.openai.requestTimeoutMs') ?? 30_000;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let abortReason: 'timeout' | 'caller' | undefined;
+    const timeout = setTimeout(() => {
+      abortReason ??= 'timeout';
+      controller.abort(new Error('openai_request_timeout'));
+    }, timeoutMs);
     const callerSignal = options.signal;
-    const abortFromCaller = () => controller.abort(callerSignal?.reason);
+    const abortFromCaller = () => {
+      abortReason ??= 'caller';
+      controller.abort(
+        callerSignal?.reason ?? new Error('openai_request_aborted_by_caller'),
+      );
+    };
     if (callerSignal?.aborted) {
       abortFromCaller();
     } else {
@@ -131,8 +147,16 @@ export class OpenAiClientService {
 
       return (await response.json()) as T;
     } catch (error) {
-      if (error instanceof BadGatewayException) {
+      if (error instanceof HttpException) {
         throw error;
+      }
+      if (abortReason === 'caller') {
+        this.logger.warn(`OpenAI request ${path} aborted by caller`);
+        throw new ServiceUnavailableException('OpenAI request aborted by caller');
+      }
+      if (abortReason === 'timeout') {
+        this.logger.error(`OpenAI request ${path} timed out after ${timeoutMs}ms`);
+        throw new GatewayTimeoutException('OpenAI request timed out');
       }
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`OpenAI request ${path} failed: ${message}`);

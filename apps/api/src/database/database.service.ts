@@ -1321,6 +1321,32 @@ export class DatabaseService implements OnModuleDestroy {
         ON student_profile_creation_runs(user_id, conversation_id)
         WHERE status = 'running';
     `);
+
+    this.applyMigration('015_profile_creation_user_lock', `
+      UPDATE student_profile_creation_runs
+      SET status = 'failed',
+          error_message = COALESCE(error_message, 'Superseded by user-level profile creation lock'),
+          completed_at = COALESCE(completed_at, updated_at),
+          updated_at = updated_at
+      WHERE status = 'running'
+        AND EXISTS (
+          SELECT 1
+          FROM student_profile_creation_runs AS newer
+          WHERE newer.user_id = student_profile_creation_runs.user_id
+            AND newer.status = 'running'
+            AND (
+              newer.updated_at > student_profile_creation_runs.updated_at
+              OR (
+                newer.updated_at = student_profile_creation_runs.updated_at
+                AND newer.id > student_profile_creation_runs.id
+              )
+            )
+        );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_student_profile_creation_runs_one_running_user
+        ON student_profile_creation_runs(user_id)
+        WHERE status = 'running';
+    `);
   }
 
   private applyMigration(
