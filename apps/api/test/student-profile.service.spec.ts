@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { AuthSession } from '../src/auth/auth.types';
@@ -9,6 +9,7 @@ import { StudentProfileService } from '../src/student-profile/student-profile.se
 function createConfig(sqlitePath: string): ConfigService {
   const values: Record<string, unknown> = {
     'app.sqlitePath': sqlitePath,
+    'app.profileCreationRunningTimeoutMs': 900_000,
     'ai.openai.responsesModel': 'gpt-test',
   };
   return {
@@ -19,6 +20,7 @@ function createConfig(sqlitePath: string): ConfigService {
 describe('StudentProfileService', () => {
   let db: DatabaseService;
   let service: StudentProfileService;
+  let config: ConfigService;
   const user: AuthSession = {
     id: 'student-1',
     name: 'Маша',
@@ -103,7 +105,7 @@ describe('StudentProfileService', () => {
 
   beforeEach(() => {
     const sqlitePath = join(tmpdir(), `egmathteacher-profile-${randomUUID()}.sqlite`);
-    const config = createConfig(sqlitePath);
+    config = createConfig(sqlitePath);
     db = new DatabaseService(config);
     db.run(
       'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -113,12 +115,145 @@ describe('StudentProfileService', () => {
       'INSERT INTO users (id, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
       [admin.id, admin.name, 'hash', admin.role, admin.createdAt],
     );
-    service = new StudentProfileService(db, knowledge as any, aiModel as any);
+    service = new StudentProfileService(db, config, knowledge as any, aiModel as any);
   });
 
   afterEach(() => {
     db.onModuleDestroy();
   });
+
+  function mockConversationProfilePipeline(): void {
+    aiModel.createOperationResponse.mockReset();
+    aiModel.createOperationResponse
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          answers: {
+            exam: 'ЕГЭ',
+            grade: '10',
+            currentLevel: 'средне',
+            mathFeeling: 'тревожно',
+            weakTopics: ['производная'],
+            motivation: 'поступить на инженерное направление',
+            explanationStyle: 'сначала пример',
+            pacing: 'медленно',
+            visualPreference: true,
+            analogyInterests: ['техника'],
+            diagnosticAnswers: [
+              {
+                prompt: 'Реши 2x + 5 = 17',
+                answer: 'x = 6',
+              },
+            ],
+            freeform: 'мне сложно слушать длинные объяснения',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          knowledgeState: {
+            overallLevel: {
+              value: 'medium',
+              confidence: 'medium',
+              evidence: ['решила линейное уравнение'],
+            },
+            priorityTopics: ['производная'],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          learningPreferences: {
+            explanationStyle: 'examples_first',
+            visualSupport: true,
+          },
+          psychologicalProfile: {
+            confidenceWithMath: {
+              value: 'low',
+              confidence: 'medium',
+              evidence: ['просит медленный темп'],
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          explanationStrategy: {
+            pacing: 'slow',
+            structure: 'example_then_rule',
+          },
+          aiSummary: 'Лучше начинать с короткого примера и затем давать правило.',
+        }),
+      });
+  }
+
+  function insertReadyMeeting(conversationId: string, baseTime: string): void {
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+         success_criteria_json, active_learning_seconds, turn_count, started_at,
+         last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 4, ?, ?, ?, ?)`,
+      [
+        `lesson-${conversationId}`,
+        user.id,
+        conversationId,
+        'Понять стартовый учебный контекст ученика.',
+        JSON.stringify(['получены ответы о цели']),
+        baseTime,
+        baseTime,
+        baseTime,
+        baseTime,
+      ],
+    );
+    const prompts = [
+      'Начни первую голосовую встречу с учеником для AI-репетитора ЕГЭ по математике',
+      'Хочу подготовиться к ЕГЭ, мне сложны производные',
+      'Сначала пример, медленно. В задаче 2x + 5 = 17 получается x = 6',
+      'Уровень средний, уверенности мало, с графиками и производной часто застреваю',
+    ];
+    prompts.forEach((prompt, index) => {
+      const createdAt = new Date(Date.parse(baseTime) + index).toISOString();
+      db.run(
+        `INSERT INTO tutor_turns (
+           id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `turn-${conversationId}-${index}`,
+          user.id,
+          conversationId,
+          `request-${conversationId}-${index}`,
+          'meeting',
+          prompt,
+          JSON.stringify({ answer: 'Следующий вопрос.' }),
+          createdAt,
+        ],
+      );
+    });
+  }
+
+  function getMeetingTranscriptHash(userId: string, conversationId: string): string {
+    const turns = db.all<{
+      id: string;
+      prompt: string;
+      answer_json: string;
+      lesson_type: string;
+      created_at: string;
+    }>(
+      `SELECT id, prompt, answer_json, lesson_type, created_at
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND lesson_type = 'meeting'
+       ORDER BY created_at ASC
+       LIMIT 16`,
+      [userId, conversationId],
+    );
+    return createHash('sha256')
+      .update(JSON.stringify(turns))
+      .digest('hex');
+  }
 
   it('requires onboarding for students without a profile but not for admins', () => {
     expect(service.getStatus(user)).toEqual({ onboardingRequired: true, profile: null });
@@ -349,12 +484,14 @@ describe('StudentProfileService', () => {
       ],
     );
 
+    const transactionSpy = jest.spyOn(db, 'transaction');
     const status = await service.completeOnboardingFromConversation({
       user,
       conversationId,
     });
 
     expect(status.onboardingRequired).toBe(false);
+    expect(transactionSpy).toHaveBeenCalled();
     expect(status.profile?.onboardingAnswers.weakTopics).toEqual(['производная']);
     expect(status.profile?.onboardingAnswers.diagnosticAnswers).toEqual([
       { prompt: 'Реши 2x + 5 = 17', answer: 'x = 6' },
@@ -422,6 +559,204 @@ describe('StudentProfileService', () => {
     });
     expect(repeatedStatus.onboardingRequired).toBe(false);
     expect(repeatedStatus.profile?.userId).toBe(user.id);
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+  });
+
+  it('reconciles a retried conversation profile after profile storage already succeeded', async () => {
+    aiModel.createOperationResponse.mockReset();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-reconcile';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    db.run(
+      `INSERT INTO student_profiles (
+         user_id, onboarding_completed_at, onboarding_answers_json,
+         knowledge_state_json, learning_preferences_json, psychological_profile_json,
+         explanation_strategy_json, ai_summary, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user.id,
+        now,
+        JSON.stringify({ exam: 'ЕГЭ', weakTopics: ['производная'] }),
+        JSON.stringify({ overallLevel: { value: 'medium' } }),
+        JSON.stringify({ explanationStyle: 'examples_first' }),
+        JSON.stringify({ confidenceWithMath: { value: 'low' } }),
+        JSON.stringify({ pacing: 'slow' }),
+        'Профиль уже был сохранен до сбоя финализации.',
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-reconcile',
+        user.id,
+        conversationId,
+        transcriptHash,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(status.profile?.aiSummary).toBe('Профиль уже был сохранен до сбоя финализации.');
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+    expect(
+      db.get<{ status: string; goal_status: string; finish_reason: string | null }>(
+        'SELECT status, goal_status, finish_reason FROM lesson_sessions WHERE id = ?',
+        [`lesson-${conversationId}`],
+      ),
+    ).toEqual({
+      status: 'finished',
+      goal_status: 'reached',
+      finish_reason: 'profile_created_from_meeting',
+    });
+    expect(
+      db.get<{ status: string; error_message: string | null }>(
+        `SELECT status, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-reconcile'],
+      ),
+    ).toEqual({
+      status: 'completed',
+      error_message: null,
+    });
+  });
+
+  it('recovers a stale running conversation profile claim and completes it', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-stale';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    const staleStartedAt = new Date(Date.now() - 3_600_000).toISOString();
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-stale',
+        user.id,
+        conversationId,
+        transcriptHash,
+        staleStartedAt,
+        staleStartedAt,
+        staleStartedAt,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.get<{ status: string; attempts: number; error_message: string | null }>(
+        `SELECT status, attempts, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-stale'],
+      ),
+    ).toEqual({
+      status: 'completed',
+      attempts: 2,
+      error_message: null,
+    });
+  });
+
+  it('retries a failed conversation profile claim and completes it once', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-failed';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    const failedAt = new Date(Date.now() - 60_000).toISOString();
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'failed', 1, ?, ?, ?, ?, ?)`,
+      [
+        'profile-run-failed',
+        user.id,
+        conversationId,
+        transcriptHash,
+        'temporary provider failure',
+        failedAt,
+        failedAt,
+        failedAt,
+        failedAt,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.get<{ status: string; attempts: number; error_message: string | null }>(
+        `SELECT status, attempts, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-failed'],
+      ),
+    ).toEqual({
+      status: 'completed',
+      attempts: 2,
+      error_message: null,
+    });
+  });
+
+  it('rejects a fresh running conversation profile claim without spending AI calls', async () => {
+    aiModel.createOperationResponse.mockReset();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-running';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-running',
+        user.id,
+        conversationId,
+        transcriptHash,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    await expect(
+      service.completeOnboardingFromConversation({
+        user,
+        conversationId,
+      }),
+    ).rejects.toThrow('Profile creation is already in progress');
     expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
   });
 

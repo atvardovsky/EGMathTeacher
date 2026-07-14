@@ -1,10 +1,10 @@
 0ceafb2b7f51449c3d0da08707c95206f4a2a259354a1fa5bd355508d3e8983f  ./knowledge-pack-runtime-repair.mmd
 2bf70bbbed87adfe9433a599141eba100f6ec3908439d0df553d476dc7be719e  ./assistant-governance.mmd
-74b2835add3e0d35ede20489eeebf66b1053747b23193e0e3e2fbbf69d5807f9  ./onboarding-profile-sequence.mmd
-7e80f82e6e95b82472c16698fa8d9412a1831539db4a71562f7399e018c3d7ae  ./ui-tree.mmd
+6d1f35ffc115a1f3052bdf4d2c26b6a805ca9ef4e2d85bcabb2f47b8db259f1b  ./ui-tree.mmd
 86ea5a22023f509baf81f495880fbda278fd863a5c3e253bd1bd549ab42eae66  ./knowledge-upload-sequence.mmd
 b6fc34af260868d651b0d20836e0061facac078f1b8cb79cd10dd50710802277  ./webrtc-realtime-sequence.mmd
 b7e60f5bf990952e429d9e669f64edd09f23705c2e195686ada4d823343b878f  ./system-context.mmd
 c0c7acb93b76dcfb17cbc8aff06f7948468c2c32578ebe624df6befcfde363d0  ./tutor-rag-sequence.mmd
+f4e688bd500f4d47b759d1770edcf6ac15b9d83cc6b2b276b813e30b426392a3  ./onboarding-profile-sequence.mmd
 f692b1c83db49781c31595c567341f85ed0c2a70ab9670b84e2b41aff1ea5802  ./api-modules.mmd
 f8ded8e40bde2b93c53bfe59c0ce1583edfb67c3135248669b118bb48a85affb  ./data-model.mmd

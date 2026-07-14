@@ -44,7 +44,9 @@ The web UI follows this tree:
    is only a fallback, and unfinished meetings are restored from saved lesson
    history after reload. If the meeting becomes terminal, show a read-only
    transcript with create-profile or start-new-meeting actions and disable mic
-   plus text input for that conversation.
+   plus text input for that conversation. Reloading during onboarding should
+   restore both active meetings and terminal pre-profile meetings when saved
+   history exists.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
 6. When the tutor workspace has no turns, show a lesson launcher with a

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 import { AiModelService } from '../ai-model/ai-model.service';
 import { AiOperationKey } from '../ai-model/ai-model.types';
@@ -66,6 +67,7 @@ interface ProfileCreationClaim {
   runId: string;
   status: 'claimed' | 'completed';
   transcriptHash: string;
+  claimedStartedAt?: string;
 }
 
 const REQUIRED_MEETING_SIGNALS: StudentMeetingSignal[] = [
@@ -86,6 +88,7 @@ export class StudentProfileService {
 
   constructor(
     private readonly db: DatabaseService,
+    private readonly configService: ConfigService,
     private readonly knowledgeService: KnowledgeService,
     private readonly aiModel: AiModelService,
   ) {}
@@ -154,55 +157,22 @@ export class StudentProfileService {
       conversationId: context.conversationId,
       lessonSessionId: context.lessonSessionId,
     });
-    const now = new Date().toISOString();
-    const existing = this.getProfile(context.user.id);
-    const createdAt = existing?.createdAt ?? now;
-
-    this.db.run(
-      `INSERT INTO student_profiles (
-         user_id,
-         onboarding_completed_at,
-         onboarding_answers_json,
-         knowledge_state_json,
-         learning_preferences_json,
-         psychological_profile_json,
-         explanation_strategy_json,
-         ai_summary,
-         created_at,
-         updated_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET
-         onboarding_completed_at = excluded.onboarding_completed_at,
-         onboarding_answers_json = excluded.onboarding_answers_json,
-         knowledge_state_json = excluded.knowledge_state_json,
-         learning_preferences_json = excluded.learning_preferences_json,
-         psychological_profile_json = excluded.psychological_profile_json,
-         explanation_strategy_json = excluded.explanation_strategy_json,
-         ai_summary = excluded.ai_summary,
-         updated_at = excluded.updated_at`,
-      [
-        context.user.id,
-        now,
-        JSON.stringify(answers),
-        JSON.stringify(profile.knowledgeState),
-        JSON.stringify(profile.learningPreferences),
-        JSON.stringify(profile.psychologicalProfile),
-        JSON.stringify(profile.explanationStrategy),
-        profile.aiSummary,
-        createdAt,
-        now,
-      ],
-    );
-
+    this.upsertStudentProfile(context.user.id, answers, profile, new Date().toISOString());
     return this.getStatus(context.user);
   }
 
   async completeOnboardingFromConversation(
     context: StudentProfileConversationContext,
   ): Promise<StudentProfileStatus> {
+    const requestedConversationId = this.cleanString(context.conversationId, 160);
     const existingProfile = this.getProfile(context.user.id);
     if (existingProfile) {
+      if (requestedConversationId) {
+        this.reconcileExistingConversationProfile(
+          context.user.id,
+          requestedConversationId,
+        );
+      }
       return {
         onboardingRequired: false,
         profile: existingProfile,
@@ -210,8 +180,7 @@ export class StudentProfileService {
     }
 
     const conversationId =
-      this.cleanString(context.conversationId, 160) ??
-      this.getLatestMeetingConversationId(context.user.id);
+      requestedConversationId ?? this.getLatestMeetingConversationId(context.user.id);
     if (!conversationId) {
       throw new BadRequestException('First meeting conversation is missing');
     }
@@ -252,20 +221,23 @@ export class StudentProfileService {
         turns,
         readiness.lessonSessionId,
       );
-      const status = await this.completeOnboarding({
-        user: context.user,
-        answers,
+      const profile = await this.generateProfile(context.user, answers, {
         conversationId,
         lessonSessionId: readiness.lessonSessionId,
-        lessonType: 'meeting',
       });
-      this.finishMeetingLessonAfterProfileCreation(context.user.id, conversationId);
-      this.markProfileCreationRunCompleted(claim.runId);
-      return status;
+      return this.finalizeConversationOnboarding({
+        user: context.user,
+        answers,
+        profile,
+        conversationId,
+        runId: claim.runId,
+        claimedStartedAt: claim.claimedStartedAt,
+      });
     } catch (error) {
       this.markProfileCreationRunFailed(
         claim.runId,
         error instanceof Error ? error.message : 'Profile creation failed',
+        claim.claimedStartedAt,
       );
       throw error;
     }
@@ -589,8 +561,11 @@ export class StudentProfileService {
     )?.conversation_id;
   }
 
-  private finishMeetingLessonAfterProfileCreation(userId: string, conversationId: string): void {
-    const now = new Date().toISOString();
+  private finishMeetingLessonAfterProfileCreationAt(
+    userId: string,
+    conversationId: string,
+    now: string,
+  ): void {
     this.db.run(
       `UPDATE lesson_sessions
        SET status = 'finished',
@@ -668,6 +643,7 @@ export class StudentProfileService {
         runId,
         status: 'claimed',
         transcriptHash,
+        claimedStartedAt: now,
       };
     }
 
@@ -692,10 +668,21 @@ export class StudentProfileService {
       };
     }
     if (existing.status === 'running') {
+      if (this.isProfileCreationRunStale(existing, now)) {
+        return this.reclaimProfileCreationRun(existing, now, 'running');
+      }
       throw new ConflictException('Profile creation is already in progress');
     }
 
-    this.db.run(
+    return this.reclaimProfileCreationRun(existing, now, 'failed');
+  }
+
+  private reclaimProfileCreationRun(
+    existing: ProfileCreationRunRecord,
+    now: string,
+    expectedStatus: 'running' | 'failed',
+  ): ProfileCreationClaim {
+    const reclaimed = this.db.run(
       `UPDATE student_profile_creation_runs
        SET status = 'running',
            attempts = attempts + 1,
@@ -704,31 +691,203 @@ export class StudentProfileService {
            completed_at = NULL,
            updated_at = ?
        WHERE id = ?
-         AND status = 'failed'`,
-      [now, now, existing.id],
+         AND status = ?
+         AND started_at = ?
+         AND updated_at = ?`,
+      [now, now, existing.id, expectedStatus, existing.started_at, existing.updated_at],
     );
-    return {
-      runId: existing.id,
-      status: 'claimed',
-      transcriptHash,
-    };
+    if (reclaimed.changes === 1) {
+      return {
+        runId: existing.id,
+        status: 'claimed',
+        transcriptHash: existing.transcript_hash,
+        claimedStartedAt: now,
+      };
+    }
+
+    const current = this.db.get<ProfileCreationRunRecord>(
+      `SELECT id, user_id, conversation_id, transcript_hash, status, attempts,
+              error_message, started_at, completed_at, created_at, updated_at
+       FROM student_profile_creation_runs
+       WHERE id = ?
+       LIMIT 1`,
+      [existing.id],
+    );
+    if (current?.status === 'completed') {
+      return {
+        runId: current.id,
+        status: 'completed',
+        transcriptHash: current.transcript_hash,
+      };
+    }
+    throw new ConflictException('Profile creation is already in progress');
   }
 
-  private markProfileCreationRunCompleted(runId: string): void {
+  private isProfileCreationRunStale(record: ProfileCreationRunRecord, now: string): boolean {
+    const configuredTimeoutMs =
+      this.configService.get<number>('app.profileCreationRunningTimeoutMs') ?? 900_000;
+    const timeoutMs =
+      Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+        ? configuredTimeoutMs
+        : 900_000;
+    const startedAtMs = Date.parse(record.started_at);
+    const nowMs = Date.parse(now);
+    if (!Number.isFinite(startedAtMs) || !Number.isFinite(nowMs)) {
+      return true;
+    }
+    return nowMs - startedAtMs > timeoutMs;
+  }
+
+  private finalizeConversationOnboarding(options: {
+    user: AuthSession;
+    answers: StudentOnboardingAnswers;
+    profile: GeneratedProfile;
+    conversationId: string;
+    runId: string;
+    claimedStartedAt?: string;
+  }): StudentProfileStatus {
     const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.upsertStudentProfile(options.user.id, options.answers, options.profile, now);
+      this.finishMeetingLessonAfterProfileCreationAt(
+        options.user.id,
+        options.conversationId,
+        now,
+      );
+      this.markProfileCreationRunCompletedAt(
+        options.runId,
+        now,
+        options.claimedStartedAt,
+      );
+    });
+    return this.getStatus(options.user);
+  }
+
+  private reconcileExistingConversationProfile(userId: string, conversationId: string): void {
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.finishMeetingLessonAfterProfileCreationAt(userId, conversationId, now);
+      this.db.run(
+        `UPDATE student_profile_creation_runs
+         SET status = 'completed',
+             error_message = NULL,
+             completed_at = COALESCE(completed_at, ?),
+             updated_at = ?
+         WHERE user_id = ?
+           AND conversation_id = ?
+           AND status != 'completed'`,
+        [now, now, userId, conversationId],
+      );
+    });
+  }
+
+  private upsertStudentProfile(
+    userId: string,
+    answers: StudentOnboardingAnswers,
+    profile: GeneratedProfile,
+    now: string,
+  ): void {
+    const createdAt = this.getProfileCreatedAt(userId) ?? now;
     this.db.run(
-      `UPDATE student_profile_creation_runs
-       SET status = 'completed',
-           error_message = NULL,
-           completed_at = ?,
-           updated_at = ?
-       WHERE id = ?`,
-      [now, now, runId],
+      `INSERT INTO student_profiles (
+         user_id,
+         onboarding_completed_at,
+         onboarding_answers_json,
+         knowledge_state_json,
+         learning_preferences_json,
+         psychological_profile_json,
+         explanation_strategy_json,
+         ai_summary,
+         created_at,
+         updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         onboarding_completed_at = excluded.onboarding_completed_at,
+         onboarding_answers_json = excluded.onboarding_answers_json,
+         knowledge_state_json = excluded.knowledge_state_json,
+         learning_preferences_json = excluded.learning_preferences_json,
+         psychological_profile_json = excluded.psychological_profile_json,
+         explanation_strategy_json = excluded.explanation_strategy_json,
+         ai_summary = excluded.ai_summary,
+         updated_at = excluded.updated_at`,
+      [
+        userId,
+        now,
+        JSON.stringify(answers),
+        JSON.stringify(profile.knowledgeState),
+        JSON.stringify(profile.learningPreferences),
+        JSON.stringify(profile.psychologicalProfile),
+        JSON.stringify(profile.explanationStrategy),
+        profile.aiSummary,
+        createdAt,
+        now,
+      ],
     );
   }
 
-  private markProfileCreationRunFailed(runId: string, errorMessage: string): void {
+  private getProfileCreatedAt(userId: string): string | undefined {
+    return this.db.get<{ created_at: string }>(
+      `SELECT created_at
+       FROM student_profiles
+       WHERE user_id = ?`,
+      [userId],
+    )?.created_at;
+  }
+
+  private markProfileCreationRunCompletedAt(
+    runId: string,
+    now: string,
+    claimedStartedAt?: string,
+  ): void {
+    const result = claimedStartedAt
+      ? this.db.run(
+          `UPDATE student_profile_creation_runs
+           SET status = 'completed',
+               error_message = NULL,
+               completed_at = ?,
+               updated_at = ?
+           WHERE id = ?
+             AND status = 'running'
+             AND started_at = ?`,
+          [now, now, runId, claimedStartedAt],
+        )
+      : this.db.run(
+          `UPDATE student_profile_creation_runs
+           SET status = 'completed',
+               error_message = NULL,
+               completed_at = ?,
+               updated_at = ?
+           WHERE id = ?
+             AND status = 'running'`,
+          [now, now, runId],
+        );
+    if (result.changes !== 1) {
+      throw new ConflictException('Profile creation claim is no longer active');
+    }
+  }
+
+  private markProfileCreationRunFailed(
+    runId: string,
+    errorMessage: string,
+    claimedStartedAt?: string,
+  ): void {
     const now = new Date().toISOString();
+    const sanitizedError = this.cleanString(errorMessage, 600) ?? 'Profile creation failed';
+    if (claimedStartedAt) {
+      this.db.run(
+        `UPDATE student_profile_creation_runs
+         SET status = 'failed',
+             error_message = ?,
+             completed_at = ?,
+             updated_at = ?
+         WHERE id = ?
+           AND status = 'running'
+           AND started_at = ?`,
+        [sanitizedError, now, now, runId, claimedStartedAt],
+      );
+      return;
+    }
     this.db.run(
       `UPDATE student_profile_creation_runs
        SET status = 'failed',
@@ -737,7 +896,7 @@ export class StudentProfileService {
            updated_at = ?
        WHERE id = ?
          AND status = 'running'`,
-      [this.cleanString(errorMessage, 600) ?? 'Profile creation failed', now, now, runId],
+      [sanitizedError, now, now, runId],
     );
   }
 

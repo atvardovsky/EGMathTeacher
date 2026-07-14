@@ -275,7 +275,13 @@ Source owner: `apps/api/src/student-profile` and
 This table prevents duplicate first-meeting profile work. Repeated successful
 calls to `POST /student-profile/me/from-conversation` return the stored
 profile without rerunning the conversation extractor or three specialist AI
-calls. Running duplicate claims are rejected, and failed claims can be retried.
+calls. Fresh running duplicate claims are rejected, failed claims can be
+retried, and running claims older than
+`PROFILE_CREATION_RUNNING_TIMEOUT_MS` are treated as stale and can be
+reclaimed. Reclaim updates are conditional on the previously read row version
+so concurrent retry workers cannot both acquire the same failed or stale
+claim. After AI calls complete, profile upsert, meeting finish, and run
+completion are written in one SQLite transaction.
 
 Background student profile and strategy refresh jobs can merge sanitized JSON
 patches into these fields after tutor turns. Batched mode combines profile and

@@ -177,6 +177,7 @@ describe('BackgroundAiService', () => {
     };
     studentProfile = new StudentProfileService(
       db,
+      config,
       knowledge as any,
       { createOperationResponse: jest.fn() } as any,
     );

@@ -19,6 +19,8 @@ flowchart TB
   MeetingTranscript --> TutorBubble[Tutor answer bubble with speak or stop action]
   Meeting --> MeetingHydration[Restore active meeting after reload]
   MeetingHydration --> ActiveMeetingApi[GET /tutor/lessons scope active]
+  Meeting --> TerminalMeetingHydration[Restore terminal pre-profile meeting after reload]
+  TerminalMeetingHydration --> HistoricalMeetingApi[GET /tutor/lessons scope history]
   Meeting --> MeetingReadiness[Backend readiness score and missing signals]
   MeetingReadiness --> MeetingReadinessApi[GET /student-profile/me/meeting-readiness]
   Meeting --> TerminalMeeting[Terminal meeting read-only state]

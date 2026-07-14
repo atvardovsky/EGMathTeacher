@@ -261,7 +261,11 @@ Rules from current implementation:
   self-assessment, weak topic, explanation preference, and one diagnostic or
   contentful math reply. The technical starter prompt is ignored.
 - If the first-meeting page reloads before setup is complete, the client
-  restores the latest active saved `meeting` lesson and its stored turns.
+  restores the latest active saved `meeting` lesson and its stored turns. If
+  the meeting already reached a terminal lifecycle before profile creation,
+  the client restores the latest terminal saved meeting from history when
+  available and can also use backend readiness' `conversationId` to finalize
+  the profile.
 - If the meeting reaches a terminal lifecycle before profile creation, the
   client stops auto-listening, disables manual input for that transcript, and
   shows create-profile or start-new-meeting actions.
@@ -279,7 +283,11 @@ Rules from current implementation:
 - Conversation-based profile creation is idempotent per authenticated user,
   conversation id, and transcript hash through `student_profile_creation_runs`.
   Repeated calls after success return the stored profile without rerunning the
-  extractor or three specialist calls.
+  extractor or three specialist calls. Failed claims and stale running claims
+  after `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are retryable; fresh running
+  claims are rejected to avoid duplicate spend.
+- Successful profile creation commits the profile, meeting finish, and
+  creation-run completion together in SQLite after the AI calls have returned.
 - Specialist outputs should include confidence and evidence for meaningful
   inferences when possible.
 - OpenAI is the implemented model provider for those specialist calls in the

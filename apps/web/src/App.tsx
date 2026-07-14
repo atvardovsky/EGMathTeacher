@@ -526,7 +526,8 @@ function FirstMeetingScreen({
   );
   const answeredTurnCount = turns.filter((turn) => turn.answer).length;
   const meetingTerminal = turns.some((turn) => turn.answer && isTerminalTutorAnswer(turn.answer));
-  const finalizableConversationId = profileConversationId ?? conversationId;
+  const finalizableConversationId =
+    profileConversationId ?? conversationId ?? meetingReadiness?.conversationId;
   const canBuildProfile = Boolean(
     meetingReadiness?.canCreateProfile && finalizableConversationId && !sending && !finalizing,
   );
@@ -569,18 +570,29 @@ function FirstMeetingScreen({
 
   async function hydrateActiveMeeting() {
     try {
-      const history = await api<TutorLessonHistory>('/tutor/lessons?scope=active&limit=4&turnLimit=8');
-      const meeting = history.lessons.find(
+      const activeHistory = await api<TutorLessonHistory>(
+        '/tutor/lessons?scope=active&limit=4&turnLimit=8',
+      );
+      let meeting = activeHistory.lessons.find(
         (lesson) => lesson.lessonType === 'meeting' && !isTerminalLessonStatus(lesson.status),
       );
+      if (!meeting) {
+        const historicalHistory = await api<TutorLessonHistory>(
+          '/tutor/lessons?scope=history&limit=4&turnLimit=8',
+        );
+        meeting = historicalHistory.lessons.find(
+          (lesson) => lesson.lessonType === 'meeting' && isTerminalLessonStatus(lesson.status),
+        );
+      }
       if (!meeting || meeting.turns.length === 0) {
         setMeetingHydrated(true);
         return;
       }
-      conversationIdRef.current = meeting.conversationId;
-      setConversationId(meeting.conversationId);
+      const terminalMeeting = isTerminalLessonStatus(meeting.status);
+      conversationIdRef.current = terminalMeeting ? undefined : meeting.conversationId;
+      setConversationId(terminalMeeting ? undefined : meeting.conversationId);
       setProfileConversationId(meeting.conversationId);
-      setActiveLessonSessionId(meeting.lessonSessionId);
+      setActiveLessonSessionId(terminalMeeting ? undefined : meeting.lessonSessionId);
       setTurns(meeting.turns);
       void refreshMeetingReadiness(meeting.conversationId);
     } catch {

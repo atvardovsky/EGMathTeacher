@@ -71,7 +71,11 @@ This file records runtime flows from current source evidence.
    contentful math reply before profile creation is allowed.
 7. If the page reloads during an unfinished meeting, the web client hydrates
    the latest active saved `meeting` lesson and its stored turns from
-   `GET /tutor/lessons?scope=active`.
+   `GET /tutor/lessons?scope=active`. If no active meeting exists, it also
+   checks `GET /tutor/lessons?scope=history` so a terminal pre-profile
+   meeting can still show as read-only and create the profile from the saved
+   transcript. `GET /student-profile/me/meeting-readiness` can also provide
+   the finalizable `conversationId` when the transcript is not locally loaded.
 8. When backend readiness says the meeting is complete enough, the web client
    calls `POST /student-profile/me/from-conversation` with the
    `conversationId`. The API reads `tutor_turns` for the authenticated user
@@ -80,7 +84,8 @@ This file records runtime flows from current source evidence.
    `student_profile_creation_runs` idempotency row by authenticated user,
    conversation id, and transcript hash. A completed profile is returned
    without rerunning AI calls; a still-running matching claim is rejected with
-   conflict; a failed claim can be retried.
+   conflict until its `PROFILE_CREATION_RUNNING_TIMEOUT_MS` lease expires; a
+   stale running claim or failed claim can be atomically reclaimed for retry.
 10. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
@@ -104,9 +109,11 @@ This file records runtime flows from current source evidence.
    diagnostic rubrics, task strategy, and teaching playbooks.
 16. SQLite stores only teaching-useful personal profile signals in
     `student_profiles`.
-17. After successful conversation-based profile creation, the corresponding
-    non-terminal `meeting` lesson session is marked `finished`,
-    `goal_status=reached`, and `finish_reason=profile_created_from_meeting`.
+17. After successful conversation-based profile creation, SQLite commits the
+    profile upsert, corresponding non-terminal `meeting` lesson finish
+    (`status=finished`, `goal_status=reached`,
+    `finish_reason=profile_created_from_meeting`), and creation-run
+    `completed` state in one short transaction.
 18. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
 19. After profile creation, the web client opens the normal tutor workspace

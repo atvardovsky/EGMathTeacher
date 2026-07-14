@@ -31,6 +31,10 @@ export default registerAs('app', () => ({
   structuredOnboardingEnabled: ['true', '1', 'yes', 'y', 'on'].includes(
     (process.env.ONBOARDING_STRUCTURED_ENDPOINT_ENABLED ?? 'false').toLowerCase(),
   ),
+  profileCreationRunningTimeoutMs: parseInt(
+    process.env.PROFILE_CREATION_RUNNING_TIMEOUT_MS ?? '900000',
+    10,
+  ),
   knowledgeRagIndexWaitAttempts: parseInt(
     process.env.KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS ?? '40',
     10,

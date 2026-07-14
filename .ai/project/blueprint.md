@@ -31,7 +31,9 @@ visible next actions.
   weak topic, explanation preference, and a diagnostic or contentful reply.
   The technical starter prompt does not count as student evidence. Reloading
   the first-meeting page restores an unfinished active `meeting` transcript
-  from saved lesson history. A terminal meeting response makes the first
+  from saved lesson history, and can also restore a terminal pre-profile
+  meeting from history so profile creation remains available after refresh.
+  A terminal meeting response makes the first
   meeting read-only in the UI: voice and text input are disabled for that
   transcript, while create-profile and start-new-meeting actions remain
   visible. After setup, the tutor workspace starts with a
@@ -52,8 +54,10 @@ visible next actions.
   Conversation-based profile creation is idempotent by signed-in user,
   conversation id, and transcript hash; after success, duplicate calls return
   the stored profile instead of rerunning the extractor or three specialist AI
-  calls. After successful profile creation, the `meeting` lesson session is
-  marked `finished` with goal reached. The legacy structured JSON onboarding
+  calls. Fresh running claims are rejected, while failed or stale running
+  claims can be retried after the configured lease. After successful profile
+  creation, the profile row, `meeting` lesson finish, and creation-run
+  completion are committed together. The legacy structured JSON onboarding
   endpoint is a trusted fallback/import path only and is disabled for student
   use unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`.
 - DB-backed student profile memory with onboarding answers, knowledge state,

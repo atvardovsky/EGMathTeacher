@@ -74,6 +74,9 @@ This repository houses a NestJS orchestration service that now handles both sign
     onboarding uses the AI-led conversation endpoint by default; set this flag
     only for trusted fallback/import use of the legacy JSON `PUT
     /student-profile/me` endpoint.
+  - `PROFILE_CREATION_RUNNING_TIMEOUT_MS` – defaults to `900000`. A
+    conversation-profile creation claim left `running` longer than this lease
+    is treated as stale and can be retried.
   - `KNOWLEDGE_RAG_INDEX_WAIT_ATTEMPTS` and
     `KNOWLEDGE_RAG_INDEX_WAIT_DELAY_MS` – tune how long `--wait-ready` polls
     vector-store file indexing before leaving the sync job attached but not
@@ -192,7 +195,9 @@ Tutor/product API surfaces also include:
   `lessonSessionId` in local usage context so first-meeting cost can be
   attributed to that lesson. Repeated calls for the same authenticated user,
   conversation id, and transcript hash return the stored profile after
-  success instead of rerunning the specialist calls.
+  success instead of rerunning the specialist calls. Stale `running` claims
+  are recovered after `PROFILE_CREATION_RUNNING_TIMEOUT_MS`, and final profile
+  storage, meeting finish, and creation-run completion are committed together.
 - `PUT /student-profile/me` for the legacy structured JSON onboarding payload.
   Student access is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED`
   is explicitly enabled for a trusted fallback/import workflow.

@@ -147,7 +147,8 @@ Current data-minimization rule:
 - conversation-based first-meeting profile creation is idempotent by signed-in
   user, conversation id, and transcript hash so HTTP retries or duplicate tabs
   do not repeatedly send the same transcript through the four onboarding AI
-  calls after success
+  calls after success; stale running claims are retryable after the configured
+  lease while fresh running claims remain blocked to avoid duplicate spend
 - the legacy structured JSON onboarding endpoint is disabled for student use
   by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
   trusted fallback/import workflows

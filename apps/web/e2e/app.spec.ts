@@ -285,6 +285,64 @@ const finishedLessonHistory = {
   })),
 };
 
+const terminalMeetingHistory = {
+  lessons: [
+    {
+      lessonSessionId: 'lesson-e2e',
+      conversationId: 'conv-e2e',
+      lessonType: 'meeting',
+      status: 'goal_reached',
+      goalStatus: 'reached',
+      finishReason: 'lesson_goal_reached',
+      lessonGoal: 'Понять стартовый учебный контекст ученика.',
+      successCriteria: ['получены ответы о цели', 'понят удобный формат объяснений'],
+      turnCount: 2,
+      activeLearningSeconds: 120,
+      startedAt: '2026-07-12T10:00:00.000Z',
+      lastActivityAt: '2026-07-12T10:05:00.000Z',
+      updatedAt: '2026-07-12T10:05:00.000Z',
+      summary: null,
+      evidenceLevels: {},
+      turns: [
+        {
+          id: 'turn-terminal-meeting-1',
+          prompt:
+            'Заверши встречу, я готовлюсь к ЕГЭ, уровень средний, сложны производные, хочу примеры',
+          lessonType: 'meeting',
+          source: 'voice',
+          answer: {
+            conversationId: 'conv-e2e',
+            lessonType: 'meeting',
+            lessonLifecycle: {
+              ...lessonLifecycle,
+              conversationId: 'conv-e2e',
+              lessonSessionId: 'lesson-e2e',
+              lessonType: 'meeting',
+              status: 'goal_reached',
+              goalStatus: 'reached',
+              finishReason: 'lesson_goal_reached',
+              shouldStop: true,
+            },
+            answer: 'Цель занятия достигнута. Я остановлю урок здесь.',
+            blocks: [
+              {
+                id: 'text-terminal-meeting',
+                type: 'text',
+                text: 'Цель занятия достигнута. Я остановлю урок здесь.',
+              },
+            ],
+            tasks: [],
+            examples: [],
+            needsImage: false,
+            citations: [],
+          },
+          createdAt: '2026-07-12T10:05:00.000Z',
+        },
+      ],
+    },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('egmathteacher.locale', 'ru');
@@ -448,6 +506,11 @@ async function mockStudentSession(
   });
   await page.route('**/tutor/lessons**', (route) => {
     const url = new URL(route.request().url());
+    const terminalMeetingReady = tutorRequests.some(
+      (request) =>
+        typeof request.message === 'string' &&
+        request.message.toLowerCase().includes('заверши'),
+    );
     if (route.request().method() === 'POST' && url.pathname.endsWith('/finish')) {
       return fulfillJson(route, finishedLessonHistory.lessons[0]);
     }
@@ -456,6 +519,9 @@ async function mockStudentSession(
       return fulfillJson(route, options.activeLessonHistory ?? options.lessonHistory ?? { lessons: [] });
     }
     if (scope === 'history') {
+      if (options.needsOnboarding && terminalMeetingReady) {
+        return fulfillJson(route, options.historicalLessonHistory ?? terminalMeetingHistory);
+      }
       return fulfillJson(route, options.historicalLessonHistory ?? { lessons: [] });
     }
     return fulfillJson(route, options.lessonHistory ?? { lessons: [] });
@@ -793,6 +859,17 @@ test('terminal first meeting becomes read-only and keeps profile creation availa
       page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
     )
     .toBe(1);
+
+  await page.reload();
+
+  await expect(page.getByRole('heading', { name: 'Давай познакомимся' })).toBeVisible();
+  await expect(page.getByText('Цель занятия достигнута. Я остановлю урок здесь.')).toBeVisible();
+  await expect(page.getByText('встреча завершена', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Встреча завершена. Можно создать предварительный профиль обучения'),
+  ).toBeVisible();
+  await expect(page.getByPlaceholder('Можно ответить голосом или написать здесь')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Создать профиль из разговора' })).toBeEnabled();
 
   await page.getByRole('button', { name: 'Создать профиль из разговора' }).click();
 

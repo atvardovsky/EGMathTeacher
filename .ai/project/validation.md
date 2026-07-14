@@ -35,8 +35,9 @@ Current covered areas:
   extraction, backend meeting-readiness scoring, AI profile storage, lesson
   usage attribution for onboarding specialist calls, and tutor context summary
   behavior, including specialist profile pipeline calls, idempotent
-  conversation-profile creation, and the disabled-by-default legacy structured
-  onboarding endpoint for students
+  conversation-profile creation, stale running profile-creation claim
+  recovery, fresh running claim rejection, finalization transaction use, and
+  the disabled-by-default legacy structured onboarding endpoint for students
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
   storage, profile/strategy refresh merging, failed window observation release,
@@ -72,7 +73,7 @@ Current covered areas:
   records, disabled archived composer/voice actions, and starting a fresh
   lesson from history, plus terminal tutor responses not restarting the
   microphone and terminal first-meeting responses turning the meeting
-  transcript read-only while preserving profile creation
+  transcript read-only while preserving profile creation across reload
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation
@@ -100,7 +101,8 @@ with previous discussion hydration, browser speech-synthesis handoff for tutor r
 automatic speech-recognition restart after spoken non-terminal tutor replies,
 blocked speech-recognition restart after terminal tutor replies, tutor answer
 rendering, terminal first-meeting read-only input behavior, citation display,
-usage refresh control/background-job visibility,
+terminal first-meeting reload recovery before profile creation, usage refresh
+control/background-job visibility,
 and explicit image rendering.
 
 ## Existing Static Checks

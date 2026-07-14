@@ -17,6 +17,7 @@ App
 │  ├─ Logout
 │  ├─ Meeting status strip
 │  ├─ Active meeting hydration from saved lesson history
+│  ├─ Terminal pre-profile meeting hydration from saved history
 │  ├─ Green voice-meeting start/restart action
 │  ├─ Voice dialog switch
 │  ├─ Mic action

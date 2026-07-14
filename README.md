@@ -57,9 +57,10 @@ Production domain:
   available for that closed conversation. Conversation-based profile creation
   is idempotent for an authenticated user, conversation id, and transcript
   hash, so retries or multiple tabs do not repeat the four onboarding AI
-  calls after success. If the page reloads during an unfinished meeting, the
-  client restores the active meeting transcript from
-  saved lessons. After setup, the tutor workspace opens with a lesson launcher
+  calls after success, and stale in-progress claims can be retried after a
+  lease timeout. If the page reloads during an unfinished or terminal
+  pre-profile meeting, the client restores the saved meeting transcript from
+  active or historical lessons. After setup, the tutor workspace opens with a lesson launcher
   and a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
