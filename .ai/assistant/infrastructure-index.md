@@ -1,6 +1,6 @@
 # EGMathTeacher Assistant Infrastructure Index
 
-Current as of: 2026-07-12
+Current as of: 2026-07-14
 
 This file is the current index for repository-owned assistant infrastructure,
 including the installed Alatyr adapter. Historical inventory reports remain
@@ -54,14 +54,16 @@ Supported bridge behavior is recorded in
 ## Alatyr Framework Files
 
 Portable framework rules copied from AlatyrCore baseline
-`465473284966676d86bb6e55d1254b20e415bf5c`.
+`8dab3d15c6e0dc983096c2aaca89fba75fe6fa14`.
 
 - `.ai/framework/README.md`
 - `.ai/framework/adapter-maturity.md`
+- `.ai/framework/ai-infrastructure-routing.md`
 - `.ai/framework/approval-records.md`
 - `.ai/framework/blueprint-driven-change.md`
 - `.ai/framework/bridge-capability-matrix.md`
 - `.ai/framework/change-risk-model.md`
+- `.ai/framework/consistency-model.md`
 - `.ai/framework/context-discovery.md`
 - `.ai/framework/context-profiles.md`
 - `.ai/framework/context-router.md`
@@ -70,6 +72,7 @@ Portable framework rules copied from AlatyrCore baseline
 - `.ai/framework/effectiveness-metrics.md`
 - `.ai/framework/guarantees.md`
 - `.ai/framework/installed-operations.md`
+- `.ai/framework/large-task-orchestration.md`
 - `.ai/framework/lifecycle.md`
 - `.ai/framework/logical-integrity.md`
 - `.ai/framework/migration-diff.md`
@@ -176,6 +179,7 @@ validation commands, CI, CODEOWNERS, or Alatyr-owned scripts.
 Core adapter:
 
 - `.ai/assistant/bridge-capability-matrix.md`
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/context-router.json`
 - `.ai/assistant/context-profiles.md`
 - `.ai/assistant/contour.md`
@@ -207,6 +211,14 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260712-session-progress-tracking.md`
 - `.ai/assistant/approvals/ALATYR-20260712-tutor-response-blocks.md`
 - `.ai/assistant/approvals/ALATYR-20260712-verified-learning-loop.md`
+- `.ai/assistant/approvals/ALATYR-20260712-knowledge-pack-rag-sync.md`
+- `.ai/assistant/approvals/ALATYR-20260713-review-fix-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260713-runtime-review-issue-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260714-lesson-ux-review-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260714-onboarding-idempotency-terminal-meeting.md`
+- `.ai/assistant/approvals/ALATYR-20260714-onboarding-recovery-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260714-profile-creation-lock-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260714-framework-update-8dab3d1.md`
 - `.ai/assistant/approvals/approval-template.md`
 - `.ai/assistant/checklists/change-impact.md`
 
@@ -217,6 +229,7 @@ Flows:
 - `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`
 - `.ai/assistant/flows/blueprint-driven-change.flow.md`
 - `.ai/assistant/flows/documentation-sync.flow.md`
+- `.ai/assistant/flows/large-task-orchestration.flow.md`
 - `.ai/assistant/flows/logical-integrity-review.flow.md`
 - `.ai/assistant/flows/operation-routing.flow.md`
 - `.ai/assistant/flows/project-blueprint-creation.flow.md`
@@ -246,9 +259,11 @@ Policies:
 Templates:
 
 - `.ai/assistant/templates/adapter-output-contracts.md`
+- `.ai/assistant/templates/ai-infrastructure-adaptation-record.md`
 - `.ai/assistant/templates/ai-infrastructure-inventory.md`
 - `.ai/assistant/templates/effectiveness-report.md`
 - `.ai/assistant/templates/installation-note.md`
+- `.ai/assistant/templates/large-task-operation-packet.md`
 - `.ai/assistant/templates/migration-note.md`
 - `.ai/assistant/templates/operation-request.md`
 - `.ai/assistant/templates/post-install-message.md`
@@ -267,6 +282,7 @@ Reports:
 - `.ai/assistant/reports/ALATYR-20260711-framework-update.md`
 - `.ai/assistant/reports/ALATYR-20260712-framework-update-context-router.md`
 - `.ai/assistant/reports/ALATYR-20260712-framework-update-4654732.md`
+- `.ai/assistant/reports/ALATYR-20260714-framework-update-8dab3d1.md`
 
 Action: keep adapter files aligned with current project commands, gates, and
 operation routing. Reports are historical evidence unless a newer report says

@@ -32,13 +32,15 @@ Category: `CONTEXT`
 Owner: `.ai/framework/context-profiles.md`
 Rule IDs: `ALATYR-CONTEXT-001`
 Derived surfaces: README source context, installation source context, target
-context profiles, target context router, session bootstrap instructions.
+context profiles, target context router, task-scale overlays, operation packet
+context receipts, consistency relationship routing, session bootstrap
+instructions, AI infrastructure capability routing.
 
 Category: `SOURCE`
 Owner: `.ai/framework/source-of-truth-registry.md`
 Rule IDs: `ALATYR-SOURCE-001`
 Derived surfaces: project adapter contract, logical integrity, blueprint
-change, target source-of-truth registry template.
+change, target source-of-truth registry template, consistency map.
 
 Category: `RISK`
 Owner: `.ai/framework/change-risk-model.md`
@@ -56,25 +58,25 @@ Category: `SAFETY`
 Owner: `.ai/framework/security-safety-guidance.md`
 Rule IDs: `ALATYR-SAFETY-001`, `ALATYR-SAFETY-002`
 Derived surfaces: prompt-injection guidance, skill adaptation, source-access
-policy, security-sensitive context profile.
+policy, adaptation records, security-sensitive context profile.
 
 Category: `INTEGRITY`
 Owner: `.ai/framework/logical-integrity.md`
 Rule IDs: `ALATYR-INTEGRITY-001`
-Derived surfaces: target gates, documentation sync, adapter recheck, final
-evidence.
+Derived surfaces: target gates, documentation sync, adapter recheck,
+relationship impact closure, workstream convergence, final evidence.
 
 Category: `CHANGE`
 Owner: `.ai/framework/blueprint-driven-change.md`
 Rule IDs: `ALATYR-CHANGE-001`
 Derived surfaces: product-change operation, blueprint-driven target flow,
-documentation and diagram sync.
+large-task orchestration, documentation and diagram sync.
 
 Category: `ADAPTER`
 Owner: `.ai/framework/project-adapter-contract.md`
 Rule IDs: `ALATYR-ADAPTER-001`
 Derived surfaces: installation plan, readiness checklist, manifest template,
-adapter recheck flow.
+adapter recheck flow, AI infrastructure router and item contracts.
 
 Category: `MODULE`
 Owner: `.ai/framework/module-profile.md`
@@ -86,7 +88,7 @@ Category: `BRIDGE`
 Owner: `.ai/framework/bridge-capability-matrix.md`
 Rule IDs: `ALATYR-BRIDGE-001`
 Derived surfaces: assistant bridge templates, bridge renderer, bridge
-capability target template.
+capability target template, cross-assistant AI item routing.
 
 Category: `LIFECYCLE`
 Owner: `.ai/framework/lifecycle.md`
@@ -98,7 +100,7 @@ Category: `EVIDENCE`
 Owner: `.ai/framework/guarantees.md`
 Rule IDs: `ALATYR-EVIDENCE-001`
 Derived surfaces: final evidence, process commitments, conformance reports,
-effectiveness reports.
+effectiveness reports, operation packets.
 
 ## Change Protocol
 

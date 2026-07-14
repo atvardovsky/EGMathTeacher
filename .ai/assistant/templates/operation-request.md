@@ -4,10 +4,12 @@ Use this shape when asking an assistant to operate the installed adapter.
 
 ```text
 Repository: <TARGET_REPOSITORY_ROOT>
-Operation: <help | recheck-after-installation | recheck-after-framework-update | create-project-blueprint | product-change | logical-integrity-review | documentation-sync | ai-infrastructure-inventory | skill-adaptation | adapter-maturity-review>
+Operation: <help | recheck-after-installation | recheck-after-framework-update | create-project-blueprint | product-change | logical-integrity-review | documentation-sync | ai-infrastructure-inventory | skill-adaptation | large-task-orchestration | adapter-maturity-review>
 Goal:
 Non-goals:
 Known changed facts:
+Task scale: <small | large-or-resumable>
+Existing operation packet:
 Allowed actions: <read-only | docs-only | adapter-only | code-and-tests | full-with-approval>
 Validation expected:
 Approval constraints:
@@ -19,4 +21,6 @@ Accepted aliases include `alatyr-recheck`, `alatyr-blueprint`,
 `alatyr-adaptation <source>`, and `alatyr-add-ai <source>`.
 
 Bootstrap context includes `.ai/assistant/context-router.json` as the
-machine-readable companion to `.ai/assistant/context-profiles.md`.
+schema-v2 machine-readable companion to `.ai/assistant/context-profiles.md`.
+Use `.ai/assistant/ai-infrastructure-router.json` before loading detailed
+skills, prompts, gates, checkers, bridge files, or import policy.

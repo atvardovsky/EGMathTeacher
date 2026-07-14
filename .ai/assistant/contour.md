@@ -12,6 +12,8 @@ The assistant adapter owns:
 - Context profiles under `.ai/assistant/context-profiles.md`.
 - Machine-readable context router under
   `.ai/assistant/context-router.json`.
+- Machine-readable AI infrastructure router under
+  `.ai/assistant/ai-infrastructure-router.json`.
 - Required-core and optional module state under
   `.ai/assistant/module-profile.md`.
 - Task-specific maturity under `.ai/assistant/maturity-profile.md`.
@@ -26,6 +28,8 @@ The assistant adapter owns:
   adapter recheck, documentation sync, blueprint creation, AI infrastructure
   inventory, and skill adaptation.
 - Migration notes under `.ai/assistant/templates/migration-note.md`.
+- Large-task orchestration flow and packet template for cross-boundary or
+  resumable work.
 - Post-install and post-update assistant message templates.
 - Root bridge files that point future assistants to canonical adapter files.
 

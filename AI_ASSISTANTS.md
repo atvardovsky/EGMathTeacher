@@ -5,20 +5,24 @@ the canonical instruction file.
 
 Before making changes:
 
-1. Read `AGENTS.md`, `.ai/alatyr.yaml`, `.ai/README.md`,
-   `.ai/assistant/context-router.json`,
-   `.ai/assistant/context-profiles.md`, and
-   `.ai/assistant/module-profile.md`.
-2. Select the task profile, then read only profile-required framework,
+1. Treat `AGENTS.md` as the canonical bridge, then read compact bootstrap:
+   `.ai/alatyr.yaml`, `.ai/README.md`, and
+   `.ai/assistant/context-router.json`.
+2. Select the task profile, project-area overlays, and task-scale overlay
+   from the schema-v2 router, then read only profile-required framework,
    project, assistant, flow, gate, policy, and validation files.
-3. Read `.ai/assistant/templates/installation-note.md`,
+3. Use `.ai/assistant/context-profiles.md` for human rationale, conflicts, or
+   missing router entries.
+4. Read `.ai/assistant/templates/installation-note.md`,
    `.ai/project/source-of-truth-registry.md`, `.ai/project/blueprint.md`, and
    `.ai/assistant/gates/checklist.md` when required by the selected profile.
-4. After installation/update, or when adapter state is unclear, read the
+5. After installation/update, or when adapter state is unclear, read the
    post-install/update message templates before editing.
-5. For Alatyr help or aliases (`alatyr-ai-inventory`, `alatyr-adaptation`,
+6. For Alatyr help or aliases (`alatyr-ai-inventory`, `alatyr-adaptation`,
    `alatyr-add-ai`), read `.ai/assistant/help.md` and
-   `.ai/assistant/flows/operation-routing.flow.md`.
+   `.ai/assistant/flows/operation-routing.flow.md`; use
+   `.ai/assistant/ai-infrastructure-router.json` before loading detailed AI
+   infrastructure item context.
 
 Assistant-specific bridge files must stay short and point back to canonical
 target files.

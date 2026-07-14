@@ -66,6 +66,8 @@ supports it.
 
 Current assistant infrastructure is indexed in
 `.ai/assistant/infrastructure-index.md`.
+Compact AI infrastructure item routing is defined in
+`.ai/assistant/ai-infrastructure-router.json`.
 
 Existing categories:
 
@@ -76,8 +78,8 @@ Existing categories:
 - `.ai/project`: EGMathTeacher project source-of-truth docs and diagrams.
 - `.ai/project/diagrams`: Mermaid sources, render config, and rendered SVG
   artifacts.
-- `.ai/assistant`: EGMathTeacher adapter index, flows, gates, policies,
-  templates, and reports.
+- `.ai/assistant`: EGMathTeacher adapter index, AI infrastructure router,
+  flows, gates, policies, templates, and reports.
 
 No `.claude`, `.cursor`, `.github` prompt/rule, `.agents/skills`, Devin,
 Cascade, Windsurf, MCP/tool server config, or assistant-specific skill

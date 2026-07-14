@@ -15,16 +15,20 @@ For detailed gate rules, read the matching focused file in this directory:
 
 ## Context
 
-- Read `AGENTS.md`, `.ai/alatyr.yaml`, `.ai/README.md`, and
+- Treat `AGENTS.md` as host-preloaded when available, then read
+  `.ai/alatyr.yaml`, `.ai/README.md`, and
   `.ai/assistant/context-router.json` first.
-- Use `.ai/assistant/context-router.json` as the canonical machine-readable
-  routing source to select the matching context profile. Use
+- Use `.ai/assistant/context-router.json` schema v2 as the canonical
+  machine-readable routing source to select the matching context profile,
+  project-area overlays, and task-scale overlay. Use
   `.ai/assistant/context-profiles.md` only for human-readable rationale,
   conflicts, or missing router entries.
 - After the router selects a profile, read that profile's required framework,
   project, assistant, flow, gate, policy, and validation files.
 - Check `.ai/assistant/module-profile.md` before relying on optional Alatyr
   capabilities.
+- Use `.ai/assistant/ai-infrastructure-router.json` before loading detailed
+  skills, prompts, gates, checkers, bridges, tools, or adaptation context.
 - Read `.ai/project/blueprint.md` and `.ai/project/contour.md` for project
   facts.
 - Read `.ai/project/source-of-truth-registry.md` when changed facts have
@@ -102,8 +106,10 @@ companion update was needed.
 
 During installation, framework update, or adapter recheck, also verify adapter
 drift hazards: no hard-coded local machine paths, no stale checker existence
-claims, no duplicate context-profile references, context router references are
-present where bootstrap routing is described, unresolved owner placeholders
+claims, no duplicate context-profile or context-router references, context
+router references are present where bootstrap routing is described, AI
+infrastructure router references are present where item routing is described,
+large-task overlay files exist when enabled, unresolved owner placeholders
 remain known gaps, and any target-local adapter checker evidence matches the
 repository.
 

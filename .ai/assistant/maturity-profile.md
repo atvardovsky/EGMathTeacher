@@ -5,9 +5,9 @@ This file reports adapter readiness by task type.
 ## Overall Summary
 
 Overall adapter state: usable
-Last reviewed: 2026-07-12
-Reviewed by: Codex using approved Alatyr framework update scope for source
-commit `465473284966676d86bb6e55d1254b20e415bf5c`
+Last reviewed: 2026-07-14
+Reviewed by: Codex using user-requested Alatyr update scope for source commit
+`8dab3d15c6e0dc983096c2aaca89fba75fe6fa14`
 Blocking gaps:
 
 - backup owner remains unassigned in the adapter manifest
@@ -24,6 +24,8 @@ Mature enough for routine use:
 - `code-local`: mature for focused local implementation and test changes.
 - `framework-upgrade`: mature for adapter-only Alatyr rechecks and drift
   repair with explicit approval.
+- `ai-infrastructure`: mature for target-owned item routing, inventory,
+  adapter-only repairs, and approval-gated imports.
 
 Usable with approval and residual review:
 
@@ -31,8 +33,8 @@ Usable with approval and residual review:
   are explicit.
 - `architecture-change`: usable when architecture approval, diagrams, and
   validation are explicit.
-- `ai-infrastructure`: usable for review, adapter-only repairs, and
-  approval-gated imports; provenance remains manual for third-party sources.
+- `large-task-orchestration`: usable when a large or resumable task justifies
+  packet overhead, workstream checkpoints, and final convergence.
 
 Minimal or blocked for production-grade claims:
 
@@ -40,6 +42,8 @@ Minimal or blocked for production-grade claims:
   production retention, rollback, backup, export, or delete work.
 - `security-sensitive`: minimal-to-usable for POC guard/source review, minimal
   for production privacy, minors consent, incident, and auth-hardening claims.
+- `consistency-map`: deferred; no `.ai/project/consistency-map.json` exists,
+  so bounded relationship traversal remains manual.
 
 ## Task-Specific Maturity
 
@@ -172,11 +176,13 @@ residual risk.
 ### Task Area: `ai-infrastructure`
 
 Task area: `ai-infrastructure`
-Maturity: usable for review and adapter-only updates
+Maturity: mature for target-owned routing; usable for imports with approval
 Supported work: inventory, source-access review, prompt-injection review,
-adapter-only merges, bridge help/routing, and approval-gated imports.
+adapter-only merges, compact item routing, bridge help/routing, and
+approval-gated imports.
 Required context:
 
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/infrastructure-index.md`
 - `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`
 - `.ai/assistant/flows/skill-adaptation.flow.md`
@@ -211,6 +217,8 @@ Required context:
 - `.ai/assistant/bridge-capability-matrix.md`
 - `.ai/assistant/templates/installation-note.md`
 - `.ai/assistant/templates/migration-note.md`
+- `.ai/assistant/ai-infrastructure-router.json`
+- `.ai/assistant/flows/large-task-orchestration.flow.md`
 
 Required owners present: yes.
 Validation or manual review: manual file existence/reference review; source
@@ -220,8 +228,10 @@ Blocking criteria: none after explicit approval for the approved adapter-only
 scope.
 Residual risks: local checker covers router presence, required profiles,
 manifest owner fields, stale local-machine leakage, stale checker wording,
-duplicate context-profile references, CI wiring, and diagram hashes; it does
-not prove semantic correctness of every adapter fact.
+duplicate context-profile/router references, CI wiring, AI-infrastructure
+routing presence, large-task packet references, and diagram hashes; it does
+not prove semantic correctness of every adapter fact. The optional
+consistency-map module remains deferred.
 Final evidence: baseline/version, surfaces changed, validation/review,
 approval, residual risk.
 

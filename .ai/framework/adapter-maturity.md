@@ -64,6 +64,8 @@ focused validation.
 The adapter is mature when it also defines:
 
 - context packs or navigation aids for broad work
+- target-owned fact IDs and relationship coverage for bounded impact traversal
+  when the repository has many project areas or competing surfaces
 - module ownership, data dictionary, glossary, and decision log
 - deterministic consistency checks for maintainable invariants
 - generated-artifact drift checks or manual-review policy
@@ -71,6 +73,8 @@ The adapter is mature when it also defines:
 - post-install operation, blueprint repair, and framework-update recheck notes
 - maintained help menu and post-install/update chat-message templates
 - AI infrastructure inventory and add/adapt/remove recommendations
+- AI infrastructure item routing, permission/gate/output contracts, and
+  adaptation records when multiple items exist
 - skill/wrapper compatibility notes for supported assistants
 - improvement advice path for reducing future friction
 
@@ -151,6 +155,8 @@ Ask:
 - Can an assistant show useful Alatyr help when the user's requested operation
   is unclear?
 - Are existing AI infrastructure items inventoried before new items are added?
+- Can an assistant select one AI infrastructure item without loading unrelated
+  skills, prompts, gates, or tools?
 - Are imported or custom AI infrastructure items adapted from target evidence
   with provenance and safety review?
 - Is there a way to report missing or unresolved adapter facts?
@@ -159,6 +165,8 @@ Ask:
   framework upgrade work?
 - Does the module profile distinguish required core gaps from optional modules
   that are enabled, deferred, disabled, not applicable, or blocked?
+- For broad work, can changed facts be routed to affected contracts and areas
+  without scanning the entire repository, or is that limitation reported?
 
 ## Rejection Criteria
 

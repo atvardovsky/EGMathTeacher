@@ -13,7 +13,10 @@ decisions.
   and Mermaid renderability.
 - `npm run smoke:dev` smoke-checks a running dev web/API route.
 - `npm run alatyr:check` validates required Alatyr adapter files, core package
-  scripts, CODEOWNERS, CI wiring, and diagram source-hash consistency.
+  scripts, CODEOWNERS, CI wiring, context-router schema/reference integrity,
+  AI-infrastructure router presence, large-task overlay references, stale
+  wording, local path leakage, duplicate references, and diagram source-hash
+  consistency.
 
 ### Repository Governance
 

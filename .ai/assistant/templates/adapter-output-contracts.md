@@ -75,6 +75,9 @@ Core baseline.
 - Source-of-truth registry result
 - Task-specific maturity result
 - Operation help and routing result
+- AI infrastructure router result
+- Large-task orchestration and packet template result
+- Consistency-map module state
 - Bridge capability matrix result
 - Adapter drift checks result
 - Local path leakage result
@@ -117,6 +120,7 @@ adapter.
 - Local path leakage result
 - Target-local checker status or unresolved gap
 - AI infrastructure inventory result or skipped reason
+- AI infrastructure item route or skipped reason
 - Prompt-injection policy result
 - Validation run or manual review
 - Validation skipped or unresolved

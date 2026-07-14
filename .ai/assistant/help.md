@@ -40,6 +40,11 @@ disagree.
 Flow: `.ai/assistant/flows/logical-integrity-review.flow.md`
 Minimum input: changed fact, suspected drift, or files to inspect.
 
+Operation: `large-task-orchestration`
+Use when: the work is explicitly large, phased, cross-boundary, or resumable.
+Flow: `.ai/assistant/flows/large-task-orchestration.flow.md`
+Minimum input: goal, non-goals, allowed actions, and why a packet is needed.
+
 Operation: `create-project-blueprint`
 Alias: `alatyr-blueprint`
 Use when: creating, repairing, or rechecking blueprint-equivalent
@@ -62,6 +67,9 @@ AI infrastructure shortcuts:
 - `alatyr-add-ai <source>`: route to `skill-adaptation` with canonical
   integration intent after inventory, provenance, prompt-injection, safety,
   and approval checks.
+- For any AI infrastructure request, use
+  `.ai/assistant/ai-infrastructure-router.json` before loading detailed item
+  context.
 
 Common aliases:
 

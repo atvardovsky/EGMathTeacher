@@ -19,6 +19,7 @@ Framework core owns:
 - optional scaffolding boundary
 - context discovery, missing-context, and source-of-truth decision pattern
 - source-of-truth registry pattern
+- multi-level consistency relationship and bounded impact-closure pattern
 - change-risk classification and protected approval trigger pattern
 - security, safety, live-service, and destructive-operation reasoning pattern
 - diagram reasoning and source/visual synchronization pattern
@@ -31,6 +32,7 @@ Framework core owns:
 - gate categories and final evidence pattern
 - skill, prompt, wrapper, and third-party assistant infrastructure adaptation
   pattern
+- AI infrastructure route/item and adaptation-record pattern
 - supported-assistant bridge pattern
 - bridge capability matrix pattern
 - migration diff pattern

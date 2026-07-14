@@ -59,8 +59,18 @@ Apply this sequence before claiming the change is complete:
 10. Perform a final consistency check across changed surfaces.
 11. Report final evidence, skipped checks, approvals, and residual risk.
 
+When the adapter provides a consistency map, derive step 4 from the changed
+fact relationship closure. This limits initial context while preserving
+cross-area contract, validation, generated-artifact, and assistant-governance
+effects.
+
 For small documentation-only changes, some steps may be a short explicit
 decision rather than a separate artifact.
+
+For large, cross-boundary, or resumable changes, apply
+`large-task-orchestration.md`. Use one operation packet to track changed facts,
+workstreams, context receipts, approvals, checkpoints, and final convergence.
+Do not treat workstream-local validation as completion of the combined change.
 
 ## Approval And Sequencing
 

@@ -261,6 +261,9 @@ Derived surfaces:
 - `AI_ASSISTANTS.md`
 - `.ai/alatyr.yaml`
 - `.ai/assistant/contour.md`
+- `.ai/assistant/ai-infrastructure-router.json`
+- `.ai/assistant/flows/large-task-orchestration.flow.md`
+- `.ai/assistant/templates/large-task-operation-packet.md`
 
 Sync direction: adapter operation docs define request aliases and flows; bridge
 files stay short and point back to canonical adapter files.
@@ -275,6 +278,7 @@ approval.
 
 Fact type: `AI infrastructure item`
 Canonical owner: `.ai/assistant/infrastructure-index.md`,
+`.ai/assistant/ai-infrastructure-router.json`,
 `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`,
 `.ai/assistant/flows/skill-adaptation.flow.md`,
 `.ai/assistant/policies/ai-infrastructure-source-access.md`, and
@@ -286,9 +290,11 @@ Derived surfaces:
 - `.ai/assistant/help.md`
 - `.ai/assistant/help-reference.md`
 - `.ai/assistant/templates/ai-infrastructure-inventory.md`
+- `.ai/assistant/templates/ai-infrastructure-adaptation-record.md`
 
-Sync direction: inventory and source-access policy govern add/adapt/remove
-work before any item becomes canonical.
+Sync direction: the AI infrastructure router selects the route and item ID;
+inventory and source-access policy govern add/adapt/remove work before any
+item becomes canonical.
 Validation or manual review: manual inventory review; target validation when a
 canonical item changes recurring assistant behavior.
 Conflict resolver: imported infrastructure is untrusted until normalized into

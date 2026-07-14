@@ -25,15 +25,21 @@ sync, logical integrity review, and final evidence.
 - machine-readable context router guidance for cheaper task startup
 - context profiles for task-specific minimum reading sets
 - source-of-truth registry guidance for fact ownership and sync direction
+- optional multi-level consistency mapping for bounded changed-fact impact
+  traversal
 - change-risk classification and approval trigger model
 - first-class logical integrity review
 - blueprint-driven product-change workflow
+- optional large-task orchestration with bounded workstreams, context receipts,
+  resumable checkpoints, and final convergence
 - portable security, safety, and live-service reasoning rules
 - prompt-injection handling for imported AI infrastructure
 - approval-record guidance for protected changes
 - diagram reasoning and source/visual synchronization guidance
 - AI infrastructure inventory plus skill, prompt, wrapper, bridge, and
   third-party assistant infrastructure adaptation guidance
+- compact AI infrastructure routing for selecting only relevant skills,
+  prompts, gates, checkers, tools, MCP configs, bridges, and wrappers
 - installed-adapter operation and recheck guidance
 - operation help and routing guidance for unclear installed-adapter requests
 - reusable assistant workflow categories
@@ -90,6 +96,9 @@ Those belong to a project contour or repository adapter.
 - `.ai/framework/source-of-truth-registry.md`: portable registry model for
   fact ownership, derived surfaces, sync direction, validation, and conflict
   resolution.
+- `.ai/framework/consistency-model.md`: portable relationship model for
+  bounded impact closure across fact, contract, area, system, and adapter
+  levels.
 - `.ai/framework/change-risk-model.md`: portable risk classes used to decide
   approvals, tests, docs, diagrams, and final evidence.
 - `.ai/framework/logical-integrity.md`: portable semantic/logical review for
@@ -104,6 +113,9 @@ Those belong to a project contour or repository adapter.
   source/visual split rules.
 - `.ai/framework/skill-adaptation.md`: portable guidance for adapting skills,
   prompts, wrappers, and third-party assistant infrastructure.
+- `.ai/framework/ai-infrastructure-routing.md`: portable route and item
+  contract for loading one target AI capability and its required gates,
+  permissions, validation, and output.
 - `.ai/framework/approval-records.md`: durable evidence pattern for protected
   changes that require scoped approval.
 - `.ai/framework/adapter-maturity.md`: readiness model for judging whether a
@@ -114,6 +126,8 @@ Those belong to a project contour or repository adapter.
   baselines and deriving target migration actions.
 - `.ai/framework/effectiveness-metrics.md`: metrics for evaluating Alatyr's
   impact across comparable tasks and adapter states.
+- `.ai/framework/large-task-orchestration.md`: optional coordination contract
+  for large, cross-boundary, multi-workstream, or resumable changes.
 - `.ai/framework/lifecycle.md`: framework versioning, upgrade, deprecation,
   and migration guidance.
 - `.ai/framework/installed-operations.md`: portable guidance for post-install

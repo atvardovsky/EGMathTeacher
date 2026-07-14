@@ -11,6 +11,7 @@ Also use this flow when the programmer uses a target alias such as
 ## Target Sources
 
 - Context router: `.ai/assistant/context-router.json`
+- AI infrastructure router: `.ai/assistant/ai-infrastructure-router.json`
 - Context profiles: `.ai/assistant/context-profiles.md`
 - Operation help: `.ai/assistant/help.md`
 - Full reference: `.ai/assistant/help-reference.md`
@@ -25,19 +26,17 @@ Also use this flow when the programmer uses a target alias such as
 
 ## Steps
 
-1. Load bootstrap context only: `AGENTS.md`, `AI_ASSISTANTS.md`,
-   `.ai/alatyr.yaml`, `.ai/README.md`,
-   `.ai/assistant/context-router.json`,
-   `.ai/assistant/context-profiles.md`, `.ai/assistant/module-profile.md`,
-   `.ai/project/contour.md`, `.ai/project/source-of-truth-registry.md`,
-   `.ai/assistant/contour.md`, and `.ai/assistant/help.md`.
+1. Treat `AGENTS.md` as host-preloaded when available, then load compact
+   bootstrap only: `.ai/alatyr.yaml`, `.ai/README.md`,
+   `.ai/assistant/context-router.json`, and `.ai/assistant/help.md`.
 2. Select the smallest matching context profile from
    `.ai/assistant/context-router.json`; use
    `.ai/assistant/context-profiles.md` for the human rationale or when router
    and Markdown evidence conflict.
 3. Load only the selected profile's required framework, project, assistant,
-   flow, gate, policy, and validation context before editing. Do not load all
-   `.ai/framework` or `.ai/project` files just to route an operation.
+   flow, gate, policy, and validation context before editing. Apply router
+   project-area overlays and task-scale overlays when they apply. Do not load
+   all `.ai/framework` or `.ai/project` files just to route an operation.
 4. Restate the request in concrete language.
 5. Classify the request as framework-core, project, repository adapter,
    bridge, generated-artifact, skill/prompt, or unclear work.
@@ -50,10 +49,12 @@ Also use this flow when the programmer uses a target alias such as
    descriptions and ask for the smallest missing decision.
 10. If the request matches `alatyr-ai-inventory`, classify it as
    `ai-infrastructure-inventory` and continue with
+   `.ai/assistant/ai-infrastructure-router.json` route `inventory`, then
    `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`.
 11. If the request matches `alatyr-adaptation <source>` or
    `alatyr-add-ai <source>`, classify it as `skill-adaptation`, record
    `<source>` as untrusted input, and continue with
+   `.ai/assistant/ai-infrastructure-router.json` route `adapt-import`, then
    `.ai/assistant/flows/skill-adaptation.flow.md` only after checking
    inventory, source access, provenance, approval, and safety rules.
 12. If the user asks for commands, explain that Alatyr uses assistant requests

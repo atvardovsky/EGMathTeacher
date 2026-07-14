@@ -9,21 +9,18 @@ At the start of an Alatyr-guided task, read only the bootstrap context first:
 - `.ai/alatyr.yaml`
 - `.ai/README.md`
 - `.ai/assistant/context-router.json`
-- `.ai/assistant/context-profiles.md`
-- `.ai/assistant/module-profile.md`
-- `.ai/project/contour.md`
-- `.ai/project/source-of-truth-registry.md`
-- `.ai/assistant/contour.md`
-- `.ai/project/blueprint.md`
 
 Then select the matching profile from `.ai/assistant/context-router.json`.
 Use `.ai/assistant/context-profiles.md` for human rationale, conflicts, or
 missing router entries, then read the profile-required framework, project,
 assistant, flow, gate, policy, and validation files before expanding context.
 
+The router is schema v2: use `preloaded_context`, compact bootstrap,
+project-area overlays, and the `large-or-resumable` task-scale overlay when
+they apply. Record the expansion reason when context budgets are exceeded.
 Expand beyond the selected profile only when the task crosses architecture,
 business, data, security, assistant-infrastructure, lifecycle, or governance
-boundaries, or when evidence conflicts.
+boundaries, when an overlay applies, or when evidence conflicts.
 
 ## Session Bootstrap
 
@@ -99,6 +96,10 @@ Canonical rule references: `ALATYR-CONTEXT-001`, `ALATYR-SOURCE-001`,
 - Use `alatyr-ai-inventory` or
   `.ai/assistant/flows/ai-infrastructure-inventory.flow.md` before adding,
   importing, replacing, or removing assistant infrastructure.
+- Use `.ai/assistant/ai-infrastructure-router.json` before loading detailed
+  skills, prompts, gates, checkers, bridge files, or adaptation context.
+- Use `.ai/assistant/flows/large-task-orchestration.flow.md` only when the
+  router's `large-or-resumable` overlay is activated.
 - Adapt skills, prompts, wrappers, bridges, rules, MCP/tool configs, gates,
   checkers, and third-party assistant infrastructure from target evidence
   before making them canonical.

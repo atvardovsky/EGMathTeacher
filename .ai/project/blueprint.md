@@ -379,7 +379,9 @@ Discovered target commands:
 - `npm run diagrams:check`: check rendered diagram SVG drift.
 - `npm run smoke:dev`: smoke-check a running dev web/API route.
 - `npm run alatyr:check`: check adapter-required files, validation scripts,
-  CODEOWNERS, CI wiring, and diagram source-hash manifest.
+  schema-v2 context routing, AI infrastructure routing, CODEOWNERS, CI wiring,
+  stale wording/local path leakage, duplicate references, large-task overlay
+  references, and diagram source-hash manifest.
 - `.github/workflows/ci.yml`: GitHub Actions workflow for install, build,
   tests, lint, browser E2E, diagram drift checks, and Alatyr adapter checks.
 

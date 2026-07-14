@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "router_kind": "target-ai-infrastructure-router",
+  "inventory_template": ".ai/assistant/templates/ai-infrastructure-inventory.md",
+  "adaptation_record_template": ".ai/assistant/templates/ai-infrastructure-adaptation-record.md",
+  "item_types": [
+    "skill",
+    "prompt",
+    "gate",
+    "checker",
+    "flow",
+    "tool",
+    "mcp",
+    "bridge",
+    "wrapper",
+    "rule",
+    "template",
+    "other"
+  ],
+  "routing_order": [
+    "inventory",
+    "use-existing",
+    "adapt-import",
+    "gate-checker-change",
+    "tool-mcp-change",
+    "bridge-wrapper-change"
+  ],
+  "routes": {
+    "inventory": {
+      "use_when": [
+        "list or inspect existing AI infrastructure",
+        "item owner path or status is unknown",
+        "alatyr-ai-inventory"
+      ],
+      "required_context": [
+        ".ai/assistant/flows/ai-infrastructure-inventory.flow.md",
+        ".ai/assistant/templates/ai-infrastructure-inventory.md",
+        ".ai/assistant/infrastructure-index.md"
+      ],
+      "expand_when": [
+        "declared item path is stale",
+        "ownership or permission scope conflicts",
+        "supported assistant surface is missing"
+      ],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only"
+      ],
+      "approval_gates": [
+        "protected inspection requires target approval"
+      ],
+      "validation": [
+        "manual adapter source review",
+        "npm run alatyr:check when adapter files change"
+      ],
+      "final_evidence": [
+        "items and owners found",
+        "stale or missing declarations",
+        "recommended route and item ids"
+      ]
+    },
+    "use-existing": {
+      "use_when": [
+        "one accepted target-owned item matches the task"
+      ],
+      "required_context": [
+        "selected item canonical source",
+        "selected item required context",
+        "selected item gates and output contract"
+      ],
+      "expand_when": [
+        "item status provenance or permission scope is stale",
+        "item conflicts with current target rules"
+      ],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only",
+        "code-and-tests"
+      ],
+      "approval_gates": [
+        "selected item approval triggers"
+      ],
+      "validation": [
+        "selected item validation or manual review"
+      ],
+      "final_evidence": [
+        "selected item id and canonical source",
+        "loaded context permissions gates validation and output"
+      ]
+    },
+    "adapt-import": {
+      "use_when": [
+        "external remote pasted package plugin native or unknown item",
+        "existing item requires material normalization",
+        "alatyr-adaptation",
+        "alatyr-add-ai"
+      ],
+      "required_context": [
+        ".ai/framework/skill-adaptation.md",
+        ".ai/framework/prompt-injection.md",
+        ".ai/framework/approval-records.md",
+        ".ai/assistant/flows/skill-adaptation.flow.md",
+        ".ai/assistant/policies/ai-infrastructure-source-access.md",
+        ".ai/assistant/policies/prompt-injection.md",
+        ".ai/assistant/templates/ai-infrastructure-adaptation-record.md"
+      ],
+      "expand_when": [
+        "tool permission live service destructive credential dependency or privacy surface",
+        "canonical target integration is requested"
+      ],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only",
+        "full-with-approval"
+      ],
+      "approval_gates": [
+        "third-party canonical integration",
+        "protected permission or behavior change"
+      ],
+      "validation": [
+        "manual adapter source review",
+        "npm run alatyr:check when adapter files change"
+      ],
+      "final_evidence": [
+        "source provenance hash license and rejected instructions",
+        "normalization wrappers permissions approval validation and residual risk"
+      ]
+    },
+    "gate-checker-change": {
+      "use_when": [
+        "gate checklist checker or recurring acceptance rule changes"
+      ],
+      "required_context": [
+        ".ai/assistant/gates/checklist.md",
+        ".ai/framework/logical-integrity.md",
+        ".ai/framework/change-risk-model.md",
+        "scripts/check-alatyr.sh"
+      ],
+      "expand_when": [
+        "validation approval documentation sync or evidence is weakened"
+      ],
+      "allowed_actions": [
+        "adapter-only",
+        "code-and-tests",
+        "full-with-approval"
+      ],
+      "approval_gates": [
+        "weakened gate approval validation or evidence"
+      ],
+      "validation": [
+        "npm run alatyr:check",
+        "manual adapter source review"
+      ],
+      "final_evidence": [
+        "changed invariant affected operations validation and approval"
+      ]
+    },
+    "tool-mcp-change": {
+      "use_when": [
+        "tool MCP connector model permission network or execution capability changes"
+      ],
+      "required_context": [
+        ".ai/framework/security-safety-guidance.md",
+        ".ai/framework/approval-records.md",
+        ".ai/assistant/policies/ai-infrastructure-source-access.md"
+      ],
+      "expand_when": [
+        "live destructive spend credential dependency privacy or production surface"
+      ],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only",
+        "full-with-approval"
+      ],
+      "approval_gates": [
+        "tool permission network execution dependency or protected capability change"
+      ],
+      "validation": [
+        "manual adapter source review",
+        "npm run alatyr:check when adapter files change"
+      ],
+      "final_evidence": [
+        "capabilities permissions actions avoided approval and validation"
+      ]
+    },
+    "bridge-wrapper-change": {
+      "use_when": [
+        "assistant bridge wrapper native skill or prompt surface changes"
+      ],
+      "required_context": [
+        "AGENTS.md",
+        "AI_ASSISTANTS.md",
+        ".ai/framework/bridge-capability-matrix.md",
+        ".ai/assistant/bridge-capability-matrix.md"
+      ],
+      "expand_when": [
+        "instruction priority permission model or supported capability changes"
+      ],
+      "allowed_actions": [
+        "adapter-only",
+        "full-with-approval"
+      ],
+      "approval_gates": [
+        "overwriting existing instructions or broadening permissions"
+      ],
+      "validation": [
+        "manual bridge reference review",
+        "npm run alatyr:check"
+      ],
+      "final_evidence": [
+        "canonical pointer capability matrix and assistant conformance result"
+      ]
+    }
+  },
+  "items": [
+    {
+      "id": "operation-help",
+      "type": "flow",
+      "purpose": "Route Alatyr help, ambiguous requests, and documented aliases to target flows.",
+      "status": "active",
+      "activation_triggers": [
+        "Alatyr help",
+        "update Alatyr",
+        "check Alatyr",
+        "unclear Alatyr request"
+      ],
+      "canonical_source": ".ai/assistant/help.md",
+      "required_context": [
+        ".ai/assistant/help-reference.md",
+        ".ai/assistant/flows/operation-routing.flow.md"
+      ],
+      "assistant_surfaces": [
+        "generic",
+        "agents",
+        "codex"
+      ],
+      "wrappers": [
+        "AGENTS.md",
+        "AI_ASSISTANTS.md"
+      ],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only"
+      ],
+      "required_permissions": [
+        "repository read",
+        "repository write only when selected operation allows edits"
+      ],
+      "approval_triggers": [
+        "protected selected operation"
+      ],
+      "gates": [
+        ".ai/assistant/gates/checklist.md"
+      ],
+      "validation": [
+        "manual adapter source review",
+        "npm run alatyr:check when adapter files change"
+      ],
+      "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
+      "conflicts_with": [],
+      "adaptation_record": "not applicable; target-owned adapter item"
+    },
+    {
+      "id": "local-alatyr-checker",
+      "type": "checker",
+      "purpose": "Deterministic adapter drift checks for required files, context routing, owner metadata, stale wording, local path leakage, CI wiring, and diagram source hashes.",
+      "status": "active",
+      "activation_triggers": [
+        "adapter consistency",
+        "Alatyr check",
+        "gate or checker change"
+      ],
+      "canonical_source": "scripts/check-alatyr.sh",
+      "required_context": [
+        ".ai/assistant/gates/checklist.md",
+        ".ai/assistant/context-router.json",
+        ".ai/assistant/context-profiles.md",
+        ".ai/alatyr.yaml"
+      ],
+      "assistant_surfaces": [
+        "generic",
+        "agents",
+        "codex"
+      ],
+      "wrappers": [],
+      "allowed_actions": [
+        "read-only",
+        "adapter-only",
+        "code-and-tests"
+      ],
+      "required_permissions": [
+        "local shell validation"
+      ],
+      "approval_triggers": [
+        "weakened checker invariant"
+      ],
+      "gates": [
+        ".ai/assistant/gates/checklist.md"
+      ],
+      "validation": [
+        "npm run alatyr:check"
+      ],
+      "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
+      "conflicts_with": [],
+      "adaptation_record": "not applicable; target-owned checker"
+    },
+    {
+      "id": "ui-implementation-skill",
+      "type": "skill",
+      "purpose": "Target UI implementation guidance for teen-friendly Mantine/React workflows.",
+      "status": "active",
+      "activation_triggers": [
+        "UI implementation",
+        "web app",
+        "first meeting screen",
+        "tutor workspace"
+      ],
+      "canonical_source": ".ai/assistant/skills/ui-implementation.md",
+      "required_context": [
+        ".ai/project/ui-guidelines.md",
+        ".ai/project/ui-tree.md",
+        "apps/web/src/App.tsx"
+      ],
+      "assistant_surfaces": [
+        "generic",
+        "agents",
+        "codex"
+      ],
+      "wrappers": [],
+      "allowed_actions": [
+        "code-and-tests"
+      ],
+      "required_permissions": [
+        "repository read/write"
+      ],
+      "approval_triggers": [
+        "accepted product-flow change",
+        "new UI dependency",
+        "weakened UI gate"
+      ],
+      "gates": [
+        ".ai/assistant/gates/ui-gates.md",
+        ".ai/assistant/gates/checklist.md"
+      ],
+      "validation": [
+        "npm run build",
+        "npm run e2e when browser workflow changes"
+      ],
+      "output_contract": ".ai/assistant/gates/final-evidence.md",
+      "conflicts_with": [],
+      "adaptation_record": "not applicable; target-owned skill"
+    },
+    {
+      "id": "root-bridge-files",
+      "type": "bridge",
+      "purpose": "Route supported assistants to canonical EGMathTeacher Alatyr adapter files.",
+      "status": "active",
+      "activation_triggers": [
+        "assistant startup",
+        "bridge compatibility review",
+        "AI_ASSISTANTS.md or AGENTS.md change"
+      ],
+      "canonical_source": ".ai/assistant/bridge-capability-matrix.md",
+      "required_context": [
+        "AGENTS.md",
+        "AI_ASSISTANTS.md"
+      ],
+      "assistant_surfaces": [
+        "generic",
+        "agents",
+        "codex"
+      ],
+      "wrappers": [
+        "AGENTS.md",
+        "AI_ASSISTANTS.md"
+      ],
+      "allowed_actions": [
+        "adapter-only",
+        "full-with-approval"
+      ],
+      "required_permissions": [
+        "repository read/write"
+      ],
+      "approval_triggers": [
+        "overwriting existing assistant instructions",
+        "new assistant surface"
+      ],
+      "gates": [
+        ".ai/assistant/gates/checklist.md"
+      ],
+      "validation": [
+        "manual bridge reference review",
+        "npm run alatyr:check"
+      ],
+      "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
+      "conflicts_with": [],
+      "adaptation_record": "not applicable; target-owned bridge"
+    }
+  ]
+}

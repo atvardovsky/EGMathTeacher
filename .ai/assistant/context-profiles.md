@@ -1,26 +1,23 @@
 # EGMathTeacher Alatyr Context Profiles
 
-Use this file to choose the smallest sufficient context after bootstrap.
+Use this file for human-readable rationale after
+`.ai/assistant/context-router.json` selects the smallest sufficient context.
 
 Bootstrap context for every Alatyr-guided task:
 
-- `AGENTS.md`
+- `AGENTS.md` when the host preloads it
 - `.ai/alatyr.yaml`
 - `.ai/README.md`
 - `.ai/assistant/context-router.json`
-- `.ai/assistant/context-profiles.md`
-- `.ai/assistant/module-profile.md`
-- `.ai/project/contour.md`
-- `.ai/project/source-of-truth-registry.md`
-- `.ai/assistant/contour.md`
-- `.ai/project/blueprint.md`
 
 After bootstrap, choose one profile from
 `.ai/assistant/context-router.json`, then use this file for human-readable
 rationale, conflicts, or missing router entries. Read the selected profile's
-required context before editing files. Expand only when the task crosses
-architecture, business, data, security, assistant-infrastructure, lifecycle,
-or governance boundaries, or when evidence conflicts.
+required context before editing files. Apply router project-area overlays and
+the `large-or-resumable` task-scale overlay when they apply. Expand only when
+the task crosses architecture, business, data, security,
+assistant-infrastructure, lifecycle, or governance boundaries, when an overlay
+requires more context, or when evidence conflicts.
 
 ## Profile: `docs-local`
 
@@ -180,14 +177,17 @@ Required context:
 
 - `.ai/framework/project-adapter-contract.md`
 - `.ai/framework/portability.md`
+- `.ai/framework/ai-infrastructure-routing.md`
 - `.ai/framework/skill-adaptation.md`
 - `.ai/framework/security-safety-guidance.md`
 - `.ai/framework/prompt-injection.md`
 - `.ai/framework/approval-records.md`
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`
 - `.ai/assistant/flows/skill-adaptation.flow.md`
 - `.ai/assistant/policies/ai-infrastructure-source-access.md`
 - `.ai/assistant/policies/prompt-injection.md`
+- `.ai/assistant/templates/ai-infrastructure-adaptation-record.md`
 - `.ai/assistant/gates/checklist.md`
 - `.ai/assistant/infrastructure-index.md`
 
@@ -216,6 +216,9 @@ Required context:
 - `.ai/framework/portability.md`
 - `.ai/framework/module-profile.md`
 - `.ai/framework/scaffolding.md`
+- `.ai/framework/ai-infrastructure-routing.md`
+- `.ai/framework/consistency-model.md`
+- `.ai/framework/large-task-orchestration.md`
 - `.ai/framework/context-router.md`
 - `.ai/framework/context-profiles.md`
 - `.ai/framework/context-discovery.md`
@@ -236,9 +239,12 @@ Required context:
 - `.ai/framework/lifecycle.md`
 - `.ai/framework/installed-operations.md`
 - `.ai/framework/operation-help.md`
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/flows/adapter-recheck.flow.md`
+- `.ai/assistant/flows/large-task-orchestration.flow.md`
 - `.ai/assistant/flows/operation-routing.flow.md`
 - `.ai/assistant/templates/installation-note.md`
+- `.ai/assistant/templates/large-task-operation-packet.md`
 - `.ai/assistant/templates/post-install-message.md`
 - `.ai/assistant/templates/post-update-message.md`
 - `.ai/assistant/gates/checklist.md`

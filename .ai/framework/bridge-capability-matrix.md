@@ -27,9 +27,12 @@ For each supported assistant, record:
 - auto-load behavior
 - instruction priority or known precedence
 - supported Markdown, prompt, rule, or skill surfaces
+- AI infrastructure router and item-ID support
 - tool permission model
 - whether operation help aliases are routed
 - whether AI infrastructure inventory and adaptation aliases are routed
+- whether selected AI infrastructure items route through canonical target
+  permissions, gates, validation, and output contracts
 - known limitations
 - conformance check or manual review
 
@@ -60,10 +63,15 @@ to work.
 
 Each bridge should:
 
+- preserve the compact bootstrap directly: load `AGENTS.md` exactly once
+  (host-preloaded when supported), then load the manifest, compact project map,
+  and context router
 - point to the canonical root entry point
 - point to operation help and operation routing
 - route `alatyr-ai-inventory`, `alatyr-adaptation`, and `alatyr-add-ai` when
   those aliases are supported by the target
+- route selected AI infrastructure work through the canonical target router
+  instead of choosing item content from a bridge
 - avoid duplicating full framework, project, or adapter policy
 - avoid becoming a source of truth for project facts
 - state assistant-specific limitations only when target evidence supports
@@ -71,6 +79,11 @@ Each bridge should:
 
 If an assistant surface cannot auto-load a bridge, record the manual loading
 step or unsupported status.
+
+Source conformance may prepare the same fixture prompt for every supported
+surface and verify bridge discovery deterministically. This proves source
+contract coverage only; actual assistant runs are still required to measure
+vendor loading behavior, context use, and logical-integrity evidence.
 
 ## Upgrade Use
 

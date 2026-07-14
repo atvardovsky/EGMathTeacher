@@ -25,7 +25,19 @@ known gaps, and local deviations.
 
 ## Source Of Truth
 
-Start with:
+For routine Alatyr routing, treat root `AGENTS.md` as preloaded by
+AGENTS-aware assistants, then read only the compact bootstrap:
+
+- `.ai/alatyr.yaml`
+- `.ai/README.md`
+- `.ai/assistant/context-router.json`
+
+The router selects the task profile, project-area overlays, and task-scale
+overlay when needed. Load the human context profiles, module profile, project
+blueprint, registries, contours, gates, policies, and templates only when the
+router, selected profile, ambiguity, or drift requires them.
+
+Project source-of-truth files:
 
 - `README.md` for public project purpose, run commands, and deployment notes.
 - `.ai/project/README.md` for the project source-of-truth doc index.
@@ -51,12 +63,18 @@ If those sources disagree, use `.ai/framework/logical-integrity.md` and
 
 ## Context Profiles
 
-Use `.ai/assistant/context-router.json` to choose the smallest sufficient
-context profile after bootstrap. Use `.ai/assistant/context-profiles.md` for
-human-readable rationale, conflicts, or missing router entries. Expand only
-when a task crosses architecture, business, data, security,
-assistant-infrastructure, lifecycle, or governance boundaries, or when evidence
-conflicts.
+Use `.ai/assistant/context-router.json` schema v2 to choose the smallest
+sufficient context profile after bootstrap. Use
+`.ai/assistant/context-profiles.md` for human-readable rationale, conflicts,
+or missing router entries. Expand only when a task crosses architecture,
+business, data, security, assistant-infrastructure, lifecycle, or governance
+boundaries, when a project-area overlay applies, when the `large-or-resumable`
+task-scale overlay is activated, or when evidence conflicts.
+
+The optional consistency-map module is deferred, so
+`.ai/project/consistency-map.json` is not currently installed. Use ordinary
+source-of-truth registry and logical integrity review until that module is
+enabled.
 
 ## Installed Operation Help
 
@@ -73,6 +91,11 @@ Then select the matching operation or ask for the smallest missing decision.
 The current repository assistant infrastructure index is
 `.ai/assistant/infrastructure-index.md`. Use it for `alatyr-ai-inventory`,
 adapter rechecks, and assistant-infrastructure sync work.
+
+The compact AI infrastructure router is
+`.ai/assistant/ai-infrastructure-router.json`. Use it to select one accepted
+target-owned skill, flow, gate, checker, bridge, or adaptation route before
+loading detailed item context.
 
 Prompt-injection and imported-source handling is owned by
 `.ai/assistant/policies/prompt-injection.md` and

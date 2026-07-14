@@ -198,6 +198,7 @@ Every supported bridge should point back to:
 - `.ai/alatyr.yaml`
 - `.ai/README.md`
 - `.ai/assistant/context-router.json`
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/context-profiles.md`
 - `.ai/assistant/help.md`
 - `.ai/assistant/help-reference.md`

@@ -64,6 +64,13 @@ Flow: `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`
 Minimum input: inventory scope and target assistant surfaces.
 Alias: `alatyr-ai-inventory`.
 
+Operation: `large-task-orchestration`
+Use when: coordinating large, phased, cross-boundary, multi-workstream, or
+resumable work with checkpoints and final convergence.
+Flow: `.ai/assistant/flows/large-task-orchestration.flow.md`
+Minimum input: goal, non-goals, allowed actions, activation reason, and
+expected workstreams.
+
 Operation: `skill-adaptation`
 Use when: importing, adapting, adding, or reviewing skills, prompts, wrappers,
 bridges, rules, MCP/tool configs, gates, checkers, or third-party assistant
@@ -189,7 +196,11 @@ Integration mode: canonical integration
   `npm run smoke:dev` against a running dev stack, `npm run alatyr:check`,
   and manual adapter review when docs-only.
 - Context routing: `.ai/assistant/context-router.json` is the
-  machine-readable companion to `.ai/assistant/context-profiles.md`.
+  schema-v2 machine-readable companion to
+  `.ai/assistant/context-profiles.md`.
+- AI infrastructure routing: `.ai/assistant/ai-infrastructure-router.json`
+  selects compact item context before detailed skill, prompt, gate, checker,
+  bridge, tool, or adaptation review.
 - Approval constraints: `.ai/assistant/gates/checklist.md` and focused gate
   files under `.ai/assistant/gates`.
 - AI infrastructure source access policy:

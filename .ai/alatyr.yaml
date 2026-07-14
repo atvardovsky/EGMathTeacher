@@ -2,18 +2,18 @@ schema_version: 1
 framework:
   name: "Alatyr Core"
   version: "0.1.0-alpha.0"
-  source: "https://github.com/atvardovsky/AlatyrCore at 465473284966676d86bb6e55d1254b20e415bf5c"
-  template_version: 1
+  source: "https://github.com/atvardovsky/AlatyrCore at 8dab3d15c6e0dc983096c2aaca89fba75fe6fa14"
+  template_version: 2
   rule_registry: ".ai/framework/rule-registry.json"
 installation:
   id: "ALATYR-20260709-egmathteacher"
   date: "2026-07-09"
-  mode: "upgrade-applied-2026-07-12"
+  mode: "upgrade-applied-2026-07-14"
 owner:
   responsible_team: "project maintainer"
   technical_owner: "atvardovsky"
   backup_owner: "unassigned - known gap"
-  last_review_date: "2026-07-12"
+  last_review_date: "2026-07-14"
   review_cadence: "after framework updates or broad assistant-governance changes"
   codeowners: ".github/CODEOWNERS"
   review_triggers:
@@ -58,6 +58,19 @@ source_of_truth:
     - "apps/api/README.md"
     - "apps/api/docs/webrtc-module.md"
     - "apps/api/Agent.md"
+context_routing:
+  router_schema_version: 2
+  preloaded_context:
+    - "AGENTS.md"
+  compact_bootstrap:
+    - ".ai/alatyr.yaml"
+    - ".ai/README.md"
+    - ".ai/assistant/context-router.json"
+  bootstrap_max_files: 4
+  bootstrap_max_words: 2000
+  profile_default_max_files: 12
+  profile_default_max_words: 8000
+  budget_behavior: "record expansion reason and load only required owners"
 modules:
   core_profile: "complete with documented gaps"
   enabled:
@@ -69,11 +82,14 @@ modules:
     - "blueprint-change"
     - "diagrams"
     - "ai-infrastructure"
+    - "ai-infrastructure-router"
     - "installed-operations"
+    - "large-task-orchestration"
     - "durable-approvals"
     - "migration-diff"
     - "local-alatyr-consistency-checker"
   deferred:
+    - "consistency-map: useful for broader future work, but no .ai/project/consistency-map.json is installed yet"
     - "multi-assistant-bridges: only AGENTS.md and AI_ASSISTANTS.md are currently supported"
     - "effectiveness-metrics: template installed, no comparative baseline yet"
     - "scaffolding: source dry-run tooling used for review only, not installed as target mechanism"
@@ -122,12 +138,17 @@ validation:
       required_for:
         - "framework-upgrade"
         - "ai-infrastructure"
+ai_infrastructure:
+  router: ".ai/assistant/ai-infrastructure-router.json"
+  inventory: ".ai/assistant/templates/ai-infrastructure-inventory.md"
+  adaptation_record: ".ai/assistant/templates/ai-infrastructure-adaptation-record.md"
 operations:
   help: ".ai/assistant/help.md"
   help_reference: ".ai/assistant/help-reference.md"
   operation_request: ".ai/assistant/templates/operation-request.md"
   installation_note: ".ai/assistant/templates/installation-note.md"
   output_contracts: ".ai/assistant/templates/adapter-output-contracts.md"
+  large_task_packet: ".ai/assistant/templates/large-task-operation-packet.md"
   ai_infrastructure_inventory: ".ai/assistant/templates/ai-infrastructure-inventory.md"
   migration_note: ".ai/assistant/templates/migration-note.md"
   effectiveness_report: ".ai/assistant/templates/effectiveness-report.md"

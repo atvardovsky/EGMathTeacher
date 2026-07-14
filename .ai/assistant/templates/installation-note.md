@@ -8,12 +8,13 @@ Framework source:
 - Alatyr source inspected: `https://github.com/atvardovsky/AlatyrCore`
 - Initial baseline commit: `17cf62e Route future sessions through installed adapter state`
 - Previous baseline commit: `6a6bef1 Add machine-readable context routing`
-- Current baseline commit: `4654732 Add installed adapter validator`
+- Previous baseline commit: `4654732 Add installed adapter validator`
+- Current baseline commit: `8dab3d1 Add controlled effectiveness cost benchmarks`
 - Framework version: `0.1.0-alpha.0`
 - Adapter schema version: `1`
-- Template version: `1`
+- Template version: `2`
 - Installed date: 2026-07-09
-- Updated date: 2026-07-12
+- Updated date: 2026-07-14
 
 ## Installed Surfaces
 
@@ -30,6 +31,7 @@ Framework source:
 - Assistant adapter: `.ai/assistant`
 - Context profiles: `.ai/assistant/context-profiles.md`
 - Context router: `.ai/assistant/context-router.json`
+- AI infrastructure router: `.ai/assistant/ai-infrastructure-router.json`
 - Module profile: `.ai/assistant/module-profile.md`
 - Maturity profile: `.ai/assistant/maturity-profile.md`
 - Bridge capability matrix: `.ai/assistant/bridge-capability-matrix.md`
@@ -37,6 +39,11 @@ Framework source:
 - Approval record template: `.ai/assistant/approvals/approval-template.md`
 - Migration, output-contract, inventory, and effectiveness templates under
   `.ai/assistant/templates`
+- AI infrastructure adaptation record template:
+  `.ai/assistant/templates/ai-infrastructure-adaptation-record.md`
+- Large-task flow and packet template:
+  `.ai/assistant/flows/large-task-orchestration.flow.md`,
+  `.ai/assistant/templates/large-task-operation-packet.md`
 - Focused gates: `.ai/assistant/gates/README.md` and
   `.ai/assistant/gates/*.md`
 - Root bridge files: `AGENTS.md`, `AI_ASSISTANTS.md`
@@ -66,7 +73,11 @@ support and updated `.ai/framework`, `.ai/assistant`, `AGENTS.md`,
 `AI_ASSISTANTS.md`, and `scripts/check-alatyr.sh` after the programmer asked to
 update Alatyr. A later 2026-07-12 framework update refreshed the baseline to
 `4654732`, added installed-adapter drift-check evidence requirements, and kept
-target validation on `npm run alatyr:check`. These updates did not change
+target validation on `npm run alatyr:check`. The 2026-07-14 framework update
+refreshed the baseline to `8dab3d1`, adopted template version 2 compact
+routing, added AI infrastructure item routing, and enabled large-task
+orchestration packet templates while deferring the optional consistency map.
+These updates did not change
 runtime code, runtime config, system web server config, live services, or
 accepted product behavior.
 
@@ -90,7 +101,8 @@ accepted product behavior.
 ## Future Sessions
 
 At the start of an Alatyr operation, read `.ai/alatyr.yaml`, this file,
-`.ai/README.md`, `.ai/assistant/context-router.json`,
-`.ai/assistant/context-profiles.md`,
-`.ai/assistant/module-profile.md`, `.ai/assistant/help.md`, and the matching
-flow under `.ai/assistant/flows`.
+`.ai/README.md`, and `.ai/assistant/context-router.json` first. Then follow
+the selected profile, project-area overlay, and task-scale overlay. Read
+`.ai/assistant/context-profiles.md`, `.ai/assistant/module-profile.md`,
+`.ai/assistant/help.md`, and matching flows only when the router or evidence
+requires them.

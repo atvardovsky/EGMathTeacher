@@ -22,16 +22,21 @@ Track:
 
 - context files loaded
 - approximate context volume
+- input/output tokens and monetary cost when host or billing evidence exists
+- context budget exceeded, expansion count, and context receipt reuse
 - clarification count
 - approvals requested
 - validation commands or manual checks run
 - hallucinated commands avoided or produced
 - missed companion updates
+- changed facts identified, consistency relationships reviewed, companion
+  surfaces checked, and unresolved consistency gaps
 - documentation, diagram, prompt, gate, or bridge sync repairs
 - rework count
 - residual risks reported
 - time to usable result
 - protected changes blocked before approval
+- duration to usable result when comparable timing is available
 
 ## Reporting Shape
 
@@ -39,11 +44,24 @@ Track:
 Task: <task name>
 Adapter mode: <none/minimal/full>
 Context files loaded: <count or unknown>
+Approximate context volume: <count or unknown>
+Context expansions: <count or unknown>
+Context receipt reused: <yes/no/unknown>
+Context budget exceeded: <yes/no/unknown>
 Clarifications: <count>
 Approvals requested: <count>
 Validation: <run/skipped/unresolved>
 Missed companion updates: <count or unknown>
 Rework count: <count or unknown>
+Changed facts identified: <count or unknown>
+Consistency relationships reviewed: <count or unknown>
+Companion surfaces checked: <count or unknown>
+Unresolved consistency gaps: <count or unknown>
+Duration seconds: <count or unknown>
+Input tokens: <count or unknown>
+Output tokens: <count or unknown>
+Estimated cost and currency: <number/currency or unknown>
+Cost evidence: <billing export/host estimate/unknown>
 Residual risks: <summary>
 Outcome: <accepted/rework/blocked>
 ```
@@ -55,6 +73,19 @@ The AlatyrCore source repository includes
 or JSONL effectiveness reports during pilots or conformance work. The helper
 is evidence tooling only; it does not prove broad framework quality and is not
 a portable target validation requirement.
+
+`tools/report_context_costs.py` provides a deterministic static baseline from
+the target context-router template. It measures resolved file and whitespace
+word counts, not model tokens or real assistant usage. Compare those static
+costs with captured assistant-run context evidence before making runtime cost
+claims.
+
+For paired runtime pilots, `tools/prepare_effectiveness_benchmark.py` accepts
+explicit no/minimal/full repository snapshots and rejects differences outside
+declared adapter surfaces. Companion check and summary tools require matching
+task/run identities and independently reviewed acceptance criteria. They
+report negative or non-computable deltas directly and do not infer savings
+from missing measurements.
 
 ## Rejection Criteria
 

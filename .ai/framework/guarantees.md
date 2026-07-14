@@ -35,8 +35,12 @@ The framework commits to giving an assistant a defined process for:
 - performing logical integrity review before claiming consistency
 - mapping changed facts to affected docs, diagrams, tests, gates, prompts, and
   skills
+- traversing adapted fact relationships to bound multi-level impact review in
+  large repositories
 - carrying accepted product changes through blueprint-equivalent docs, flows,
   implementation, validation, diagrams, and final evidence
+- coordinating large or resumable changes through bounded workstreams,
+  context receipts, checkpoints, and final convergence evidence
 - analyzing the target stack and risk profile before recommending test levels
   or structure
 - reasoning about diagram source/visual synchronization without hard-coding a
@@ -54,6 +58,8 @@ The framework commits to giving an assistant a defined process for:
   without letting them bypass framework or target adapter rules
 - inventorying existing AI infrastructure before adding, replacing, or
   importing new assistant infrastructure
+- selecting target AI infrastructure by stable item ID and loading only its
+  canonical source, permissions, gates, validation, and output contract
 - using an installed adapter for post-install blueprint creation, drift review,
   framework update recheck, and adapter maturity review
 - separating required core from optional modules so targets do not carry
@@ -79,11 +85,34 @@ Machine checks can verify only deterministic repository facts, such as:
 - target profiles route every framework document somewhere
 - target context routers match the profile template and route known framework
   documents somewhere
+- static bootstrap/profile file and word costs remain within declared template
+  budgets
+- supported bridge templates expose the same compact bootstrap, help, and
+  operation-routing entry points
 - manifest, approval, prompt-injection, help, and policy templates contain
   required fields
 
 Machine checks do not prove the assistant understood the target project or
-that project facts are correct.
+that project facts are correct. Prepared prompts and static bridge checks also
+do not prove a vendor actually auto-loaded instructions or stayed within a
+runtime context budget.
+
+Machine-readable validator output can make adapter evidence cheaper to reuse in
+CI, assistant rechecks, or final reports, but it remains structural evidence.
+It does not decide source-of-truth correctness or replace logical integrity
+review.
+
+Classify evidence before making a claim:
+
+- `current-state` records what can be observed in the repository now
+- `historical-record` records a dated operation, approval, validation run, or
+  migration event with its source and repository revision when available
+- `mixed` combines current-state observations with named historical records
+
+The presence of a file in the current tree does not prove who created it,
+which installer or assistant action ran, whether approval preceded the change,
+or whether historical validation passed. Mark those claims unverifiable unless
+dated records provide the evidence.
 
 ## Target-Dependent Guarantees
 
@@ -91,6 +120,8 @@ An installed adapter can provide stronger guarantees only when the target
 defines:
 
 - source-of-truth registry entries for relevant fact types
+- consistency-map nodes and relationship coverage when the target uses bounded
+  impact traversal
 - task context profiles
 - context router or equivalent machine-readable profile map when cheaper
   startup is expected
@@ -132,11 +163,15 @@ defines:
 - AI infrastructure inventory, source access, provenance, adaptation, wrapper,
   and approval rules when skills or third-party assistant infrastructure are
   used
+- AI infrastructure router and adaptation-record policy when multiple skills,
+  prompts, gates, checkers, tools, MCP configs, bridges, or wrappers are used
 - installed-operation request, blueprint-creation, adapter-recheck, and
   framework-update review flows when the target wants post-install operations
 - allowed-action meanings for installed-operation requests
 - adapter output contract templates for installation, framework update, and
   recheck evidence when durable operation records are expected
+- operation packet, storage policy, workstream boundaries, and checkpoint
+  evidence when large or resumable operations are expected
 - operation help, operation-routing, and post-install/update chat-message
   templates when the target wants discoverable assistant requests
 - task-specific maturity profile and blocking criteria

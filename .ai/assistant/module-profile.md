@@ -6,9 +6,9 @@ blocked, or not applicable for EGMathTeacher.
 ## Required Core Profile
 
 Core profile state: complete with documented gaps
-Last reviewed: 2026-07-12
-Reviewed by: Codex using Alatyr framework update approval to source commit
-`465473284966676d86bb6e55d1254b20e415bf5c`
+Last reviewed: 2026-07-14
+Reviewed by: Codex using user-requested Alatyr update to source commit
+`8dab3d15c6e0dc983096c2aaca89fba75fe6fa14`
 
 Core item: `contours`
 State: enabled
@@ -42,8 +42,9 @@ review.
 Approval needs: required before overwriting existing assistant instructions.
 Residual risk: the local checker covers required files, script wiring,
 context-router references, manifest owner fields, local path leakage, stale
-checker wording, duplicate context-profile references, current gap text,
-CODEOWNERS, CI wiring, and diagram source hashes; it does not prove semantic
+checker wording, duplicate context-profile and router references, current gap
+text, CODEOWNERS, CI wiring, AI-infrastructure routing presence, large-task
+packet references, and diagram source hashes; it does not prove semantic
 correctness of every project fact.
 
 Core item: `adapter-ownership`
@@ -87,8 +88,9 @@ Required files:
 - `.ai/assistant/context-profiles.md`
 
 Evidence: machine-readable routing exists for canonical task profiles and
-points to EGMathTeacher bootstrap context, required context, validation,
-approval gates, and final evidence fields.
+points to compact EGMathTeacher bootstrap context, project-area overlays,
+large-task overlay, required context, validation, approval gates, and final
+evidence fields.
 Validation or review: `npm run alatyr:check` and manual router/profile review.
 Approval needs: required before weakening mandatory context, approval
 requirements, validation expectations, or final evidence.
@@ -180,23 +182,46 @@ Residual risk: diagram drift checks run locally and in GitHub Actions, but no
 remote CI run was observed in this local workspace.
 Next action: add CI only if project needs stronger automation.
 
-Module: `ai-infrastructure`
-State: enabled
-Owner or file: `.ai/assistant/infrastructure-index.md`
+Module: `consistency-map`
+State: deferred
+Owner or file: `.ai/project/consistency-map.json`
 Required files:
 
+- `.ai/project/source-of-truth-registry.md`
+- `.ai/project/consistency-map.json`
+
+Reason: the project has source-of-truth registry and logical integrity flows,
+but no machine-readable fact-to-contract relationship map is installed yet.
+Validation or review: manual source-of-truth review until the map is added.
+Approval needs: required if adding the map changes approval, validation, or
+source-of-truth ownership rules.
+Residual risk: broad changes still require manual impact traversal across
+docs, code, tests, diagrams, and adapter surfaces.
+Next action: add a consistency map only when broad multi-area work needs
+bounded relationship traversal.
+
+Module: `ai-infrastructure`
+State: enabled
+Owner or file: `.ai/assistant/infrastructure-index.md` and
+`.ai/assistant/ai-infrastructure-router.json`
+Required files:
+
+- `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/flows/ai-infrastructure-inventory.flow.md`
 - `.ai/assistant/flows/skill-adaptation.flow.md`
 - `.ai/assistant/policies/ai-infrastructure-source-access.md`
 - `.ai/assistant/policies/prompt-injection.md`
+- `.ai/assistant/templates/ai-infrastructure-adaptation-record.md`
 
-Reason: assistant infrastructure inventory and source-access rules exist.
+Reason: assistant infrastructure inventory, compact item routing,
+source-access rules, and adaptation-record template exist.
 Validation or review: manual inventory review; target validation when
 canonical recurring behavior changes.
 Approval needs: required before importing third-party infrastructure or
 broadening permissions.
 Residual risk: no assistant-native skills are installed.
-Next action: use `alatyr-ai-inventory` before add/adapt/remove work.
+Next action: use `.ai/assistant/ai-infrastructure-router.json` to select one
+item or route, then use `alatyr-ai-inventory` before add/adapt/remove work.
 
 Module: `multi-assistant-bridges`
 State: deferred
@@ -232,6 +257,24 @@ Residual risk: operations are assistant request aliases, not executable
 commands.
 Next action: keep help and root bridge aliases aligned.
 
+Module: `large-task-orchestration`
+State: enabled
+Owner or file: `.ai/assistant/flows/large-task-orchestration.flow.md`
+Required files:
+
+- `.ai/framework/large-task-orchestration.md`
+- `.ai/assistant/flows/large-task-orchestration.flow.md`
+- `.ai/assistant/templates/large-task-operation-packet.md`
+
+Reason: EGMathTeacher has recurring large cross-boundary AI product changes
+that benefit from explicit workstreams, checkpoints, and final convergence.
+Validation or review: manual packet review; normal target validation selected
+per affected workstream.
+Approval needs: protected workstream changes still require normal approval.
+Residual risk: no existing operation packet is active; packets are created
+only when the router's `large-or-resumable` overlay is activated.
+Next action: use only for large, phased, cross-boundary, or resumable work.
+
 Module: `durable-approvals`
 State: enabled
 Owner or file: `.ai/assistant/approvals/approval-template.md`
@@ -260,6 +303,7 @@ Required files:
 Reason: local deterministic checks now verify required adapter files, package
 scripts, CI wiring, CODEOWNERS, context-router references, owner metadata,
 local path leakage, stale checker wording, duplicate context-profile
+and router references, AI-infrastructure router presence, large-task packet
 references, current gap text, and diagram source-hash consistency.
 Validation or review: `npm run alatyr:check`.
 Approval needs: required before weakening checker coverage, validation gates,

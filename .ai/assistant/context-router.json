@@ -1,19 +1,233 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "router_kind": "target-context-router",
   "human_reference": ".ai/assistant/context-profiles.md",
+  "preloaded_context": [
+    "AGENTS.md"
+  ],
   "bootstrap_context": [
-    "AGENTS.md",
     ".ai/alatyr.yaml",
     ".ai/README.md",
-    ".ai/assistant/context-router.json",
-    ".ai/assistant/context-profiles.md",
-    ".ai/assistant/module-profile.md",
-    ".ai/project/contour.md",
-    ".ai/project/source-of-truth-registry.md",
-    ".ai/assistant/contour.md",
-    ".ai/project/blueprint.md"
+    ".ai/assistant/context-router.json"
   ],
+  "context_budgets": {
+    "bootstrap": {
+      "max_files": 4,
+      "max_words": 2000
+    },
+    "profile_default": {
+      "max_files": 12,
+      "max_words": 8000
+    },
+    "on_exceed": "record expansion reason and load only required owners"
+  },
+  "context_receipt": {
+    "required_for": [
+      "budget exceeded",
+      "multiple project areas",
+      "cross-boundary work"
+    ],
+    "fields": [
+      "selected profiles",
+      "selected task scale overlay",
+      "selected project areas",
+      "loaded files and reasons",
+      "approximate context volume",
+      "expansion triggers",
+      "intentionally omitted context",
+      "residual risk"
+    ]
+  },
+  "consistency_routing": {
+    "enabled_when": [
+      "consistency-map module is enabled",
+      "semantic fact changed or drift is suspected"
+    ],
+    "required_context": [
+      ".ai/framework/consistency-model.md",
+      ".ai/project/consistency-map.json"
+    ],
+    "lookup_order": [
+      "changed fact ids",
+      "canonical owners",
+      "applicable direct relationships",
+      "dependent contracts when propagation is possible",
+      "selected target surfaces and validation"
+    ],
+    "expand_when": [
+      "cross-area contract changes",
+      "owner or relationship evidence conflicts",
+      "validation disproves the current boundary",
+      "approval trigger is reached"
+    ],
+    "final_evidence": [
+      "selected and skipped edges with reasons",
+      "levels and project areas reached",
+      "missing or stale relationships",
+      "candidate and applied repair sets"
+    ]
+  },
+  "migration_routing": {
+    "assessment_required_before_changes": true,
+    "required_context": [
+      ".ai/framework/lifecycle.md",
+      ".ai/framework/migration-diff.md",
+      ".ai/framework/rule-registry.json",
+      ".ai/assistant/flows/adapter-recheck.flow.md",
+      ".ai/assistant/templates/installation-note.md",
+      ".ai/assistant/templates/migration-note.md"
+    ],
+    "impact_selectors": [
+      "changed rule ids",
+      "affected rule categories",
+      "affected task profiles",
+      "affected canonical framework sources",
+      "changed target template surfaces",
+      "local deviations and bridge capability changes"
+    ],
+    "candidate_context": [
+      ".ai/framework/README.md",
+      ".ai/framework/adapter-maturity.md",
+      ".ai/framework/ai-infrastructure-routing.md",
+      ".ai/framework/approval-records.md",
+      ".ai/framework/blueprint-driven-change.md",
+      ".ai/framework/bridge-capability-matrix.md",
+      ".ai/framework/change-risk-model.md",
+      ".ai/framework/consistency-model.md",
+      ".ai/framework/context-discovery.md",
+      ".ai/framework/context-profiles.md",
+      ".ai/framework/context-router.md",
+      ".ai/framework/contour.md",
+      ".ai/framework/diagram-guidance.md",
+      ".ai/framework/effectiveness-metrics.md",
+      ".ai/framework/guarantees.md",
+      ".ai/framework/installed-operations.md",
+      ".ai/framework/large-task-orchestration.md",
+      ".ai/framework/lifecycle.md",
+      ".ai/framework/logical-integrity.md",
+      ".ai/framework/migration-diff.md",
+      ".ai/framework/module-profile.md",
+      ".ai/framework/operation-help.md",
+      ".ai/framework/portability.md",
+      ".ai/framework/project-adapter-contract.md",
+      ".ai/framework/prompt-injection.md",
+      ".ai/framework/rule-ownership.md",
+      ".ai/framework/rule-registry.md",
+      ".ai/framework/scaffolding.md",
+      ".ai/framework/security-safety-guidance.md",
+      ".ai/framework/skill-adaptation.md",
+      ".ai/framework/source-of-truth-registry.md",
+      ".ai/framework/testing-guidance.md"
+    ],
+    "expand_when": [
+      "migration assessment identifies an affected canonical source",
+      "target adapter claim conflicts with the new baseline",
+      "protected change or approval boundary is reached",
+      "validation disproves the current impact boundary"
+    ],
+    "final_evidence": [
+      "migration assessment and compared baselines",
+      "selected and intentionally omitted canonical sources",
+      "affected target surfaces and local deviations",
+      "approval validation and residual risk"
+    ]
+  },
+  "task_scale_overlays": {
+    "large-or-resumable": {
+      "use_when": [
+        "explicitly large phased or resumable work",
+        "multiple independently verifiable workstreams",
+        "multiple project areas or task profiles",
+        "profile context budget exceeded",
+        "separate approval or validation checkpoints"
+      ],
+      "required_context": [
+        ".ai/framework/large-task-orchestration.md",
+        ".ai/assistant/flows/large-task-orchestration.flow.md",
+        ".ai/assistant/templates/large-task-operation-packet.md"
+      ],
+      "expand_when": [
+        "workstream dependency changes",
+        "checkpoint evidence is stale",
+        "cross-workstream contract conflict",
+        "approval scope no longer covers applied changes"
+      ],
+      "budget_behavior": "load only the active workstream context and its fact owners and dependencies",
+      "final_evidence": [
+        "activation reason",
+        "workstream and dependency state",
+        "context receipts and checkpoints",
+        "global logical integrity result",
+        "final convergence and residual risk"
+      ]
+    }
+  },
+  "area_overlays": {
+    "api": {
+      "use_when": [
+        "NestJS API",
+        "backend module",
+        "database",
+        "lesson",
+        "student profile",
+        "knowledge",
+        "OpenAI provider",
+        "WebRTC"
+      ],
+      "required_context": [
+        ".ai/project/architecture.md",
+        ".ai/project/runtime-flows.md",
+        ".ai/project/data-model.md",
+        "apps/api/README.md"
+      ],
+      "expand_when": [
+        "schema or persistence behavior changes",
+        "external provider or live-service boundary changes",
+        "WebRTC or inherited voice-assistant behavior changes"
+      ]
+    },
+    "web": {
+      "use_when": [
+        "React web app",
+        "UI",
+        "voice dialog",
+        "first meeting screen",
+        "tutor workspace"
+      ],
+      "required_context": [
+        ".ai/project/ui-guidelines.md",
+        ".ai/project/ui-tree.md",
+        ".ai/project/runtime-flows.md",
+        "apps/web/src/App.tsx"
+      ],
+      "expand_when": [
+        "accepted product-flow changes",
+        "locale or visible copy changes",
+        "browser E2E behavior changes"
+      ]
+    },
+    "assistant-adapter": {
+      "use_when": [
+        "Alatyr",
+        "assistant infrastructure",
+        "bridge file",
+        "gate",
+        "checker",
+        "operation routing"
+      ],
+      "required_context": [
+        ".ai/assistant/infrastructure-index.md",
+        ".ai/assistant/bridge-capability-matrix.md",
+        ".ai/assistant/gates/checklist.md",
+        ".ai/assistant/ai-infrastructure-router.json"
+      ],
+      "expand_when": [
+        "new assistant surface",
+        "AI infrastructure import or adaptation",
+        "gate checker or validation invariant changes"
+      ]
+    }
+  },
   "routing_order": [
     "docs-local",
     "code-local",

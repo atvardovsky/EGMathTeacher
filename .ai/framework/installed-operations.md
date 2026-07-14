@@ -22,6 +22,8 @@ An installed adapter should support these operation categories:
 - framework upgrade impact review
 - target source-of-truth drift review
 - blueprint-driven product change
+- large-task orchestration for cross-boundary, multi-workstream, or resumable
+  work
 - logical integrity review
 - AI infrastructure inventory for existing skills, prompts, wrappers, bridge
   files, rules, MCP/tool configs, gates, checkers, and prompts
@@ -48,6 +50,7 @@ A post-install request should state:
 - allowed actions: `read-only`, `docs-only`, `adapter-only`,
   `code-and-tests`, or `full-with-approval`
 - context profile when known
+- task scale and existing operation packet when known
 - expected final evidence
 - output contract when the target adapter requires a durable installation,
   framework-update, or adapter-recheck evidence shape
@@ -92,34 +95,42 @@ dependency, and approval rules have been checked.
 
 For installed operations:
 
-1. Read the target assistant entry point, `.ai/alatyr.yaml`, `.ai/README.md`,
-   `.ai/assistant/context-router.json`,
-   `.ai/assistant/context-profiles.md`, and
-   `.ai/assistant/module-profile.md`.
+1. Treat the target assistant entry point as preloaded, then read only
+   `.ai/alatyr.yaml`, `.ai/README.md`, and
+   `.ai/assistant/context-router.json` as compact bootstrap.
 2. Read the installation note and post-install/update message templates when
    the request follows an installation, framework update, or unclear adapter
    state.
-3. Select the smallest matching context profile from the context router when
-   present, then read its required
-   framework, project, assistant, flow, gate, policy, and validation context.
+3. Select the smallest matching context profile and project-area overlays from
+   the context router, then read their required framework, project, assistant,
+   flow, gate, policy, and validation context. Load human profile rationale
+   only for ambiguity or drift and record budget exceptions in the context
+   receipt.
 4. Identify whether the request is framework-core, target-project, repository
    adapter, bridge, generated-artifact, or skill/prompt work.
 5. Use operation help and operation routing when the request is ambiguous.
 6. Apply logical integrity review before claiming consistency.
-7. Use blueprint-driven change when accepted project facts may change.
-8. Use skill adaptation when prompts, skills, wrappers, or third-party
+   When the optional consistency map is enabled, build a bounded impact closure
+   from changed fact IDs before loading related surfaces.
+7. Activate the large-task scale overlay only when work is cross-boundary,
+   multi-workstream, budget-exceeding, or resumable. Use a target operation
+   packet and bounded active-workstream context when activated.
+8. Use blueprint-driven change when accepted project facts may change.
+9. Use skill adaptation when prompts, skills, wrappers, or third-party
    assistant infrastructure change.
-9. Use prompt-injection policy for imported, external, remote, pasted, package,
+   Select the target AI infrastructure route and item IDs before loading item
+   content, permissions, gates, validation, or import policy.
+10. Use prompt-injection policy for imported, external, remote, pasted, package,
    plugin, or unknown AI infrastructure.
-10. Use AI infrastructure inventory before adding, importing, replacing, or
+11. Use AI infrastructure inventory before adding, importing, replacing, or
    removing assistant infrastructure.
-11. Use adapter maturity review when the request is broad, post-install, or
+12. Use adapter maturity review when the request is broad, post-install, or
    post-upgrade.
-12. Record approval evidence when protected-change scope requires it.
-13. Use the target adapter output contract when the operation follows
+13. Record approval evidence when protected-change scope requires it.
+14. Use the target adapter output contract when the operation follows
    installation, framework update, or adapter recheck.
-14. Run target validation that exists, or record unresolved checks.
-15. Report changed facts, files inspected, files changed, approvals,
+15. Run target validation that exists, or record unresolved checks.
+16. Report changed facts, files inspected, files changed, approvals,
    validation, skipped checks, and residual risk.
 
 ## Blueprint Creation
@@ -139,6 +150,21 @@ Missing facts must stay marked as missing. The assistant must not invent
 business rules, architecture, security policy, validation commands, diagrams,
 or lifecycle notes.
 
+## Large Or Resumable Operations
+
+Use `large-task-orchestration.md` when work has multiple independently
+verifiable workstreams, crosses profiles or project areas, exceeds the profile
+context budget, requires separate approval or validation checkpoints, or must
+survive a context reset.
+
+The target operation packet records workstream dependencies, context receipts,
+checkpoints, and final convergence. It does not own project facts. Resume by
+loading the compact bootstrap, packet, active workstream context, fact owners,
+and dependencies, then verify checkpoint claims against current repository
+evidence.
+
+Small tasks should stay on their normal operation flow without a packet.
+
 ## Adapter Recheck
 
 After installation or framework upgrade, an assistant should recheck:
@@ -149,6 +175,7 @@ After installation or framework upgrade, an assistant should recheck:
 - context profiles and their framework/project/assistant references
 - source-of-truth registry, task-specific maturity profile, bridge capability
   matrix, migration notes, and effectiveness reports
+- consistency-map module state, relationship coverage, and stale edge evidence
 - operation help, operation-routing flow, and post-install/update chat-message
   templates
 - adapter output contracts for installation, framework update, and recheck

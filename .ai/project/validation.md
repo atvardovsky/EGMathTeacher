@@ -117,7 +117,11 @@ and explicit image rendering.
   `npm ci`, `npm run build`, `npm test`, `npm run lint`, Playwright Chromium
   installation, `npm run e2e`, `npm run diagrams:check`, and
   `npm run alatyr:check`.
-- Alatyr adapter consistency is checked by `scripts/check-alatyr.sh`.
+- Alatyr adapter consistency is checked by `scripts/check-alatyr.sh`, including
+  schema-v2 context-router shape, compact bootstrap references,
+  AI-infrastructure router presence, large-task overlay references, owner
+  metadata, stale wording, local path leakage, duplicate references, CI wiring,
+  and diagram source hashes.
 - Diagram drift can be checked with `npm run diagrams:check`, which compares
   current Mermaid source hashes to the rendered manifest and verifies that
   sources still render.

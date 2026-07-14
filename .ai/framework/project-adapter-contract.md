@@ -41,6 +41,8 @@ Every project using this framework must define:
 - canonical project blueprint or equivalent source-of-truth docs
 - source-of-truth registry or equivalent fact-owner registry when multiple
   surfaces can describe the same fact
+- machine-readable consistency map when the target needs bounded fact-to-
+  contract, area, system, and adapter impact traversal
 - blueprint-driven change or equivalent product-change workflow owners
 - use-case, business-rule, data-model, architecture, and runtime-flow sources
   when those concerns exist in the project
@@ -67,6 +69,11 @@ Every project using this framework must define:
 - AI infrastructure inventory, source access, provenance, adaptation,
   output-format, safety, and wrapper rules when skills or third-party assistant
   infrastructure are used
+- AI infrastructure router with stable item IDs, canonical sources, activation
+  triggers, allowed actions, permissions, gates, validation, output contracts,
+  conflicts, and supported assistant surfaces when multiple items exist
+- durable adaptation records for imported or materially changed AI
+  infrastructure
 - prompt-injection policy for imported, external, remote, pasted, package, or
   unknown AI infrastructure
 - adapter maturity gaps, framework baseline/deviations, and lifecycle or
@@ -86,6 +93,9 @@ Every project using this framework must define:
   operations
 - installed-operation request, blueprint-creation, adapter-recheck, and
   framework-update review flows when the repository wants post-install
+  operations
+- large-task flow, task-scale routing, operation-packet policy, and resumable
+  checkpoint evidence when the repository needs cross-boundary or multi-session
   operations
 - allowed-action meanings for installed-operation requests
 - operation help, operation-routing, and post-install/update chat-message
@@ -109,9 +119,11 @@ An adapter may provide:
 - approval records or redacted approval indexes
 - AI infrastructure inventories, compatibility reports, and add/adapt/remove
   recommendations
+- AI infrastructure route/item audits and adaptation records
 - adapter output-contract reports for installation, framework update, or
   adapter-recheck work
 - source-of-truth registry reports or drift reports
+- consistency-map relationship coverage, impact-closure, or staleness reports
 - context router drift reports or deterministic routing checks
 - task-specific maturity reports
 - bridge capability or conformance reports
@@ -120,6 +132,8 @@ An adapter may provide:
   entry points, and supported bridge files
 - effectiveness reports for comparable task runs
 - installed-operation request templates or adapter audit reports
+- large-task operation packets stored, ignored, redacted, or retained under a
+  target-owned policy
 - operation help menus, routing flows, or assistant chat-completion message
   templates
 - generated visual artifacts
