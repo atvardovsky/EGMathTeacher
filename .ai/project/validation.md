@@ -35,8 +35,10 @@ Current covered areas:
   extraction, backend meeting-readiness scoring, AI profile storage, lesson
   usage attribution for onboarding specialist calls, and tutor context summary
   behavior, including specialist profile pipeline calls, idempotent
-  conversation-profile creation, stale running profile-creation claim
-  recovery, fresh running claim rejection, finalization transaction use, and
+  conversation-profile creation, conversation-level active-run locking,
+  changed-transcript duplicate-run rejection, stale changed-transcript
+  recovery, completed-without-profile recovery, stale running profile-creation
+  claim recovery, fresh running claim rejection, finalization transaction use, and
   the disabled-by-default legacy structured onboarding endpoint for students
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal

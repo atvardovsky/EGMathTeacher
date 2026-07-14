@@ -17,8 +17,10 @@ flowchart TB
   Meeting --> MeetingTranscript[Stored meeting transcript list]
   MeetingTranscript --> StudentBubble[Student prompt bubble]
   MeetingTranscript --> TutorBubble[Tutor answer bubble with speak or stop action]
-  Meeting --> MeetingHydration[Restore active meeting after reload]
+  Meeting --> MeetingHydration[Restore active meeting with stored turns after reload]
   MeetingHydration --> ActiveMeetingApi[GET /tutor/lessons scope active]
+  MeetingHydration --> EmptyActiveMeeting[Ignore empty active meeting sessions]
+  EmptyActiveMeeting --> TerminalMeetingHydration
   Meeting --> TerminalMeetingHydration[Restore terminal pre-profile meeting after reload]
   TerminalMeetingHydration --> HistoricalMeetingApi[GET /tutor/lessons scope history]
   Meeting --> MeetingReadiness[Backend readiness score and missing signals]

@@ -343,6 +343,29 @@ const terminalMeetingHistory = {
   ],
 };
 
+const emptyActiveMeetingHistory = {
+  lessons: [
+    {
+      lessonSessionId: 'lesson-empty-active',
+      conversationId: 'conv-empty-active',
+      lessonType: 'meeting',
+      status: 'active',
+      goalStatus: 'in_progress',
+      finishReason: null,
+      lessonGoal: 'Понять стартовый учебный контекст ученика.',
+      successCriteria: ['получены ответы о цели'],
+      turnCount: 0,
+      activeLearningSeconds: 0,
+      startedAt: '2026-07-12T10:06:00.000Z',
+      lastActivityAt: '2026-07-12T10:06:00.000Z',
+      updatedAt: '2026-07-12T10:06:00.000Z',
+      summary: null,
+      evidenceLevels: {},
+      turns: [],
+    },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('egmathteacher.locale', 'ru');
@@ -811,7 +834,10 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
 });
 
 test('terminal first meeting becomes read-only and keeps profile creation available', async ({ page }) => {
-  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: true });
+  const { tutorRequests } = await mockStudentSession(page, {
+    needsOnboarding: true,
+    activeLessonHistory: emptyActiveMeetingHistory,
+  });
 
   await page.goto('/');
 

@@ -70,8 +70,9 @@ This file records runtime flows from current source evidence.
    self-assessment, weak topic, explanation preference, and a diagnostic or
    contentful math reply before profile creation is allowed.
 7. If the page reloads during an unfinished meeting, the web client hydrates
-   the latest active saved `meeting` lesson and its stored turns from
-   `GET /tutor/lessons?scope=active`. If no active meeting exists, it also
+   the latest active saved `meeting` lesson with stored turns from
+   `GET /tutor/lessons?scope=active`. Empty active meeting sessions are
+   ignored for hydration. If no active meeting with turns exists, the client
    checks `GET /tutor/lessons?scope=history` so a terminal pre-profile
    meeting can still show as read-only and create the profile from the saved
    transcript. `GET /student-profile/me/meeting-readiness` can also provide
@@ -81,42 +82,48 @@ This file records runtime flows from current source evidence.
    `conversationId`. The API reads `tutor_turns` for the authenticated user
    and conversation; it does not trust frontend-submitted profile facts.
 9. `StudentProfileService` claims a
-   `student_profile_creation_runs` idempotency row by authenticated user,
-   conversation id, and transcript hash. A completed profile is returned
-   without rerunning AI calls; a still-running matching claim is rejected with
-   conflict until its `PROFILE_CREATION_RUNNING_TIMEOUT_MS` lease expires; a
-   stale running claim or failed claim can be atomically reclaimed for retry.
-10. `StudentProfileService` runs `onboardingConversationExtraction` to convert
+   `student_profile_creation_runs` row by authenticated user, conversation id,
+   and transcript hash, while enforcing one running claim per user and
+   conversation. A completed profile is returned without rerunning AI calls; a
+   still-running conversation claim is rejected with conflict until its
+   heartbeat lease expires even if a newer transcript hash exists; a stale
+   running claim or failed claim can be atomically reclaimed for retry.
+   Completed run rows without a stored profile are marked inconsistent/failed
+   and reclaimed instead of remaining permanently stuck.
+10. During the extraction and specialist pipeline, `StudentProfileService`
+   updates the run heartbeat between AI calls. Lease staleness is based on the
+   last heartbeat (`updated_at`), not only on the first attempt start time.
+11. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
    facts, drops non-teaching sensitive details, and must return the required
    teaching signals before specialist calls are spent.
-11. `StudentProfileService` normalizes extracted answers, drops non-teaching
+12. `StudentProfileService` normalizes extracted answers, drops non-teaching
    sensitive details, and reads active vector store ids.
-12. `AiModelService` resolves role/operation policy and runs three specialist
+13. `AiModelService` resolves role/operation policy and runs three specialist
    model calls:
    - math knowledge diagnostician creates `knowledgeState`
    - tutoring-focused psychopedagogical profiler creates `learningPreferences`
      and `psychologicalProfile`
    - teaching strategy planner creates `explanationStrategy` and compact
      `aiSummary`
-13. The conversation extractor and all specialist calls carry local
+14. The conversation extractor and all specialist calls carry local
     `usageContext` with user id, conversation id, lesson session id, and
     `lessonType=meeting`.
-14. Specialist prompts ask for confidence and evidence for meaningful profile
+15. Specialist prompts ask for confidence and evidence for meaningful profile
    inferences when possible.
-15. RAG is used only for shared AI knowledge such as questionnaire strategy,
+16. RAG is used only for shared AI knowledge such as questionnaire strategy,
    diagnostic rubrics, task strategy, and teaching playbooks.
-16. SQLite stores only teaching-useful personal profile signals in
+17. SQLite stores only teaching-useful personal profile signals in
     `student_profiles`.
-17. After successful conversation-based profile creation, SQLite commits the
+18. After successful conversation-based profile creation, SQLite commits the
     profile upsert, corresponding non-terminal `meeting` lesson finish
     (`status=finished`, `goal_status=reached`,
     `finish_reason=profile_created_from_meeting`), and creation-run
     `completed` state in one short transaction.
-18. Future tutor requests reload the DB profile so context compaction does not
+19. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
-19. After profile creation, the web client opens the normal tutor workspace
+20. After profile creation, the web client opens the normal tutor workspace
     with a lesson launcher instead of a blank waiting state. The launcher shows
     a green first-lesson button and cards for first meeting, level check,
     linear-equation practice, topic explanation, and mistake review. No tutor

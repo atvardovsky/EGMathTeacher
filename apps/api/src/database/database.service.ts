@@ -1294,6 +1294,33 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_student_profile_creation_runs_status
         ON student_profile_creation_runs(status, updated_at);
     `);
+
+    this.applyMigration('014_profile_creation_conversation_lock', `
+      UPDATE student_profile_creation_runs
+      SET status = 'failed',
+          error_message = COALESCE(error_message, 'Superseded by conversation-level profile creation lock'),
+          completed_at = COALESCE(completed_at, updated_at),
+          updated_at = updated_at
+      WHERE status = 'running'
+        AND EXISTS (
+          SELECT 1
+          FROM student_profile_creation_runs AS newer
+          WHERE newer.user_id = student_profile_creation_runs.user_id
+            AND newer.conversation_id = student_profile_creation_runs.conversation_id
+            AND newer.status = 'running'
+            AND (
+              newer.updated_at > student_profile_creation_runs.updated_at
+              OR (
+                newer.updated_at = student_profile_creation_runs.updated_at
+                AND newer.id > student_profile_creation_runs.id
+              )
+            )
+        );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_student_profile_creation_runs_one_running_conversation
+        ON student_profile_creation_runs(user_id, conversation_id)
+        WHERE status = 'running';
+    `);
   }
 
   private applyMigration(

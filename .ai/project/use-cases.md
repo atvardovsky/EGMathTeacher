@@ -280,12 +280,15 @@ Rules from current implementation:
   first meeting `conversationId` and `lessonSessionId` in local usage context,
   so the usage ledger can attribute onboarding cost to the lesson as well as
   the day.
-- Conversation-based profile creation is idempotent per authenticated user,
-  conversation id, and transcript hash through `student_profile_creation_runs`.
-  Repeated calls after success return the stored profile without rerunning the
-  extractor or three specialist calls. Failed claims and stale running claims
-  after `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are retryable; fresh running
-  claims are rejected to avoid duplicate spend.
+- Conversation-based profile creation records the transcript hash through
+  `student_profile_creation_runs`, but only one running claim is allowed per
+  authenticated user and conversation. Repeated calls after success return the
+  stored profile without rerunning the extractor or three specialist calls.
+  Fresh running claims are rejected to avoid duplicate spend even when another
+  tab changed the transcript; failed claims and stale running claims after
+  `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are retryable. Live long-running
+  pipelines heartbeat the row between AI calls, and a completed run without a
+  stored profile is treated as inconsistent/failed so it can recover.
 - Successful profile creation commits the profile, meeting finish, and
   creation-run completion together in SQLite after the AI calls have returned.
 - Specialist outputs should include confidence and evidence for meaningful

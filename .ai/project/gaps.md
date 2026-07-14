@@ -71,12 +71,15 @@ decisions.
   conversation boundary, disable manual voice/text input for that transcript,
   keep create-profile/start-new-meeting actions visible, and can be restored
   after page reload from terminal meeting history before profile creation.
-- Conversation-based profile creation is idempotent by signed-in user,
-  conversation id, and transcript hash; repeated success returns the stored
-  profile without rerunning the extractor or specialist onboarding calls.
-- Stale running conversation-profile creation claims can be retried after the
-  configured lease, failed/stale claim reclaims are conditional on the old row
-  version, and final profile/meeting/run writes are committed together.
+- Conversation-based profile creation stores the transcript hash used as
+  input, but only one running claim is allowed per signed-in user and
+  conversation. Repeated success returns the stored profile without rerunning
+  the extractor or specialist onboarding calls.
+- Fresh running claims block duplicate profile creation even if another tab
+  changed the transcript. Stale running claims can be retried after the
+  configured heartbeat lease, failed/stale claim reclaims are conditional on
+  the old row version, completed-without-profile rows are recoverable, and
+  final profile/meeting/run writes are committed together.
 - The legacy structured JSON onboarding endpoint is disabled for student use
   unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` enables a trusted
   fallback/import workflow.

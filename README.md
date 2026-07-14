@@ -55,13 +55,15 @@ Production domain:
   meeting lesson is closed and moved to history; terminal meeting answers make
   the first-meeting transcript read-only while keeping profile creation
   available for that closed conversation. Conversation-based profile creation
-  is idempotent for an authenticated user, conversation id, and transcript
-  hash, so retries or multiple tabs do not repeat the four onboarding AI
-  calls after success, and stale in-progress claims can be retried after a
-  lease timeout. If the page reloads during an unfinished or terminal
-  pre-profile meeting, the client restores the saved meeting transcript from
-  active or historical lessons. After setup, the tutor workspace opens with a lesson launcher
-  and a green first-lesson button instead of a blank state.
+  stores the transcript hash used as input, but allows only one running
+  profile-creation claim per authenticated user and conversation. Retries or
+  multiple tabs do not repeat the four onboarding AI calls after success,
+  fresh in-progress claims are blocked even if the transcript changed, and
+  stale in-progress claims can be retried after a lease timeout. If the page
+  reloads during an unfinished or terminal pre-profile meeting, the client
+  restores the saved meeting transcript from active meetings with turns or
+  from historical lessons. After setup, the tutor workspace opens with a
+  lesson launcher and a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
   shows active lessons separately from read-only historical records, auto-opens

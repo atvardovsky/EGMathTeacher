@@ -574,7 +574,10 @@ function FirstMeetingScreen({
         '/tutor/lessons?scope=active&limit=4&turnLimit=8',
       );
       let meeting = activeHistory.lessons.find(
-        (lesson) => lesson.lessonType === 'meeting' && !isTerminalLessonStatus(lesson.status),
+        (lesson) =>
+          lesson.lessonType === 'meeting' &&
+          !isTerminalLessonStatus(lesson.status) &&
+          lesson.turns.length > 0,
       );
       if (!meeting) {
         const historicalHistory = await api<TutorLessonHistory>(

@@ -52,7 +52,9 @@ migration `012_generated_task_identity_normalization` after normalizing
 backend-generated fallback task identities to the same generated formula used
 at runtime, and migration `013_student_profile_creation_idempotency` after
 adding a conversation-profile creation run ledger for idempotent first-meeting
-profile creation.
+profile creation, and migration `014_profile_creation_conversation_lock` after
+adding a partial unique lock that allows only one running profile-creation row
+per user and conversation.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -267,7 +269,13 @@ details are filtered before storage and before later profile specialist calls.
 | `created_at` | `TEXT` | required ISO timestamp |
 | `updated_at` | `TEXT` | required ISO timestamp |
 
-Unique key: `(user_id, conversation_id, transcript_hash)`.
+Unique keys:
+
+- `(user_id, conversation_id, transcript_hash)` for transcript-specific
+  idempotency.
+- Partial unique index `(user_id, conversation_id) WHERE status='running'`
+  so one conversation cannot run two profile pipelines at once when the
+  transcript changes in another tab.
 
 Source owner: `apps/api/src/student-profile` and
 `apps/api/src/database/database.service.ts`.
@@ -275,13 +283,18 @@ Source owner: `apps/api/src/student-profile` and
 This table prevents duplicate first-meeting profile work. Repeated successful
 calls to `POST /student-profile/me/from-conversation` return the stored
 profile without rerunning the conversation extractor or three specialist AI
-calls. Fresh running duplicate claims are rejected, failed claims can be
-retried, and running claims older than
-`PROFILE_CREATION_RUNNING_TIMEOUT_MS` are treated as stale and can be
-reclaimed. Reclaim updates are conditional on the previously read row version
-so concurrent retry workers cannot both acquire the same failed or stale
-claim. After AI calls complete, profile upsert, meeting finish, and run
-completion are written in one SQLite transaction.
+calls. Fresh running duplicate claims are rejected at the conversation level
+even when a newer transcript hash exists, failed claims can be retried, and
+running claims whose `updated_at` heartbeat is older than
+`PROFILE_CREATION_RUNNING_TIMEOUT_MS` are treated as stale. A stale running
+claim with a different transcript hash is first marked failed/superseded,
+then the new transcript can claim a fresh row. Reclaim updates are conditional
+on the previously read row version so concurrent retry workers cannot both
+acquire the same failed or stale claim. While the profile pipeline is live,
+the service heartbeats `updated_at` between AI calls. Completed run rows that
+lost their profile row are marked inconsistent/failed and then retried. After
+AI calls complete, profile upsert, meeting finish, and run completion are
+written in one SQLite transaction.
 
 Background student profile and strategy refresh jobs can merge sanitized JSON
 patches into these fields after tutor turns. Batched mode combines profile and

@@ -194,7 +194,7 @@ export class StudentProfileService {
     }
 
     const transcriptHash = this.hashMeetingTranscript(turns);
-    const claim = this.claimProfileCreationRun(
+    let claim = this.claimProfileCreationRun(
       context.user.id,
       conversationId,
       transcriptHash,
@@ -207,23 +207,35 @@ export class StudentProfileService {
           profile,
         };
       }
-      this.markProfileCreationRunFailed(
+      this.markProfileCreationRunInconsistent(
         claim.runId,
         'Completed profile creation run has no stored student profile',
       );
-      throw new BadRequestException('Stored profile creation state is inconsistent');
+      claim = this.claimProfileCreationRun(
+        context.user.id,
+        conversationId,
+        transcriptHash,
+      );
+      if (claim.status === 'completed') {
+        throw new BadRequestException('Stored profile creation state is inconsistent');
+      }
     }
 
     try {
+      const heartbeat = () =>
+        this.heartbeatProfileCreationRun(claim.runId, claim.claimedStartedAt);
+      heartbeat();
       const answers = await this.extractOnboardingAnswersFromConversation(
         context.user,
         conversationId,
         turns,
         readiness.lessonSessionId,
       );
+      heartbeat();
       const profile = await this.generateProfile(context.user, answers, {
         conversationId,
         lessonSessionId: readiness.lessonSessionId,
+        heartbeat,
       });
       return this.finalizeConversationOnboarding({
         user: context.user,
@@ -246,10 +258,15 @@ export class StudentProfileService {
   private async generateProfile(
     user: AuthSession,
     answers: StudentOnboardingAnswers,
-    usageContext: { conversationId?: string; lessonSessionId?: string } = {},
+    usageContext: {
+      conversationId?: string;
+      lessonSessionId?: string;
+      heartbeat?: () => void;
+    } = {},
   ): Promise<GeneratedProfile> {
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
 
+    usageContext.heartbeat?.();
     const knowledgeParsed = await this.runProfileSpecialist({
       operation: 'onboardingKnowledgeDiagnosis',
       specialist: 'math-knowledge-diagnostician',
@@ -266,6 +283,7 @@ export class StudentProfileService {
       useRag: true,
       failureMessage: 'Could not create student knowledge state',
     });
+    usageContext.heartbeat?.();
     const knowledgeState = this.sanitizeTeachingObject(
       this.pickObject(knowledgeParsed, ['knowledgeState', 'knowledge_state']),
     );
@@ -273,6 +291,7 @@ export class StudentProfileService {
       throw new BadRequestException('Student knowledge state is missing');
     }
 
+    usageContext.heartbeat?.();
     const psychopedagogicalParsed = await this.runProfileSpecialist({
       operation: 'onboardingPsychopedagogicalProfile',
       specialist: 'psychopedagogical-profiler',
@@ -291,6 +310,7 @@ export class StudentProfileService {
       useRag: true,
       failureMessage: 'Could not create student psychopedagogical profile',
     });
+    usageContext.heartbeat?.();
     const learningPreferences = this.sanitizeTeachingObject(
       this.pickObject(psychopedagogicalParsed, ['learningPreferences', 'learning_preferences']),
     );
@@ -301,6 +321,7 @@ export class StudentProfileService {
       throw new BadRequestException('Student learning profile is missing');
     }
 
+    usageContext.heartbeat?.();
     const strategyParsed = await this.runProfileSpecialist({
       operation: 'onboardingStrategyPlan',
       specialist: 'teaching-strategy-planner',
@@ -323,6 +344,7 @@ export class StudentProfileService {
       useRag: true,
       failureMessage: 'Could not create student explanation strategy',
     });
+    usageContext.heartbeat?.();
     const explanationStrategy = this.sanitizeTeachingObject(
       this.pickObject(strategyParsed, ['explanationStrategy', 'explanation_strategy']),
     );
@@ -628,7 +650,61 @@ export class StudentProfileService {
     conversationId: string,
     transcriptHash: string,
   ): ProfileCreationClaim {
+    return this.db.transaction(() =>
+      this.claimProfileCreationRunLocked(userId, conversationId, transcriptHash),
+    );
+  }
+
+  private claimProfileCreationRunLocked(
+    userId: string,
+    conversationId: string,
+    transcriptHash: string,
+  ): ProfileCreationClaim {
     const now = new Date().toISOString();
+    const active = this.getActiveProfileCreationRunForConversation(
+      userId,
+      conversationId,
+    );
+    if (active) {
+      if (active.transcript_hash !== transcriptHash) {
+        if (!this.isProfileCreationRunStale(active, now)) {
+          throw new ConflictException('Profile creation is already in progress');
+        }
+        this.markProfileCreationRunSuperseded(
+          active,
+          now,
+          'Stale profile creation run superseded by newer meeting transcript',
+        );
+      } else if (this.isProfileCreationRunStale(active, now)) {
+        return this.reclaimProfileCreationRun(active, now, 'running');
+      } else {
+        throw new ConflictException('Profile creation is already in progress');
+      }
+    }
+
+    const existing = this.getProfileCreationRunByTranscript(
+      userId,
+      conversationId,
+      transcriptHash,
+    );
+    if (existing) {
+      if (existing.status === 'completed') {
+        return {
+          runId: existing.id,
+          status: 'completed',
+          transcriptHash,
+        };
+      }
+      if (existing.status === 'running') {
+        if (this.isProfileCreationRunStale(existing, now)) {
+          return this.reclaimProfileCreationRun(existing, now, 'running');
+        }
+        throw new ConflictException('Profile creation is already in progress');
+      }
+
+      return this.reclaimProfileCreationRun(existing, now, 'failed');
+    }
+
     const runId = randomUUID();
     const inserted = this.db.run(
       `INSERT OR IGNORE INTO student_profile_creation_runs (
@@ -647,7 +723,32 @@ export class StudentProfileService {
       };
     }
 
-    const existing = this.db.get<ProfileCreationRunRecord>(
+    throw new ConflictException('Profile creation claim could not be acquired');
+  }
+
+  private getActiveProfileCreationRunForConversation(
+    userId: string,
+    conversationId: string,
+  ): ProfileCreationRunRecord | undefined {
+    return this.db.get<ProfileCreationRunRecord>(
+      `SELECT id, user_id, conversation_id, transcript_hash, status, attempts,
+              error_message, started_at, completed_at, created_at, updated_at
+       FROM student_profile_creation_runs
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND status = 'running'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId, conversationId],
+    );
+  }
+
+  private getProfileCreationRunByTranscript(
+    userId: string,
+    conversationId: string,
+    transcriptHash: string,
+  ): ProfileCreationRunRecord | undefined {
+    return this.db.get<ProfileCreationRunRecord>(
       `SELECT id, user_id, conversation_id, transcript_hash, status, attempts,
               error_message, started_at, completed_at, created_at, updated_at
        FROM student_profile_creation_runs
@@ -657,24 +758,6 @@ export class StudentProfileService {
        LIMIT 1`,
       [userId, conversationId, transcriptHash],
     );
-    if (!existing) {
-      throw new ConflictException('Profile creation claim could not be acquired');
-    }
-    if (existing.status === 'completed') {
-      return {
-        runId: existing.id,
-        status: 'completed',
-        transcriptHash,
-      };
-    }
-    if (existing.status === 'running') {
-      if (this.isProfileCreationRunStale(existing, now)) {
-        return this.reclaimProfileCreationRun(existing, now, 'running');
-      }
-      throw new ConflictException('Profile creation is already in progress');
-    }
-
-    return this.reclaimProfileCreationRun(existing, now, 'failed');
   }
 
   private reclaimProfileCreationRun(
@@ -723,6 +806,35 @@ export class StudentProfileService {
     throw new ConflictException('Profile creation is already in progress');
   }
 
+  private markProfileCreationRunSuperseded(
+    existing: ProfileCreationRunRecord,
+    now: string,
+    errorMessage: string,
+  ): void {
+    const result = this.db.run(
+      `UPDATE student_profile_creation_runs
+       SET status = 'failed',
+           error_message = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND status = 'running'
+         AND started_at = ?
+         AND updated_at = ?`,
+      [
+        this.cleanString(errorMessage, 600) ?? 'Profile creation run superseded',
+        now,
+        now,
+        existing.id,
+        existing.started_at,
+        existing.updated_at,
+      ],
+    );
+    if (result.changes !== 1) {
+      throw new ConflictException('Profile creation is already in progress');
+    }
+  }
+
   private isProfileCreationRunStale(record: ProfileCreationRunRecord, now: string): boolean {
     const configuredTimeoutMs =
       this.configService.get<number>('app.profileCreationRunningTimeoutMs') ?? 900_000;
@@ -730,12 +842,38 @@ export class StudentProfileService {
       Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
         ? configuredTimeoutMs
         : 900_000;
-    const startedAtMs = Date.parse(record.started_at);
+    const leaseAtMs = Date.parse(record.updated_at);
     const nowMs = Date.parse(now);
-    if (!Number.isFinite(startedAtMs) || !Number.isFinite(nowMs)) {
+    if (!Number.isFinite(leaseAtMs) || !Number.isFinite(nowMs)) {
       return true;
     }
-    return nowMs - startedAtMs > timeoutMs;
+    return nowMs - leaseAtMs > timeoutMs;
+  }
+
+  private heartbeatProfileCreationRun(
+    runId: string,
+    claimedStartedAt?: string,
+  ): void {
+    const now = new Date().toISOString();
+    const result = claimedStartedAt
+      ? this.db.run(
+          `UPDATE student_profile_creation_runs
+           SET updated_at = ?
+           WHERE id = ?
+             AND status = 'running'
+             AND started_at = ?`,
+          [now, runId, claimedStartedAt],
+        )
+      : this.db.run(
+          `UPDATE student_profile_creation_runs
+           SET updated_at = ?
+           WHERE id = ?
+             AND status = 'running'`,
+          [now, runId],
+        );
+    if (result.changes !== 1) {
+      throw new ConflictException('Profile creation claim is no longer active');
+    }
   }
 
   private finalizeConversationOnboarding(options: {
@@ -864,6 +1002,31 @@ export class StudentProfileService {
         );
     if (result.changes !== 1) {
       throw new ConflictException('Profile creation claim is no longer active');
+    }
+  }
+
+  private markProfileCreationRunInconsistent(
+    runId: string,
+    errorMessage: string,
+  ): void {
+    const now = new Date().toISOString();
+    const result = this.db.run(
+      `UPDATE student_profile_creation_runs
+       SET status = 'failed',
+           error_message = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND status = 'completed'`,
+      [
+        this.cleanString(errorMessage, 600) ?? 'Profile creation state is inconsistent',
+        now,
+        now,
+        runId,
+      ],
+    );
+    if (result.changes !== 1) {
+      throw new ConflictException('Profile creation claim is no longer recoverable');
     }
   }
 

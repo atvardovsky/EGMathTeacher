@@ -760,6 +760,185 @@ describe('StudentProfileService', () => {
     expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
   });
 
+  it('rejects a second running conversation profile claim when transcript hash changed', async () => {
+    aiModel.createOperationResponse.mockReset();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-running-changed';
+    insertReadyMeeting(conversationId, now);
+    const originalTranscriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-running-changed',
+        user.id,
+        conversationId,
+        originalTranscriptHash,
+        now,
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-running-changed-extra',
+        user.id,
+        conversationId,
+        'request-running-changed-extra',
+        'meeting',
+        'Еще добавлю: мне важно больше коротких проверок и спокойный темп',
+        JSON.stringify({ answer: 'Зафиксировал, это поможет подобрать формат.' }),
+        new Date(Date.parse(now) + 10_000).toISOString(),
+      ],
+    );
+
+    expect(getMeetingTranscriptHash(user.id, conversationId)).not.toBe(originalTranscriptHash);
+    await expect(
+      service.completeOnboardingFromConversation({
+        user,
+        conversationId,
+      }),
+    ).rejects.toThrow('Profile creation is already in progress');
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+    expect(
+      db.all<{ status: string }>(
+        `SELECT status
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?
+           AND status = 'running'`,
+        [user.id, conversationId],
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('supersedes a stale running conversation profile claim when transcript hash changed', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-stale-changed';
+    insertReadyMeeting(conversationId, now);
+    const originalTranscriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    const staleAt = new Date(Date.now() - 3_600_000).toISOString();
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-stale-changed',
+        user.id,
+        conversationId,
+        originalTranscriptHash,
+        staleAt,
+        staleAt,
+        staleAt,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-stale-changed-extra',
+        user.id,
+        conversationId,
+        'request-stale-changed-extra',
+        'meeting',
+        'Еще добавлю: хочу тренировать производные через примеры и маленькие задачи',
+        JSON.stringify({ answer: 'Хорошо, добавлю это в предварительную стратегию.' }),
+        new Date(Date.parse(now) + 10_000).toISOString(),
+      ],
+    );
+    const newTranscriptHash = getMeetingTranscriptHash(user.id, conversationId);
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.all<{
+        status: string;
+        transcript_hash: string;
+        error_message: string | null;
+      }>(
+        `SELECT status, transcript_hash, error_message
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?
+         ORDER BY created_at ASC, id ASC`,
+        [user.id, conversationId],
+      ),
+    ).toEqual([
+      {
+        status: 'failed',
+        transcript_hash: originalTranscriptHash,
+        error_message: 'Stale profile creation run superseded by newer meeting transcript',
+      },
+      {
+        status: 'completed',
+        transcript_hash: newTranscriptHash,
+        error_message: null,
+      },
+    ]);
+  });
+
+  it('recovers a completed conversation profile run when the profile row is missing', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-completed-without-profile';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'completed', 1, NULL, ?, ?, ?, ?)`,
+      [
+        'profile-run-completed-missing-profile',
+        user.id,
+        conversationId,
+        transcriptHash,
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({
+      user,
+      conversationId,
+    });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.get<{ status: string; attempts: number; error_message: string | null }>(
+        `SELECT status, attempts, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-completed-missing-profile'],
+      ),
+    ).toEqual({
+      status: 'completed',
+      attempts: 2,
+      error_message: null,
+    });
+  });
+
   it('reports meeting readiness and ignores the technical starter prompt', async () => {
     const now = new Date().toISOString();
     const conversationId = 'meeting-conv-ready';
@@ -911,6 +1090,11 @@ describe('StudentProfileService', () => {
         '013_student_profile_creation_idempotency',
       ]),
     ).toEqual({ version: '013_student_profile_creation_idempotency' });
+    expect(
+      db.get<{ version: string }>('SELECT version FROM schema_migrations WHERE version = ?', [
+        '014_profile_creation_conversation_lock',
+      ]),
+    ).toEqual({ version: '014_profile_creation_conversation_lock' });
     expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   });
 });

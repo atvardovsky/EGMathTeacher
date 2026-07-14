@@ -140,9 +140,10 @@ App
   profile is created from stored `meeting` turns, not from a static form. The
   create-profile action is enabled only after
   `GET /student-profile/me/meeting-readiness` reports enough teaching context.
-  Reloading this screen restores the latest active saved `meeting` lesson when
-  one exists. After setup, the tutor workspace starts at the lesson launcher
-  rather than a blank state.
+  Reloading this screen restores the latest active saved `meeting` lesson only
+  when it has stored turns; an empty active meeting does not hide terminal
+  pre-profile meeting history. After setup, the tutor workspace starts at the
+  lesson launcher rather than a blank state.
 - The language switch changes static UI copy immediately and persists locally.
 - Browser speech recognition language follows the selected UI locale.
 - Browser speech synthesis can speak tutor answers aloud in the tutor

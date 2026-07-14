@@ -144,11 +144,13 @@ Current data-minimization rule:
 - verifier rows must store only task/answer evidence needed for teaching and
   debugging; expected answers must not be exposed to the student before an
   attempt is submitted
-- conversation-based first-meeting profile creation is idempotent by signed-in
-  user, conversation id, and transcript hash so HTTP retries or duplicate tabs
-  do not repeatedly send the same transcript through the four onboarding AI
-  calls after success; stale running claims are retryable after the configured
-  lease while fresh running claims remain blocked to avoid duplicate spend
+- conversation-based first-meeting profile creation records the transcript
+  hash used as input but permits only one running claim per signed-in user and
+  conversation, so HTTP retries or duplicate tabs do not repeatedly send the
+  same or slightly changed transcript through the four onboarding AI calls
+  while a fresh run is active; stale running claims are retryable after the
+  configured heartbeat lease while fresh running claims remain blocked to
+  avoid duplicate spend
 - the legacy structured JSON onboarding endpoint is disabled for student use
   by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
   trusted fallback/import workflows

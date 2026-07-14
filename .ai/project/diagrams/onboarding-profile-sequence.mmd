@@ -58,39 +58,52 @@ sequenceDiagram
   Profile->>DB: Read stored meeting tutor_turns for user and conversation
   DB-->>Profile: Meeting transcript
   Profile->>Profile: Recheck readiness and required teaching signals
-  Profile->>DB: Claim student_profile_creation_runs by user + conversation + transcript hash
-  alt Duplicate completed run
+  Profile->>DB: Claim student_profile_creation_runs with one running run per conversation and transcript hash
+  opt Completed run has no stored profile
+    Profile->>DB: Mark completed run inconsistent and failed
+    Profile->>DB: Reclaim failed run if old row version still matches
+  end
+  opt Stale running claim has changed transcript hash
+    Profile->>DB: Mark stale running run failed and superseded
+    Profile->>DB: Claim new transcript hash
+  end
+  alt Duplicate completed run with stored profile
     Profile->>DB: Read stored student_profiles
     Profile-->>API: Existing profile status
     API-->>Web: onboardingRequired=false and profile
-  else Fresh running claim
+  else Fresh running conversation claim
     Profile-->>API: Conflict until lease timeout
     API-->>Web: Profile creation already in progress
-  else New, failed, or stale running claim
+  else Claim acquired for new, failed, stale, recovered completed, or newer transcript
     opt Existing failed or stale running claim
       Profile->>DB: Reclaim claim if old row version still matches
     end
+    Profile->>DB: Heartbeat running claim before paid AI calls
     Profile->>AIModel: Extract onboarding answers from transcript with lessonSessionId
     AIModel->>Policy: Resolve onboardingConversationExtraction policy
     Policy-->>AIModel: Extractor role, model, metadata, optional service tier
     AIModel->>OpenAI: Create extraction response
     OpenAI-->>AIModel: Teaching-only onboarding answers
     AIModel-->>Profile: Extracted answer JSON
+    Profile->>DB: Heartbeat running claim after extraction
     Profile->>Knowledge: getActiveVectorStoreIds()
     Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
     Knowledge-->>Profile: Vector store ids
+    Profile->>DB: Heartbeat running claim before each specialist call
     Profile->>AIModel: Math knowledge diagnostician with conversationId and lessonSessionId
     AIModel->>Policy: Resolve onboardingKnowledgeDiagnosis policy
     Policy-->>AIModel: Specialist role, model, metadata, optional service tier
     AIModel->>OpenAI: Create specialist response
     OpenAI-->>AIModel: knowledgeState with evidence
     AIModel-->>Profile: knowledgeState
+    Profile->>DB: Heartbeat running claim before next specialist call
     Profile->>AIModel: Psychopedagogical profiler with lesson usage context
     AIModel->>Policy: Resolve onboardingPsychopedagogicalProfile policy
     Policy-->>AIModel: Specialist role, model, metadata, optional service tier
     AIModel->>OpenAI: Create specialist response
     OpenAI-->>AIModel: learningPreferences and psychologicalProfile
     AIModel-->>Profile: learningPreferences and safe profile hypotheses
+    Profile->>DB: Heartbeat running claim before next specialist call
     Profile->>AIModel: Teaching strategy planner with lesson usage context
     AIModel->>Policy: Resolve onboardingStrategyPlan policy
     Policy-->>AIModel: Specialist role, model, metadata, optional service tier

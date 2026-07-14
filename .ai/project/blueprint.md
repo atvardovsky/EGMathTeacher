@@ -51,15 +51,18 @@ visible next actions.
 - Specialist AI profile pipeline for first-login onboarding: conversation
   extraction from stored `meeting` turns, math knowledge diagnostician,
   tutoring-focused psychopedagogical profiler, and teaching strategy planner.
-  Conversation-based profile creation is idempotent by signed-in user,
-  conversation id, and transcript hash; after success, duplicate calls return
-  the stored profile instead of rerunning the extractor or three specialist AI
-  calls. Fresh running claims are rejected, while failed or stale running
-  claims can be retried after the configured lease. After successful profile
-  creation, the profile row, `meeting` lesson finish, and creation-run
-  completion are committed together. The legacy structured JSON onboarding
-  endpoint is a trusted fallback/import path only and is disabled for student
-  use unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`.
+  Conversation-based profile creation stores the transcript hash used as
+  input, but allows only one running claim for the same signed-in user and
+  conversation. After success, duplicate calls return the stored profile
+  instead of rerunning the extractor or three specialist AI calls. Fresh
+  running claims are rejected even when the transcript changed in another tab,
+  while failed claims and stale running claims can be retried after the
+  configured heartbeat lease. Completed run rows without a stored profile are
+  treated as inconsistent failed rows and can be retried. After successful
+  profile creation, the profile row, `meeting` lesson finish, and
+  creation-run completion are committed together. The legacy structured JSON
+  onboarding endpoint is a trusted fallback/import path only and is disabled
+  for student use unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true`.
 - DB-backed student profile memory with onboarding answers, knowledge state,
   learning preferences, tutoring-focused psychopedagogical profile, explanation
   strategy, and compact AI summary.
