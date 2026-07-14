@@ -9,8 +9,9 @@ Framework source:
 - Initial baseline commit: `17cf62e Route future sessions through installed adapter state`
 - Previous baseline commit: `6a6bef1 Add machine-readable context routing`
 - Previous baseline commit: `4654732 Add installed adapter validator`
-- Current baseline commit: `8dab3d1 Add controlled effectiveness cost benchmarks`
-- Framework version: `0.1.0-alpha.0`
+- Previous baseline commit: `8dab3d1 Add controlled effectiveness cost benchmarks`
+- Current baseline commit: `5547fca Release cross-platform fixes as 0.1.0-alpha.2`
+- Framework version: `0.1.0-alpha.2`
 - Adapter schema version: `1`
 - Template version: `2`
 - Installed date: 2026-07-09
@@ -77,6 +78,11 @@ target validation on `npm run alatyr:check`. The 2026-07-14 framework update
 refreshed the baseline to `8dab3d1`, adopted template version 2 compact
 routing, added AI infrastructure item routing, and enabled large-task
 orchestration packet templates while deferring the optional consistency map.
+The 2026-07-14 follow-up update refreshed the recorded baseline to
+`5547fca` / `v0.1.0-alpha.2`, copied the scoped scaffolding profile wording
+from portable framework core, and left adapter schema, template version, rule
+registry, target templates, product behavior, runtime code, and supported
+assistant bridge surfaces unchanged.
 These updates did not change
 runtime code, runtime config, system web server config, live services, or
 accepted product behavior.

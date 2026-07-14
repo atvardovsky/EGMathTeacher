@@ -8,7 +8,7 @@ blocked, or not applicable for EGMathTeacher.
 Core profile state: complete with documented gaps
 Last reviewed: 2026-07-14
 Reviewed by: Codex using user-requested Alatyr update to source commit
-`8dab3d15c6e0dc983096c2aaca89fba75fe6fa14`
+`5547fca4f5cf7637463c525178f003d1ab65a4bc`
 
 Core item: `contours`
 State: enabled
@@ -348,9 +348,11 @@ Required files:
 - none in target runtime
 
 Reason: AlatyrCore scaffolder is source tooling, not a target mechanism.
-Validation or review: source dry-run output can inform update planning.
+Validation or review: source dry-run output and scaffold-profile evidence can
+inform update planning.
 Approval needs: required before writing or overwriting target instructions.
-Residual risk: no target-owned scaffolder or checker exists.
+Residual risk: no target-owned scaffolder exists; scaffold profiles do not
+prove target adapter maturity.
 Next action: continue using manual adapter-specific merges.
 
 ## Evidence

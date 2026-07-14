@@ -7,7 +7,7 @@ This file reports adapter readiness by task type.
 Overall adapter state: usable
 Last reviewed: 2026-07-14
 Reviewed by: Codex using user-requested Alatyr update scope for source commit
-`8dab3d15c6e0dc983096c2aaca89fba75fe6fa14`
+`5547fca4f5cf7637463c525178f003d1ab65a4bc`
 Blocking gaps:
 
 - backup owner remains unassigned in the adapter manifest

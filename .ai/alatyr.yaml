@@ -1,8 +1,8 @@
 schema_version: 1
 framework:
   name: "Alatyr Core"
-  version: "0.1.0-alpha.0"
-  source: "https://github.com/atvardovsky/AlatyrCore at 8dab3d15c6e0dc983096c2aaca89fba75fe6fa14"
+  version: "0.1.0-alpha.2"
+  source: "https://github.com/atvardovsky/AlatyrCore at 5547fca4f5cf7637463c525178f003d1ab65a4bc"
   template_version: 2
   rule_registry: ".ai/framework/rule-registry.json"
 installation:
@@ -92,7 +92,7 @@ modules:
     - "consistency-map: useful for broader future work, but no .ai/project/consistency-map.json is installed yet"
     - "multi-assistant-bridges: only AGENTS.md and AI_ASSISTANTS.md are currently supported"
     - "effectiveness-metrics: template installed, no comparative baseline yet"
-    - "scaffolding: source dry-run tooling used for review only, not installed as target mechanism"
+    - "scaffolding: source dry-run tooling and scaffold profiles used for review only, not installed as target mechanism"
 validation:
   commands:
     - name: "build"
