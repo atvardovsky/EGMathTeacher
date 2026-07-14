@@ -40,7 +40,9 @@ The web UI follows this tree:
 3. Student first-meeting screen when profile onboarding is required. This
    screen is voice-first: a green start button begins the AI-led meeting,
    tutor speech is enabled when the browser supports it, the mic reopens in
-   voice-dialog mode, and text input is only a fallback.
+   voice-dialog mode only while the meeting remains non-terminal, text input
+   is only a fallback, and unfinished meetings are restored from saved lesson
+   history after reload.
 4. Main app shell after onboarding or for admin users.
 5. Tutor workspace as the default main view.
 6. When the tutor workspace has no turns, show a lesson launcher with a
@@ -96,7 +98,8 @@ landing page.
   not drift into each other.
 - The first-login meeting must not be a static questionnaire as the primary
   path. Gather profile facts through the AI-led `meeting` dialog and create
-  the profile from the stored conversation.
+  the profile from the stored conversation only after backend readiness scoring
+  confirms enough real teaching context.
 - Use a green primary button for the first lesson launcher action. The launcher
   may start meeting, diagnostic, or practice only after a user click; it must
   not trigger model calls automatically on page load.
@@ -137,7 +140,9 @@ landing page.
   message, but it must not start speaking on page load.
 - In voice-dialog mode, the browser should hand the turn back to the student:
   after assistant speech ends, speech recognition starts automatically when the
-  browser supports it and permissions allow it.
+  browser supports it, permissions allow it, and the returned lesson lifecycle
+  is still non-terminal. Goal-reached, hard-limit, and manually finished
+  lesson records must not restart the mic.
 - Voice input must not fail silently. If browser recognition stops because of
   silence, permission, device, network, language, or automatic-start limits,
   show a short status reason near the mic control and keep the manual mic

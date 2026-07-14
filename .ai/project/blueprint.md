@@ -23,12 +23,18 @@ visible next actions.
 - First-login student meeting is voice-first. A prominent green button starts
   an AI-led `meeting` lesson; the tutor asks short questions one at a time,
   speaks responses when browser speech synthesis is available, reopens the
-  mic in voice-dialog mode, and keeps a text fallback for browser voice
-  issues. The student profile is created from the authenticated user's stored
-  meeting transcript, not from a frontend questionnaire payload. After setup,
-  the tutor workspace starts with a lesson launcher instead of a blank state:
-  a prominent green first-lesson button plus cards for first meeting, level
-  check, linear-equation practice, topic explanation, and mistake review.
+  mic in voice-dialog mode only while the meeting is non-terminal, and keeps a
+  text fallback for browser voice issues. The student profile is created from
+  the authenticated user's stored meeting transcript, not from a frontend
+  questionnaire payload, and only after backend meeting-readiness scoring
+  confirms enough real teaching context: preparation goal, self-assessment,
+  weak topic, explanation preference, and a diagnostic or contentful reply.
+  The technical starter prompt does not count as student evidence. Reloading
+  the first-meeting page restores an unfinished active `meeting` transcript
+  from saved lesson history. After setup, the tutor workspace starts with a
+  lesson launcher instead of a blank state: a prominent green first-lesson
+  button plus cards for first meeting, level check, linear-equation practice,
+  topic explanation, and mistake review.
 - Tutor-side saved lesson continuity: the workspace loads recent lessons,
   last questions, summaries, and stored turns from scoped
   `GET /tutor/lessons?scope=active|history` calls, shows an explicit
@@ -52,8 +58,11 @@ visible next actions.
   workspace also supports browser speech-synthesis output for visible tutor
   answers: voice dialog is enabled by default when supported, can be switched
   off by the student, speaks the tutor response, then automatically reopens the
-  mic for the next student turn. Each tutor turn has a speak/stop control. This
-  is local browser text-to-speech, not a backend audio-generation call, so
+  mic for the next student turn only when `lessonLifecycle.shouldStop=false`
+  and the lesson status is non-terminal. Terminal responses such as goal
+  completion or hard-limit stops clear the active conversation boundary and do
+  not restart speech recognition. Each tutor turn has a speak/stop control.
+  This is local browser text-to-speech, not a backend audio-generation call, so
   Russian stress and emotional prosody are limited by the installed browser
   voices. Browser speech-recognition timeouts, no-speech stops, permission
   blocks, device errors, and network errors are surfaced near the mic control;
@@ -85,7 +94,8 @@ visible next actions.
   support, or proposing goal completion. Backend policy accepts or rejects
   every proposed durable state change. The decision path can be disabled with
   `AI_LESSON_DECISION_ENABLED=false` and has a local fallback after
-  `AI_LESSON_DECISION_TIMEOUT_MS`.
+  `AI_LESSON_DECISION_TIMEOUT_MS`; the POC default is `3500` ms so live demo
+  fallback happens before the main tutor response path waits too long.
 - A lesson can stop when a hard learning limit is reached or when backend
   policy accepts a goal-completion proposal with enough evidence for the
   lesson type. A raw LLM `goalStatus=reached` or a self-reported phrase such
@@ -149,7 +159,10 @@ visible next actions.
   and auto-closed superseded lessons enqueue lesson-closure background review.
   Closure review produces or refreshes a compact session summary and
   profile/strategy hints from the stored conversation so future explanations
-  can better fit the student.
+  can better fit the student. Closure jobs are queued only from confirmed
+  state transitions returned by `LessonService`; repeated finish calls and
+  rejected terminal-conversation reuse do not create duplicate or premature
+  closure reviews.
 - Optional background batching stores sanitized tutor-turn observations in
   SQLite and sends grouped learning-window analysis after a configured
   observation count, idle timeout, or quality trigger. When batching is

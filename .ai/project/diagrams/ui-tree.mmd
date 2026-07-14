@@ -12,15 +12,20 @@ flowchart TB
   Meeting --> VoiceStart[Green start voice meeting button]
   Meeting --> MeetingVoice[Voice dialog switch, mic action, voice status]
   MeetingVoice --> MeetingSpeech[Browser speech synthesis]
-  MeetingSpeech --> MeetingAutoMic[Auto-start mic after tutor speech]
+  MeetingSpeech --> MeetingAutoMic[Auto-start mic after non-terminal tutor speech]
   Meeting --> TextFallback[Text fallback composer]
   Meeting --> MeetingTranscript[Stored meeting transcript list]
   MeetingTranscript --> StudentBubble[Student prompt bubble]
   MeetingTranscript --> TutorBubble[Tutor answer bubble with speak or stop action]
+  Meeting --> MeetingHydration[Restore active meeting after reload]
+  MeetingHydration --> ActiveMeetingApi[GET /tutor/lessons scope active]
+  Meeting --> MeetingReadiness[Backend readiness score and missing signals]
+  MeetingReadiness --> MeetingReadinessApi[GET /student-profile/me/meeting-readiness]
   VoiceStart --> MeetingTutorApi[POST /tutor/message lessonType meeting]
   TextFallback --> MeetingTutorApi
   MeetingAutoMic --> MeetingTutorApi
-  Meeting --> ProfileApi[POST /student-profile/me/from-conversation]
+  MeetingAutoMic --> MeetingReadiness
+  MeetingReadiness --> ProfileApi[POST /student-profile/me/from-conversation]
 
   FirstMeeting -->|no| Shell[Authenticated AppShell]
   Shell --> Header[Header: burger, brand, role, language]
@@ -72,11 +77,13 @@ flowchart TB
   Composer --> VoiceOutput[Voice dialog switch]
   Composer --> VoiceStatus[Voice status and stop reason]
   VoiceOutput --> SpeechSynthesis[Browser speech synthesis]
-  SpeechSynthesis --> AutoMic[Auto-start mic after tutor speech]
+  SpeechSynthesis --> AutoMic[Auto-start mic after non-terminal tutor speech]
   AutoMic --> VoiceStatus
   AutoMic --> Composer
   Composer --> TutorApi[POST /tutor/message]
   TutorApi --> TurnCard[Tutor turn card]
+  TutorApi --> TerminalBoundary[Terminal answer clears active conversation and lesson session]
+  TerminalBoundary --> ReadOnlyState
   TurnCard --> SpeakAction[Speak or stop answer]
   SpeakAction --> SpeechSynthesis
   TurnCard --> Blocks[Ordered response blocks]

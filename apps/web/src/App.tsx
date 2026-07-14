@@ -66,6 +66,7 @@ import {
   KnowledgeStatus,
   BackgroundRecoveryResult,
   LessonType,
+  StudentMeetingReadiness,
   StudentProfile,
   StudentProfileStatus,
   TutorAnswer,
@@ -503,6 +504,8 @@ function FirstMeetingScreen({
   );
   const [speakingTurnId, setSpeakingTurnId] = useState<string | null>(null);
   const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [meetingReadiness, setMeetingReadiness] = useState<StudentMeetingReadiness | null>(null);
+  const [meetingHydrated, setMeetingHydrated] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationIdRef = useRef<string | undefined>(conversationId);
@@ -520,7 +523,9 @@ function FirstMeetingScreen({
     [],
   );
   const answeredTurnCount = turns.filter((turn) => turn.answer).length;
-  const canBuildProfile = Boolean(conversationId && answeredTurnCount >= 2 && !sending);
+  const canBuildProfile = Boolean(
+    meetingReadiness?.canCreateProfile && conversationId && !sending && !finalizing,
+  );
 
   useEffect(
     () => () => {
@@ -536,6 +541,15 @@ function FirstMeetingScreen({
   }, [conversationId]);
 
   useEffect(() => {
+    void hydrateActiveMeeting();
+    void refreshMeetingReadiness();
+  }, []);
+
+  useEffect(() => {
+    void refreshMeetingReadiness(conversationId);
+  }, [answeredTurnCount, conversationId]);
+
+  useEffect(() => {
     voiceOutputEnabledRef.current = voiceOutputEnabled;
   }, [voiceOutputEnabled]);
 
@@ -549,6 +563,41 @@ function FirstMeetingScreen({
     return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
   }, [speechOutputSupported]);
 
+  async function hydrateActiveMeeting() {
+    try {
+      const history = await api<TutorLessonHistory>('/tutor/lessons?scope=active&limit=4&turnLimit=8');
+      const meeting = history.lessons.find(
+        (lesson) => lesson.lessonType === 'meeting' && !isTerminalLessonStatus(lesson.status),
+      );
+      if (!meeting || meeting.turns.length === 0) {
+        setMeetingHydrated(true);
+        return;
+      }
+      conversationIdRef.current = meeting.conversationId;
+      setConversationId(meeting.conversationId);
+      setActiveLessonSessionId(meeting.lessonSessionId);
+      setTurns(meeting.turns);
+      void refreshMeetingReadiness(meeting.conversationId);
+    } catch {
+      // First-meeting recovery is helpful but must not block a fresh meeting.
+    } finally {
+      setMeetingHydrated(true);
+    }
+  }
+
+  async function refreshMeetingReadiness(nextConversationId = conversationIdRef.current) {
+    const query = nextConversationId
+      ? `?conversationId=${encodeURIComponent(nextConversationId)}`
+      : '';
+    try {
+      setMeetingReadiness(
+        await api<StudentMeetingReadiness>(`/student-profile/me/meeting-readiness${query}`),
+      );
+    } catch {
+      setMeetingReadiness(null);
+    }
+  }
+
   function startMeeting() {
     if (sending) {
       return;
@@ -556,6 +605,7 @@ function FirstMeetingScreen({
     stopMeetingSpeech();
     stopVoice();
     setTurns([]);
+    setMeetingReadiness(null);
     conversationIdRef.current = undefined;
     setConversationId(undefined);
     setActiveLessonSessionId(undefined);
@@ -618,8 +668,9 @@ function FirstMeetingScreen({
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
+      void refreshMeetingReadiness(answer.conversationId);
       if (voiceOutputEnabled) {
-        speakMeetingAnswer(id, answer, true);
+        speakMeetingAnswer(id, answer, canContinueVoiceDialog(answer));
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : t.errors.tutor);
@@ -785,10 +836,15 @@ function FirstMeetingScreen({
     utterance.voice = selectSpeechVoice(speechVoices, locale);
     utterance.rate = locale === 'ru' ? 0.9 : 0.96;
     utterance.pitch = locale === 'ru' ? 1.04 : 1;
-    autoListenAfterSpeechRef.current = continueDialog;
+    autoListenAfterSpeechRef.current = continueDialog && canContinueVoiceDialog(answer);
     utterance.onend = () => {
       setSpeakingTurnId((current) => (current === turnId ? null : current));
-      if (autoListenAfterSpeechRef.current && voiceOutputEnabledRef.current && speechSupported) {
+      if (
+        autoListenAfterSpeechRef.current &&
+        voiceOutputEnabledRef.current &&
+        speechSupported &&
+        canContinueVoiceDialog(answer)
+      ) {
         autoListenAfterSpeechRef.current = false;
         window.setTimeout(() => startVoice(true), 250);
       }
@@ -878,8 +934,9 @@ function FirstMeetingScreen({
                   color="green"
                   className="lesson-start-button"
                   leftSection={<PlayCircle size={20} />}
-                  loading={sending && turns.length === 0}
+                  loading={!meetingHydrated || (sending && turns.length === 0)}
                   onClick={startMeeting}
+                  disabled={!meetingHydrated}
                 >
                   {turns.length === 0 ? t.onboarding.voiceStart : t.onboarding.restartMeeting}
                 </Button>
@@ -1429,16 +1486,24 @@ function TutorWorkspace({
           lessonType: currentLessonType,
         }),
       });
-      conversationIdRef.current = answer.conversationId;
-      setConversationId(answer.conversationId);
-      setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
-      setHistoryRecordLessonId(undefined);
+      const terminalAnswer = isTerminalTutorAnswer(answer);
+      if (terminalAnswer) {
+        conversationIdRef.current = undefined;
+        setConversationId(undefined);
+        setActiveLessonSessionId(undefined);
+        setHistoryRecordLessonId(answer.lessonLifecycle?.lessonSessionId);
+      } else {
+        conversationIdRef.current = answer.conversationId;
+        setConversationId(answer.conversationId);
+        setActiveLessonSessionId(answer.lessonLifecycle?.lessonSessionId);
+        setHistoryRecordLessonId(undefined);
+      }
       autoImageTurnIdsRef.current.add(answer.turnId ?? id);
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
       if (voiceOutputEnabled) {
-        speakTutorAnswer(id, answer, true);
+        speakTutorAnswer(id, answer, canContinueVoiceDialog(answer));
       }
       void refreshUsage(answer.lessonLifecycle?.lessonSessionId);
       void refreshLessonHistory();
@@ -1629,10 +1694,15 @@ function TutorWorkspace({
     utterance.voice = selectSpeechVoice(speechVoices, locale);
     utterance.rate = locale === 'ru' ? 0.92 : 0.96;
     utterance.pitch = locale === 'ru' ? 1.03 : 1;
-    autoListenAfterSpeechRef.current = continueDialog;
+    autoListenAfterSpeechRef.current = continueDialog && canContinueVoiceDialog(answer);
     utterance.onend = () => {
       setSpeakingTurnId((current) => (current === turnId ? null : current));
-      if (autoListenAfterSpeechRef.current && voiceOutputEnabledRef.current && speechSupported) {
+      if (
+        autoListenAfterSpeechRef.current &&
+        voiceOutputEnabledRef.current &&
+        speechSupported &&
+        canContinueVoiceDialog(answer)
+      ) {
         autoListenAfterSpeechRef.current = false;
         window.setTimeout(() => startVoice(true), 250);
       }
@@ -3132,6 +3202,19 @@ function isLessonType(value: string): value is LessonType {
     'visual_explanation',
     'reflection',
   ].includes(value);
+}
+
+function isTerminalTutorAnswer(answer: TutorAnswer): boolean {
+  const lifecycle = answer.lessonLifecycle;
+  return Boolean(
+    lifecycle?.shouldStop ||
+      lifecycle?.goalStatus === 'reached' ||
+      (lifecycle?.status && isTerminalLessonStatus(lifecycle.status)),
+  );
+}
+
+function canContinueVoiceDialog(answer: TutorAnswer): boolean {
+  return !isTerminalTutorAnswer(answer);
 }
 
 function lessonColor(lessonType: LessonType): string {

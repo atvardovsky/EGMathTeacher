@@ -61,7 +61,12 @@ decisions.
 - Finished, goal-reached, and hard-limit lesson conversations cannot be
   reopened through `POST /tutor/message`.
 - Lesson finish paths now enqueue background closure review for stored
-  conversation summaries and teaching-strategy/profile hints.
+  conversation summaries and teaching-strategy/profile hints only after
+  confirmed terminal transitions; repeated finish calls and rejected terminal
+  conversation reuse do not enqueue premature closure jobs.
+- First-meeting profile creation is gated by backend readiness scoring and
+  ignores the technical starter prompt; reloads restore unfinished active
+  meeting lessons.
 - First tutor turn no longer immediately adds active-learning seconds, and the
   default minimum turn heuristic is 30 seconds instead of 120 seconds.
 - Model-suggested `goalStatus=reached` no longer completes a lesson by itself;

@@ -48,10 +48,14 @@ Production domain:
 - Voice-first first-login meeting for students before the normal tutor
   workspace. The AI asks onboarding questions in a `meeting` lesson, the web
   client speaks tutor answers and reopens the mic when browser support allows
-  it, and the stored conversation is converted into the student profile. After
-  successful profile creation, the meeting lesson is closed and moved to
-  history. After setup, the tutor workspace opens with a lesson launcher and
-  a green first-lesson button instead of a blank state.
+  it while the lesson remains non-terminal, and the stored conversation is
+  converted into the student profile only after backend meeting-readiness
+  checks find enough real teaching context. The technical starter prompt does
+  not count as student evidence. After successful profile creation, the
+  meeting lesson is closed and moved to history. If the page reloads during an
+  unfinished meeting, the client restores the active meeting transcript from
+  saved lessons. After setup, the tutor workspace opens with a lesson launcher
+  and a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
   shows active lessons separately from read-only historical records, auto-opens
@@ -114,7 +118,10 @@ Production domain:
   the reused conversation id when the lesson type changes.
 - Lesson finish paths enqueue background closure review so the stored
   conversation can produce a compact session summary and profile/strategy
-  hints for teaching the student better.
+  hints for teaching the student better. Closure review is queued only after a
+  confirmed state transition to a terminal lesson status; repeated finish
+  calls or rejected terminal-conversation reuse do not create duplicate or
+  premature closure jobs.
 - The tutor prompt includes DB-backed continuity context for the active
   conversation, plus recent session summaries, so a resumed lesson can pick up
   from the previous discussion instead of starting from zero. Older saved
@@ -171,9 +178,12 @@ Production domain:
 - Browser voice output using local speech synthesis in the tutor workspace.
   Voice dialog is on by default when supported, can be switched off by the
   student, speaks tutor answers, then automatically opens the mic for the next
-  student turn. Each tutor answer has a speak/stop control. This does not call
-  OpenAI audio APIs or store generated audio, so Russian stress/emotion quality
-  remains limited by the installed browser voices. Browser speech recognition
+  student turn only when the lesson lifecycle is still non-terminal. Terminal
+  answers such as goal completion or hard-limit stops clear the active
+  conversation boundary and do not restart speech recognition. Each tutor
+  answer has a speak/stop control. This does not call OpenAI audio APIs or
+  store generated audio, so Russian stress/emotion quality remains limited by
+  the installed browser voices. Browser speech recognition
   can still stop after silence, permission/device issues, or network/browser
   policy; the web UI shows the stop reason and retries once after an automatic
   silence stop in voice-dialog mode. Short uncertain voice fragments without

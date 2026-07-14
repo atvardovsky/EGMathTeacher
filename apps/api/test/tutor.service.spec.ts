@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { TutorService } from '../src/tutor/tutor.service';
 import { AuthSession } from '../src/auth/auth.types';
+import { LessonBoundaryRejectedException } from '../src/lesson/lesson.service';
 
 describe('TutorService', () => {
   const user: AuthSession = {
@@ -146,30 +147,36 @@ describe('TutorService', () => {
       enqueueLessonClosureReview: jest.fn(),
     };
     const lessonService = {
-      beginTurn: jest.fn(() => lifecycle),
+      beginTurnWithTransitions: jest.fn(() => ({
+        lifecycle,
+        closedSessions: [],
+      })),
       completeTurn: jest.fn(({ lifecycle: inputLifecycle, goalStatus }) => ({
         ...inputLifecycle,
         goalStatus,
         status: goalStatus === 'reached' ? 'goal_reached' : inputLifecycle.status,
         shouldStop: goalStatus === 'reached' || inputLifecycle.shouldStop,
       })),
-      finishSession: jest.fn(() => ({
-        id: 'lesson-finished',
-        user_id: user.id,
-        conversation_id: 'conv-finished',
-        lesson_type: 'practice',
-        status: 'finished',
-        goal_status: 'in_progress',
-        goal_text: 'Продолжить практику.',
-        success_criteria_json: JSON.stringify(['самостоятельная попытка']),
-        finish_reason: 'student_finished_lesson',
-        active_learning_seconds: 360,
-        turn_count: 2,
-        started_at: '2026-07-12T10:00:00.000Z',
-        last_activity_at: '2026-07-12T10:10:00.000Z',
-        finished_at: '2026-07-12T10:12:00.000Z',
-        created_at: '2026-07-12T10:00:00.000Z',
-        updated_at: '2026-07-12T10:12:00.000Z',
+      finishSessionWithTransition: jest.fn(() => ({
+        transitioned: true,
+        session: {
+          id: 'lesson-finished',
+          user_id: user.id,
+          conversation_id: 'conv-finished',
+          lesson_type: 'practice',
+          status: 'finished',
+          goal_status: 'in_progress',
+          goal_text: 'Продолжить практику.',
+          success_criteria_json: JSON.stringify(['самостоятельная попытка']),
+          finish_reason: 'student_finished_lesson',
+          active_learning_seconds: 360,
+          turn_count: 2,
+          started_at: '2026-07-12T10:00:00.000Z',
+          last_activity_at: '2026-07-12T10:10:00.000Z',
+          finished_at: '2026-07-12T10:12:00.000Z',
+          created_at: '2026-07-12T10:00:00.000Z',
+          updated_at: '2026-07-12T10:12:00.000Z',
+        },
       })),
     };
     const lessonDecision = {
@@ -632,7 +639,7 @@ describe('TutorService', () => {
       lessonSessionId: 'lesson-finished',
     });
 
-    expect(lessonService.finishSession).toHaveBeenCalledWith({
+    expect(lessonService.finishSessionWithTransition).toHaveBeenCalledWith({
       userId: user.id,
       lessonSessionId: 'lesson-finished',
       reason: 'student_finished_lesson',
@@ -653,6 +660,122 @@ describe('TutorService', () => {
         finishReason: 'student_finished_lesson',
       }),
     );
+  });
+
+  it('does not queue closure analysis when finish is called on an already terminal lesson', () => {
+    const { service, lessonService, backgroundAi } = createService();
+    (lessonService.finishSessionWithTransition as jest.Mock).mockReturnValueOnce({
+      transitioned: false,
+      session: {
+        id: 'lesson-finished',
+        user_id: user.id,
+        conversation_id: 'conv-finished',
+        lesson_type: 'practice',
+        status: 'finished',
+        goal_status: 'in_progress',
+        goal_text: 'Продолжить практику.',
+        success_criteria_json: JSON.stringify(['самостоятельная попытка']),
+        finish_reason: 'student_finished_lesson',
+        active_learning_seconds: 360,
+        turn_count: 2,
+        started_at: '2026-07-12T10:00:00.000Z',
+        last_activity_at: '2026-07-12T10:10:00.000Z',
+        finished_at: '2026-07-12T10:12:00.000Z',
+        created_at: '2026-07-12T10:00:00.000Z',
+        updated_at: '2026-07-12T10:12:00.000Z',
+      },
+    });
+
+    service.finishLesson({
+      user,
+      lessonSessionId: 'lesson-finished',
+    });
+
+    expect(backgroundAi.enqueueLessonClosureReview).not.toHaveBeenCalled();
+  });
+
+  it('queues closure analysis only for sessions confirmed by beginTurn transitions', async () => {
+    const { service, lessonService, backgroundAi } = createService();
+    (lessonService.beginTurnWithTransitions as jest.Mock).mockReturnValueOnce({
+      lifecycle: {
+        lessonSessionId: 'lesson-new',
+        conversationId: 'conv-new',
+        lessonType: 'tutor',
+        status: 'active',
+        goalStatus: 'in_progress',
+        goalStatusEvidence: 'none',
+        goalEvidenceLevel: 'none',
+        lessonGoal: 'Дать понятный разбор вопроса и проверить понимание.',
+        successCriteria: ['объяснен главный шаг'],
+        turnCount: 1,
+        activeLearningSeconds: 0,
+        dayActiveLearningSeconds: 0,
+        dailyLimit: { status: 'ok', softLimitSeconds: 5400, hardLimitSeconds: 7200, usedSeconds: 0, remainingSeconds: 7200 },
+        continuousLimit: { status: 'ok', softLimitSeconds: 2700, hardLimitSeconds: 3600, usedSeconds: 0, remainingSeconds: 3600 },
+        shouldSuggestBreak: false,
+        shouldStop: false,
+        strategySignal: {
+          direction: 'unknown',
+          summary: 'Пока недостаточно данных.',
+          recommendedAdjustment: 'Собирай сигналы понимания.',
+        },
+      },
+      closedSessions: [
+        {
+          id: 'lesson-old',
+          user_id: user.id,
+          conversation_id: 'conv-old',
+          lesson_type: 'practice',
+          status: 'finished',
+          goal_status: 'in_progress',
+          goal_text: 'Практика.',
+          success_criteria_json: JSON.stringify(['попытка']),
+          finish_reason: 'superseded_by_new_lesson_session',
+          active_learning_seconds: 120,
+          turn_count: 1,
+          started_at: '2026-07-12T10:00:00.000Z',
+          last_activity_at: '2026-07-12T10:02:00.000Z',
+          finished_at: '2026-07-12T10:03:00.000Z',
+          created_at: '2026-07-12T10:00:00.000Z',
+          updated_at: '2026-07-12T10:02:00.000Z',
+        },
+      ],
+    });
+
+    await service.answerMessage({
+      user,
+      message: 'Начнем новую тему',
+      conversationId: 'conv-new',
+      source: 'text',
+    });
+
+    expect(backgroundAi.enqueueLessonClosureReview).toHaveBeenCalledWith({
+      userId: user.id,
+      conversationId: 'conv-old',
+      lessonSessionId: 'lesson-old',
+      lessonType: 'practice',
+      finishReason: 'superseded_by_new_lesson_session',
+    });
+  });
+
+  it('does not queue closure analysis when a terminal conversation reject closes nothing', async () => {
+    const { service, lessonService, backgroundAi } = createService();
+    (lessonService.beginTurnWithTransitions as jest.Mock).mockImplementationOnce(() => {
+      throw new LessonBoundaryRejectedException(
+        'Finished lesson conversations cannot be reopened. Start a new lesson.',
+      );
+    });
+
+    await expect(
+      service.answerMessage({
+        user,
+        message: 'Продолжим старое занятие',
+        conversationId: 'conv-finished',
+        source: 'text',
+      }),
+    ).rejects.toThrow('Finished lesson conversations cannot be reopened');
+
+    expect(backgroundAi.enqueueLessonClosureReview).not.toHaveBeenCalled();
   });
 
   it('returns legacy tutor-turn conversations when no lesson session exists', () => {
@@ -805,39 +928,43 @@ describe('TutorService', () => {
 
   it('returns a local stop response when the hard learning limit is reached', async () => {
     const { service, aiModel, backgroundAi, lessonService } = createService();
-    (lessonService.beginTurn as jest.Mock).mockReturnValueOnce({
-      lessonSessionId: 'lesson-hard',
-      conversationId: 'conv-hard',
-      lessonType: 'tutor',
-      status: 'hard_limit_reached',
-      goalStatus: 'stopped_by_limit',
-      goalStatusEvidence: 'learning_limit',
-      lessonGoal: 'Дать понятный разбор вопроса и проверить понимание.',
-      successCriteria: ['объяснен главный шаг'],
-      finishReason: 'daily_learning_limit_reached',
-      turnCount: 9,
-      activeLearningSeconds: 7200,
-      dayActiveLearningSeconds: 7200,
-      dailyLimit: {
-        status: 'hard_limit',
-        softLimitSeconds: 5400,
-        hardLimitSeconds: 7200,
-        usedSeconds: 7200,
-        remainingSeconds: 0,
-      },
-      continuousLimit: {
-        status: 'ok',
-        softLimitSeconds: 2700,
-        hardLimitSeconds: 3600,
-        usedSeconds: 1200,
-        remainingSeconds: 2400,
-      },
-      shouldSuggestBreak: true,
-      shouldStop: true,
-      strategySignal: {
-        direction: 'stable',
-        summary: 'Сигналы стабильны.',
-        recommendedAdjustment: 'Остановиться на сегодня.',
+    (lessonService.beginTurnWithTransitions as jest.Mock).mockReturnValueOnce({
+      closedSessions: [],
+      lifecycle: {
+        lessonSessionId: 'lesson-hard',
+        conversationId: 'conv-hard',
+        lessonType: 'tutor',
+        status: 'hard_limit_reached',
+        goalStatus: 'stopped_by_limit',
+        goalStatusEvidence: 'learning_limit',
+        goalEvidenceLevel: 'none',
+        lessonGoal: 'Дать понятный разбор вопроса и проверить понимание.',
+        successCriteria: ['объяснен главный шаг'],
+        finishReason: 'daily_learning_limit_reached',
+        turnCount: 9,
+        activeLearningSeconds: 7200,
+        dayActiveLearningSeconds: 7200,
+        dailyLimit: {
+          status: 'hard_limit',
+          softLimitSeconds: 5400,
+          hardLimitSeconds: 7200,
+          usedSeconds: 7200,
+          remainingSeconds: 0,
+        },
+        continuousLimit: {
+          status: 'ok',
+          softLimitSeconds: 2700,
+          hardLimitSeconds: 3600,
+          usedSeconds: 1200,
+          remainingSeconds: 2400,
+        },
+        shouldSuggestBreak: true,
+        shouldStop: true,
+        strategySignal: {
+          direction: 'stable',
+          summary: 'Сигналы стабильны.',
+          recommendedAdjustment: 'Остановиться на сегодня.',
+        },
       },
     });
 

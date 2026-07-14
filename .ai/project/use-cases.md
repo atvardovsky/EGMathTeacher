@@ -60,8 +60,11 @@ Rules from current implementation:
 - Voice dialog is enabled by default when speech synthesis is available, has a
   visible on/off switch in the tutor composer, and each tutor answer has a
   speak/stop control for replay or interruption. After a spoken tutor answer,
-  the web client automatically starts speech recognition when browser support
-  and permissions allow it.
+  the web client automatically starts speech recognition only when browser
+  support and permissions allow it and the returned lesson lifecycle is still
+  non-terminal (`shouldStop=false`, not `finished`, `goal_reached`, or
+  `hard_limit_reached`). Terminal responses clear the active conversation
+  boundary instead of letting the next voice/text turn reopen it.
 - Browser speech recognition may stop after silence, permission changes,
   network errors, or browser policy. The tutor UI shows a short voice-status
   reason, retries once after an automatic silence stop in voice-dialog mode,
@@ -200,7 +203,10 @@ Rules from current implementation:
   compact session summary and a profile/strategy refresh; in batched mode it
   also pulls pending observations into an immediate learning-window analysis.
   These jobs analyze stored lesson conversation data to find teaching-useful
-  information about the student.
+  information about the student. Closure review is queued only after
+  `LessonService` reports an actual state transition to a terminal lesson
+  status. Repeated finish requests and rejected terminal conversation reuse do
+  not trigger duplicate or premature closure reviews.
 - Background analysis stores layered teaching evidence:
   - L0 raw turn data stays limited to `tutor_turns`
   - L1 sanitized turn observations stay in `background_learning_observations`
@@ -236,8 +242,9 @@ Rules from current implementation:
 - Profile status is loaded through `GET /student-profile/me`.
 - The default student profile creation path uses
   `POST /student-profile/me/from-conversation` after an AI-led `meeting`
-  lesson has stored enough turns. The legacy `PUT /student-profile/me`
-  contract remains available for trusted fallback/import use.
+  lesson has passed backend meeting-readiness scoring. The legacy
+  `PUT /student-profile/me` contract remains available for trusted
+  fallback/import use.
 - Admin users do not require onboarding by default.
 - The meeting screen is voice-first: a green start button begins the AI-led
   conversation, tutor answers are spoken when browser speech synthesis is
@@ -247,6 +254,13 @@ Rules from current implementation:
   context, confidence, emotional relation to math, weak topics, explanation
   preferences, pacing, visual preference, analogy interests, and short
   diagnostic answers.
+- The web client calls `GET /student-profile/me/meeting-readiness` and enables
+  profile creation only when the backend sees at least three meaningful
+  student replies plus the required teaching signals: preparation goal,
+  self-assessment, weak topic, explanation preference, and one diagnostic or
+  contentful math reply. The technical starter prompt is ignored.
+- If the first-meeting page reloads before setup is complete, the client
+  restores the latest active saved `meeting` lesson and its stored turns.
 - The wording avoids presenting the diagnostic as a school test or static
   questionnaire.
 - The API creates the profile through specialist AI evaluator calls:
@@ -254,6 +268,10 @@ Rules from current implementation:
   - math knowledge diagnostician
   - tutoring-focused psychopedagogical profiler
   - teaching strategy planner
+- The conversation extractor and all specialist onboarding calls carry the
+  first meeting `conversationId` and `lessonSessionId` in local usage context,
+  so the usage ledger can attribute onboarding cost to the lesson as well as
+  the day.
 - Specialist outputs should include confidence and evidence for meaningful
   inferences when possible.
 - OpenAI is the implemented model provider for those specialist calls in the

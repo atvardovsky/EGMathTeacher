@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { StudentProfileService } from './student-profile.service';
-import { StudentOnboardingAnswers, StudentProfileStatus } from './student-profile.types';
+import {
+  StudentMeetingReadiness,
+  StudentOnboardingAnswers,
+  StudentProfileStatus,
+} from './student-profile.types';
 
 @Controller('student-profile')
 @UseGuards(AuthGuard)
@@ -12,6 +16,14 @@ export class StudentProfileController {
   @Get('me')
   me(@Req() request: AuthenticatedRequest): StudentProfileStatus {
     return this.studentProfileService.getStatus(request.user!);
+  }
+
+  @Get('me/meeting-readiness')
+  meetingReadiness(
+    @Req() request: AuthenticatedRequest,
+    @Query('conversationId') conversationId?: string,
+  ): StudentMeetingReadiness {
+    return this.studentProfileService.getMeetingReadiness(request.user!, conversationId);
   }
 
   @Put('me')

@@ -399,6 +399,42 @@ async function mockStudentSession(
   await page.route('**/auth/me', (route) => fulfillJson(route, { user: studentUser }));
   await page.route('**/auth/logout', (route) => fulfillJson(route, {}));
   await page.route('**/student-profile/me**', async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/meeting-readiness')) {
+      return fulfillJson(route, {
+        conversationId: 'conv-e2e',
+        lessonSessionId: 'lesson-e2e',
+        canCreateProfile: tutorRequests.length >= 4,
+        score: tutorRequests.length >= 4 ? 100 : 40,
+        tutorTurnCount: tutorRequests.length,
+        meaningfulStudentTurnCount: Math.max(0, tutorRequests.length - 1),
+        presentSignals:
+          tutorRequests.length >= 4
+            ? [
+                'preparation_goal',
+                'self_assessment',
+                'weak_topic',
+                'explanation_preference',
+                'diagnostic_or_contentful_reply',
+              ]
+            : ['preparation_goal'],
+        missingSignals:
+          tutorRequests.length >= 4
+            ? []
+            : [
+                'self_assessment',
+                'weak_topic',
+                'explanation_preference',
+                'diagnostic_or_contentful_reply',
+              ],
+        requiredSignals: [
+          'preparation_goal',
+          'self_assessment',
+          'weak_topic',
+          'explanation_preference',
+          'diagnostic_or_contentful_reply',
+        ],
+      });
+    }
     if (['PUT', 'POST'].includes(route.request().method())) {
       profileStatus = completedProfileStatus;
     }
@@ -425,6 +461,8 @@ async function mockStudentSession(
     const requestLessonType = typeof body.lessonType === 'string' ? body.lessonType : 'tutor';
     const requestConversationId =
       typeof body.conversationId === 'string' ? body.conversationId : undefined;
+    const terminalResponse =
+      typeof body.message === 'string' && body.message.toLowerCase().includes('заверши');
     const responseConversationId =
       requestConversationId ?? (requestLessonType === 'practice' ? 'conv-practice' : 'conv-e2e');
 
@@ -436,18 +474,26 @@ async function mockStudentSession(
         conversationId: responseConversationId,
         lessonSessionId: requestLessonType === 'practice' ? 'lesson-practice' : 'lesson-e2e',
         lessonType: requestLessonType,
+        status: terminalResponse ? 'goal_reached' : 'active',
+        goalStatus: terminalResponse ? 'reached' : 'in_progress',
+        finishReason: terminalResponse ? 'lesson_goal_reached' : undefined,
+        shouldStop: terminalResponse,
       },
       usage: {
         currency: 'USD',
         lesson: usageSummary.currentLesson.total,
         today: usageSummary.today,
       },
-      answer: 'Производная показывает скорость изменения. Начнем с простого примера.',
+      answer: terminalResponse
+        ? 'Цель занятия достигнута. Я остановлю урок здесь.'
+        : 'Производная показывает скорость изменения. Начнем с простого примера.',
       blocks: [
         {
           id: 'text-1',
           type: 'text',
-          text: 'Производная показывает скорость изменения. Начнем с простого примера.',
+          text: terminalResponse
+            ? 'Цель занятия достигнута. Я остановлю урок здесь.'
+            : 'Производная показывает скорость изменения. Начнем с простого примера.',
         },
         {
           id: 'example-1',
@@ -547,6 +593,60 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
     state.__lastRecognition?.onend?.();
   });
   await expect.poll(() => tutorRequests.length).toBe(2);
+  await expect(page.getByText('Ответь хотя бы на пару вопросов репетитора.')).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(2);
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: 'Уровень средний, уверенности мало, сложнее всего производные' },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+  await expect.poll(() => tutorRequests.length).toBe(3);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(3);
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: {
+            transcript:
+              'Мне удобнее сначала пример и медленно, в задаче 2x плюс 5 равно 17 ответ x равно 6',
+          },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+  await expect.poll(() => tutorRequests.length).toBe(4);
   await expect(page.getByText('Данных уже достаточно')).toBeVisible();
   await page.getByRole('button', { name: 'Создать профиль из разговора' }).click();
 
@@ -561,6 +661,11 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await expect(page.getByText('Практика: уравнения')).toBeVisible();
   expect(tutorRequests[0]).toMatchObject({ lessonType: 'meeting' });
   expect(tutorRequests[1]).toMatchObject({
+    conversationId: 'conv-e2e',
+    lessonType: 'meeting',
+    source: 'voice',
+  });
+  expect(tutorRequests[3]).toMatchObject({
     conversationId: 'conv-e2e',
     lessonType: 'meeting',
     source: 'voice',
@@ -586,6 +691,9 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await expect(
     page.getByText('Слушаю тебя. Если будет длинная пауза, браузер может выключить микрофон.'),
   ).toBeVisible();
+  const startsBeforeSilenceRetry = await page.evaluate(
+    () => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0,
+  );
   await page.evaluate(() => {
     const state = window as Window & {
       __lastRecognition?: { onerror: ((event: Event) => void) | null };
@@ -598,7 +706,7 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
     .poll(() =>
       page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
     )
-    .toBeGreaterThanOrEqual(4);
+    .toBeGreaterThanOrEqual(startsBeforeSilenceRetry + 1);
   await page.evaluate(() => {
     const state = window as Window & {
       __lastRecognition?: { onerror: ((event: Event) => void) | null };
@@ -703,6 +811,28 @@ test('student opens finished lesson records as read-only history', async ({ page
   await expect.poll(() => tutorRequests.length).toBe(1);
   expect(tutorRequests[0]).toMatchObject({ lessonType: 'practice' });
   expect(tutorRequests[0]).not.toHaveProperty('conversationId');
+});
+
+test('terminal tutor responses do not restart the microphone', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await page
+    .getByPlaceholder('Например: объясни задание 12 с производной')
+    .fill('Заверши занятие, если цель достигнута');
+  await page.getByRole('button', { name: 'Спросить' }).click();
+
+  await expect(page.getByText('Цель занятия достигнута. Я остановлю урок здесь.')).toBeVisible();
+  await expect(page.getByText('Это запись завершенного занятия.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Голосовой ввод' })).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(0);
+  expect(tutorRequests[0]).toMatchObject({ lessonType: 'tutor' });
 });
 
 test('changing tutor lesson mode starts a fresh conversation request', async ({ page }) => {

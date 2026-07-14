@@ -21,6 +21,13 @@ sequenceDiagram
   DB-->>Profile: No profile found
   API-->>Web: onboardingRequired=true
   Web-->>Student: Show voice-first meeting screen
+  opt Page reload with unfinished meeting
+    Web->>TutorApi: GET /tutor/lessons?scope=active&limit=4&turnLimit=8
+    TutorApi->>Tutor: getLessonHistory(scope active)
+    Tutor->>DB: Read active meeting lesson and recent turns
+    Tutor-->>TutorApi: Active meeting history
+    TutorApi-->>Web: Restore conversationId, lessonSessionId, and transcript
+  end
   Student->>Web: Click green start voice meeting button
   Web->>TutorApi: POST /tutor/message lessonType=meeting
   TutorApi->>Auth: Validate session cookie
@@ -33,19 +40,25 @@ sequenceDiagram
   Tutor->>DB: Persist tutor_turns with lesson_type=meeting
   Tutor-->>TutorApi: Meeting answer and conversationId
   TutorApi-->>Web: Visible tutor answer
-  Web-->>Student: Speak answer and reopen mic when supported
+  Web-->>Student: Speak answer and reopen mic only while lifecycle is non-terminal
   Student->>Web: Reply by voice or text
   Web->>TutorApi: POST /tutor/message with same conversationId
   TutorApi->>Tutor: Continue meeting turn
   Tutor->>DB: Persist additional meeting turn
   Tutor-->>TutorApi: Meeting answer
   TutorApi-->>Web: Visible tutor answer
+  Web->>API: GET /student-profile/me/meeting-readiness?conversationId
+  API->>Profile: getMeetingReadiness(user, conversationId)
+  Profile->>DB: Read meeting turns and active meeting lesson_session
+  Profile-->>API: Readiness score, present signals, missing signals
+  API-->>Web: Enable profile action only when backend says ready
   Student->>Web: Create profile from conversation
   Web->>API: POST /student-profile/me/from-conversation
   API->>Profile: completeOnboardingFromConversation(user, conversationId)
   Profile->>DB: Read stored meeting tutor_turns for user and conversation
   DB-->>Profile: Meeting transcript
-  Profile->>AIModel: Extract onboarding answers from transcript
+  Profile->>Profile: Recheck readiness and required teaching signals
+  Profile->>AIModel: Extract onboarding answers from transcript with lessonSessionId
   AIModel->>Policy: Resolve onboardingConversationExtraction policy
   Policy-->>AIModel: Extractor role, model, metadata, optional service tier
   AIModel->>OpenAI: Create extraction response
@@ -54,19 +67,19 @@ sequenceDiagram
   Profile->>Knowledge: getActiveVectorStoreIds()
   Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
   Knowledge-->>Profile: Vector store ids
-  Profile->>AIModel: Math knowledge diagnostician with optional file_search
+  Profile->>AIModel: Math knowledge diagnostician with conversationId and lessonSessionId
   AIModel->>Policy: Resolve onboardingKnowledgeDiagnosis policy
   Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response
   OpenAI-->>AIModel: knowledgeState with evidence
   AIModel-->>Profile: knowledgeState
-  Profile->>AIModel: Psychopedagogical profiler with answers and knowledgeState
+  Profile->>AIModel: Psychopedagogical profiler with lesson usage context
   AIModel->>Policy: Resolve onboardingPsychopedagogicalProfile policy
   Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response
   OpenAI-->>AIModel: learningPreferences and psychologicalProfile
   AIModel-->>Profile: learningPreferences and safe profile hypotheses
-  Profile->>AIModel: Teaching strategy planner with profile sections
+  Profile->>AIModel: Teaching strategy planner with lesson usage context
   AIModel->>Policy: Resolve onboardingStrategyPlan policy
   Policy-->>AIModel: Specialist role, model, metadata, optional service tier
   AIModel->>OpenAI: Create specialist response

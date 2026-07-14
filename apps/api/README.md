@@ -178,6 +178,15 @@ The signaling API lives under `/webrtc`. See `docs/webrtc-module.md` for the ful
 
 Tutor/product API surfaces also include:
 
+- `GET /student-profile/me/meeting-readiness` for the signed-in student's
+  active first-meeting completeness score. It reads stored `meeting` turns,
+  ignores the technical starter prompt, and reports whether profile creation
+  is allowed before specialist AI calls are spent.
+- `POST /student-profile/me/from-conversation` for creating the student
+  profile from the stored first-meeting transcript. Conversation extraction
+  and the three specialist onboarding calls carry the `conversationId` and
+  `lessonSessionId` in local usage context so first-meeting cost can be
+  attributed to that lesson.
 - `GET /tutor/lessons?scope=active|history|all` for the signed-in user's
   active lesson sessions, read-only historical records, stored turns, summaries,
   and legacy saved discussions. Only non-terminal active lessons are resumable
@@ -185,8 +194,9 @@ Tutor/product API surfaces also include:
   Terminal lesson conversations are rejected by `POST /tutor/message` instead
   of being reopened.
 - `POST /tutor/lessons/:lessonSessionId/finish` for an authenticated student to
-  explicitly finish their own active lesson session, enqueue closure review,
-  and move it to history.
+  explicitly finish their own active lesson session, enqueue closure review
+  only on the first actual transition to terminal state, and move it to
+  history.
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.
@@ -212,9 +222,11 @@ Tutor/product API surfaces also include:
 - Background profile/signal assistant jobs also go through the `AiModelService`
   facade. In batched mode, sanitized tutor observations are stored in SQLite
   first, then grouped into learning windows before model calls. Lesson finish
-  can pull pending observations into an immediate closure analysis window while
-  also scheduling session-summary and profile/strategy refresh jobs; legacy
-  per-turn extraction remains available through configuration.
+  or another confirmed terminal transition can pull pending observations into
+  an immediate closure analysis window while also scheduling session-summary
+  and profile/strategy refresh jobs; rejected terminal-conversation reuse does
+  not create closure jobs. Legacy per-turn extraction remains available
+  through configuration.
 - Audio is forwarded as Opus RTP frames end-to-end. Data channel events are processed in-process and persisted into conversation transcripts/token usage through `WebRtcProviderEventService`.
 - In translator mode, the bridge waits for completed transcription events and requests translation against the transcribed text to reduce free-form assistant replies.
 

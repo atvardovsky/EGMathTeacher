@@ -283,7 +283,10 @@ model calls while preserving eventually consistent profile updates. Lesson
 closure review uses `session_summary`, `profile_strategy_refresh`, and, in
 batched mode, an immediate `learning_window_analysis` job with
 `triggerReason=lesson_finished` so completed conversations can still update
-teaching strategy from stored data.
+teaching strategy from stored data. Tutor runtime enqueues these jobs only
+from transition-confirmed closed sessions or from a current turn lifecycle
+that became terminal; rejected terminal-conversation reuse and repeated finish
+requests do not create new closure rows.
 Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
 before each drain: jobs with retry attempts left return to `pending`, and
 exhausted jobs become `failed`.
@@ -450,7 +453,10 @@ conversation id and lesson type. A lesson-type switch on a reused active
 conversation id finishes the previous active session and rejects the reused
 id; clients must start a new conversation boundary. Terminal sessions
 (`finished`, `goal_reached`, `hard_limit_reached`) cannot be reopened through
-`POST /tutor/message`. The DTO exposes `goalStatusEvidence` so callers can
+`POST /tutor/message`. `LessonService.beginTurnWithTransitions()` returns the
+exact session records that actually transitioned to terminal state so closure
+jobs are not inferred from preflight candidate queries. The DTO exposes
+`goalStatusEvidence` so callers can
 distinguish backend-observed completion, model-suggested pending completion,
 learning-limit stops, and ordinary in-progress state without adding a separate
 SQLite column in the POC. The DTO also exposes `goalEvidenceLevel`; accepted

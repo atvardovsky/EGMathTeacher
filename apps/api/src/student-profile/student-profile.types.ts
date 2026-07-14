@@ -76,6 +76,25 @@ export interface StudentProfileStatus {
   profile: StudentProfileDto | null;
 }
 
+export type StudentMeetingSignal =
+  | 'preparation_goal'
+  | 'self_assessment'
+  | 'weak_topic'
+  | 'explanation_preference'
+  | 'diagnostic_or_contentful_reply';
+
+export interface StudentMeetingReadiness {
+  conversationId?: string;
+  lessonSessionId?: string;
+  canCreateProfile: boolean;
+  score: number;
+  tutorTurnCount: number;
+  meaningfulStudentTurnCount: number;
+  presentSignals: StudentMeetingSignal[];
+  missingSignals: StudentMeetingSignal[];
+  requiredSignals: StudentMeetingSignal[];
+}
+
 export interface StudentProfileRecord {
   user_id: string;
   onboarding_completed_at: string;
@@ -92,6 +111,9 @@ export interface StudentProfileRecord {
 export interface StudentProfileRequestContext {
   user: AuthSession;
   answers: StudentOnboardingAnswers;
+  conversationId?: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
 }
 
 export interface StudentProfileConversationContext {

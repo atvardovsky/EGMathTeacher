@@ -32,8 +32,9 @@ Current covered areas:
 
 - auth registration/login/session token behavior
 - student profile onboarding requirement, stored meeting-conversation
-  extraction, AI profile storage, and tutor context summary behavior,
-  including specialist profile pipeline calls
+  extraction, backend meeting-readiness scoring, AI profile storage, lesson
+  usage attribution for onboarding specialist calls, and tutor context summary
+  behavior, including specialist profile pipeline calls
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
   storage, profile/strategy refresh merging, failed window observation release,
@@ -44,9 +45,11 @@ Current covered areas:
   visual requests, and generated image data URL persistence into the stored
   tutor turn
 - tutor lesson-history retrieval for active vs historical canonical lesson
-  sessions, explicit lesson finishing with closure-review enqueueing, terminal
-  conversation reopen rejection, stored tutor turns, prompt continuity context,
-  and legacy tutor-turn conversations exposed as read-only history
+  sessions, explicit lesson finishing with closure-review enqueueing only on
+  first transition, terminal conversation reopen rejection without false
+  closure jobs, transition-confirmed superseded closure jobs, stored tutor
+  turns, prompt continuity context, and legacy tutor-turn conversations exposed
+  as read-only history
 - AI model-provider facade delegation and role/operation policy application
   for response, lesson-decision, and image requests
 - Lesson Decision Agent policy rejection and decision observability storage
@@ -65,7 +68,8 @@ Current covered areas:
   result/error projection in usage summaries
 - mocked browser E2E for saved active lesson resume, read-only finished lesson
   records, disabled archived composer/voice actions, and starting a fresh
-  lesson from history
+  lesson from history, plus terminal tutor responses not restarting the
+  microphone
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation
@@ -90,7 +94,8 @@ normal `https://localhost:5137` dev server can keep running. They cover
 auth/localization, first-login meeting completion, lesson launcher
 visibility/start, explicit empty saved-lesson state, saved lesson list/resume
 with previous discussion hydration, browser speech-synthesis handoff for tutor replies,
-automatic speech-recognition restart after spoken tutor replies, tutor answer
+automatic speech-recognition restart after spoken non-terminal tutor replies,
+blocked speech-recognition restart after terminal tutor replies, tutor answer
 rendering, citation display, usage refresh control/background-job visibility,
 and explicit image rendering.
 

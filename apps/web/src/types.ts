@@ -408,6 +408,25 @@ export interface StudentProfileStatus {
   profile: StudentProfile | null;
 }
 
+export type StudentMeetingSignal =
+  | 'preparation_goal'
+  | 'self_assessment'
+  | 'weak_topic'
+  | 'explanation_preference'
+  | 'diagnostic_or_contentful_reply';
+
+export interface StudentMeetingReadiness {
+  conversationId?: string;
+  lessonSessionId?: string;
+  canCreateProfile: boolean;
+  score: number;
+  tutorTurnCount: number;
+  meaningfulStudentTurnCount: number;
+  presentSignals: StudentMeetingSignal[];
+  missingSignals: StudentMeetingSignal[];
+  requiredSignals: StudentMeetingSignal[];
+}
+
 export interface KnowledgeFile {
   id: string;
   originalName: string;

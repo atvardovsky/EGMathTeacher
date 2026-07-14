@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { DatabaseService } from '../src/database/database.service';
-import { LessonService } from '../src/lesson/lesson.service';
+import { LessonBoundaryRejectedException, LessonService } from '../src/lesson/lesson.service';
 
 function createConfig(sqlitePath: string, overrides: Record<string, unknown> = {}): ConfigService {
   const values: Record<string, unknown> = {
@@ -63,6 +63,68 @@ describe('LessonService', () => {
       status: 'finished',
       finish_reason: 'lesson_type_changed_to_practice',
     });
+  });
+
+  it('reports only actually closed sessions when lesson type drift is rejected', () => {
+    const tutorLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-type-transition',
+      lessonType: 'tutor',
+    });
+
+    try {
+      service.beginTurnWithTransitions({
+        userId: 'student-1',
+        conversationId: 'conv-type-transition',
+        lessonType: 'practice',
+      });
+      throw new Error('Expected beginTurnWithTransitions to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(LessonBoundaryRejectedException);
+      expect((error as LessonBoundaryRejectedException).closedSessions).toEqual([
+        expect.objectContaining({
+          id: tutorLifecycle.lessonSessionId,
+          status: 'finished',
+          finish_reason: 'lesson_type_changed_to_practice',
+        }),
+      ]);
+    }
+  });
+
+  it('rejects terminal conversation reuse without reporting unrelated active sessions as closed', () => {
+    const finishedLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-finished-reuse',
+      lessonType: 'tutor',
+    });
+    service.finishSession({
+      userId: 'student-1',
+      lessonSessionId: finishedLifecycle.lessonSessionId,
+      reason: 'student_finished_lesson',
+    });
+    const activeLifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-active-other',
+      lessonType: 'practice',
+    });
+
+    try {
+      service.beginTurnWithTransitions({
+        userId: 'student-1',
+        conversationId: 'conv-finished-reuse',
+        lessonType: 'tutor',
+      });
+      throw new Error('Expected beginTurnWithTransitions to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(LessonBoundaryRejectedException);
+      expect((error as LessonBoundaryRejectedException).closedSessions).toEqual([]);
+    }
+
+    expect(
+      db.get<{ status: string }>('SELECT status FROM lesson_sessions WHERE id = ?', [
+        activeLifecycle.lessonSessionId,
+      ]),
+    ).toEqual({ status: 'active' });
   });
 
   it('finishes superseded active sessions without moving them to the top of history', () => {
@@ -136,6 +198,30 @@ describe('LessonService', () => {
         lessonType: 'practice',
       }),
     ).toThrow('Finished lesson conversations cannot be reopened');
+  });
+
+  it('reports explicit finish transitions only once', () => {
+    const lifecycle = service.beginTurn({
+      userId: 'student-1',
+      conversationId: 'conv-manual-idempotent',
+      lessonType: 'practice',
+    });
+
+    const first = service.finishSessionWithTransition({
+      userId: 'student-1',
+      lessonSessionId: lifecycle.lessonSessionId,
+      reason: 'student_finished_lesson',
+    });
+    const second = service.finishSessionWithTransition({
+      userId: 'student-1',
+      lessonSessionId: lifecycle.lessonSessionId,
+      reason: 'student_finished_lesson',
+    });
+
+    expect(first.transitioned).toBe(true);
+    expect(first.session).toEqual(expect.objectContaining({ status: 'finished' }));
+    expect(second.transitioned).toBe(false);
+    expect(second.session).toEqual(expect.objectContaining({ status: 'finished' }));
   });
 
   it('closes an active lesson type drift but requires a fresh conversation boundary', () => {

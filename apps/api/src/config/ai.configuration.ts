@@ -141,7 +141,7 @@ export default registerAs('ai', () => {
     },
     lessonDecision: {
       enabled: (process.env.AI_LESSON_DECISION_ENABLED ?? 'true').toLowerCase() !== 'false',
-      timeoutMs: parseInt(process.env.AI_LESSON_DECISION_TIMEOUT_MS ?? '10000', 10),
+      timeoutMs: parseInt(process.env.AI_LESSON_DECISION_TIMEOUT_MS ?? '3500', 10),
     },
     usage: {
       trackingEnabled: (process.env.AI_USAGE_TRACKING_ENABLED ?? 'true').toLowerCase() !== 'false',

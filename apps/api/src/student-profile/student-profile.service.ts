@@ -7,6 +7,8 @@ import { KnowledgeService } from '../knowledge/knowledge.service';
 import {
   DiagnosticAnswer,
   StudentOnboardingAnswers,
+  StudentMeetingReadiness,
+  StudentMeetingSignal,
   StudentProfileDto,
   StudentProfileConversationContext,
   StudentProfileRecord,
@@ -28,6 +30,8 @@ interface ProfileSpecialistRequest {
   operation: AiOperationKey;
   specialist: string;
   userId: string;
+  conversationId?: string;
+  lessonSessionId?: string;
   instructions: string;
   inputText: string;
   vectorStoreIds: string[];
@@ -42,6 +46,14 @@ interface OnboardingConversationTurn {
   lesson_type: string;
   created_at: string;
 }
+
+const REQUIRED_MEETING_SIGNALS: StudentMeetingSignal[] = [
+  'preparation_goal',
+  'self_assessment',
+  'weak_topic',
+  'explanation_preference',
+  'diagnostic_or_contentful_reply',
+];
 
 @Injectable()
 export class StudentProfileService {
@@ -99,11 +111,28 @@ export class StudentProfileService {
     ].filter(Boolean).join('\n');
   }
 
+  getMeetingReadiness(
+    user: AuthSession,
+    conversationIdInput?: string,
+  ): StudentMeetingReadiness {
+    const conversationId =
+      this.cleanString(conversationIdInput, 160) ??
+      this.getLatestMeetingConversationId(user.id);
+    if (!conversationId) {
+      return this.emptyMeetingReadiness();
+    }
+    const turns = this.getMeetingConversationTurns(user.id, conversationId);
+    return this.buildMeetingReadiness(user.id, conversationId, turns);
+  }
+
   async completeOnboarding(
     context: StudentProfileRequestContext,
   ): Promise<StudentProfileStatus> {
     const answers = this.toTeachingOnlyAnswers(this.normalizeAnswers(context.answers));
-    const profile = await this.generateProfile(context.user, answers);
+    const profile = await this.generateProfile(context.user, answers, {
+      conversationId: context.conversationId,
+      lessonSessionId: context.lessonSessionId,
+    });
     const now = new Date().toISOString();
     const existing = this.getProfile(context.user.id);
     const createdAt = existing?.createdAt ?? now;
@@ -159,18 +188,25 @@ export class StudentProfileService {
     }
 
     const turns = this.getMeetingConversationTurns(context.user.id, conversationId);
-    if (turns.length < 2) {
-      throw new BadRequestException('First meeting conversation needs at least two tutor turns');
+    const readiness = this.buildMeetingReadiness(context.user.id, conversationId, turns);
+    if (!readiness.canCreateProfile) {
+      throw new BadRequestException(
+        `First meeting needs more teaching context: ${readiness.missingSignals.join(', ')}`,
+      );
     }
 
     const answers = await this.extractOnboardingAnswersFromConversation(
       context.user,
       conversationId,
       turns,
+      readiness.lessonSessionId,
     );
     const status = await this.completeOnboarding({
       user: context.user,
       answers,
+      conversationId,
+      lessonSessionId: readiness.lessonSessionId,
+      lessonType: 'meeting',
     });
     this.finishMeetingLessonAfterProfileCreation(context.user.id, conversationId);
     return status;
@@ -179,6 +215,7 @@ export class StudentProfileService {
   private async generateProfile(
     user: AuthSession,
     answers: StudentOnboardingAnswers,
+    usageContext: { conversationId?: string; lessonSessionId?: string } = {},
   ): Promise<GeneratedProfile> {
     const vectorStoreIds = this.knowledgeService.getActiveVectorStoreIds();
 
@@ -186,6 +223,8 @@ export class StudentProfileService {
       operation: 'onboardingKnowledgeDiagnosis',
       specialist: 'math-knowledge-diagnostician',
       userId: user.id,
+      conversationId: usageContext.conversationId,
+      lessonSessionId: usageContext.lessonSessionId,
       instructions: this.getKnowledgeDiagnosticInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -207,6 +246,8 @@ export class StudentProfileService {
       operation: 'onboardingPsychopedagogicalProfile',
       specialist: 'psychopedagogical-profiler',
       userId: user.id,
+      conversationId: usageContext.conversationId,
+      lessonSessionId: usageContext.lessonSessionId,
       instructions: this.getPsychopedagogicalInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -233,6 +274,8 @@ export class StudentProfileService {
       operation: 'onboardingStrategyPlan',
       specialist: 'teaching-strategy-planner',
       userId: user.id,
+      conversationId: usageContext.conversationId,
+      lessonSessionId: usageContext.lessonSessionId,
       instructions: this.getTeachingStrategyInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -291,6 +334,7 @@ export class StudentProfileService {
     user: AuthSession,
     conversationId: string,
     turns: OnboardingConversationTurn[],
+    lessonSessionId?: string,
   ): Promise<StudentOnboardingAnswers> {
     const response = await this.aiModel.createOperationResponse(
       'onboardingConversationExtraction',
@@ -299,6 +343,7 @@ export class StudentProfileService {
         usageContext: {
           userId: user.id,
           conversationId,
+          lessonSessionId,
           lessonType: 'meeting',
         },
         metadata: {
@@ -338,8 +383,11 @@ export class StudentProfileService {
     const answers = this.toTeachingOnlyAnswers(
       this.normalizeAnswers(rawAnswers as unknown as StudentOnboardingAnswers),
     );
-    if (!this.hasOnboardingEvidence(answers)) {
-      throw new BadRequestException('First meeting did not contain enough teaching signals');
+    const missingSignals = this.getMissingOnboardingAnswerSignals(answers);
+    if (missingSignals.length > 0) {
+      throw new BadRequestException(
+        `First meeting extracted profile is incomplete: ${missingSignals.join(', ')}`,
+      );
     }
     return answers;
   }
@@ -363,6 +411,8 @@ export class StudentProfileService {
       instructions: request.instructions,
       usageContext: {
         userId: request.userId,
+        conversationId: request.conversationId,
+        lessonSessionId: request.lessonSessionId,
         lessonType: 'meeting',
       },
       metadata: {
@@ -442,6 +492,20 @@ export class StudentProfileService {
   }
 
   private getLatestMeetingConversationId(userId: string): string | undefined {
+    const activeSession = this.db.get<{ conversation_id: string }>(
+      `SELECT conversation_id
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND lesson_type = 'meeting'
+         AND status NOT IN ('hard_limit_reached', 'goal_reached', 'finished')
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+    if (activeSession?.conversation_id) {
+      return activeSession.conversation_id;
+    }
+
     const session = this.db.get<{ conversation_id: string }>(
       `SELECT conversation_id
        FROM lesson_sessions
@@ -539,26 +603,128 @@ export class StudentProfileService {
     return texts.slice(0, 5).join('\n');
   }
 
-  private hasOnboardingEvidence(answers: StudentOnboardingAnswers): boolean {
-    const textFields = [
-      answers.exam,
-      answers.grade,
-      answers.currentLevel,
-      answers.confidence,
-      answers.mathFeeling,
-      answers.motivation,
-      answers.explanationStyle,
-      answers.pacing,
-      answers.hintPreference,
-      answers.practicePreference,
-      answers.feedbackStyle,
-    ];
-    return (
-      textFields.some((value) => Boolean(value)) ||
-      answers.weakTopics.length > 0 ||
-      answers.analogyInterests.length > 0 ||
-      answers.diagnosticAnswers.length > 0
+  private emptyMeetingReadiness(): StudentMeetingReadiness {
+    return {
+      canCreateProfile: false,
+      score: 0,
+      tutorTurnCount: 0,
+      meaningfulStudentTurnCount: 0,
+      presentSignals: [],
+      missingSignals: [...REQUIRED_MEETING_SIGNALS],
+      requiredSignals: [...REQUIRED_MEETING_SIGNALS],
+    };
+  }
+
+  private buildMeetingReadiness(
+    userId: string,
+    conversationId: string,
+    turns: OnboardingConversationTurn[],
+  ): StudentMeetingReadiness {
+    const lessonSession = this.getMeetingLessonSession(userId, conversationId);
+    const meaningfulPrompts = turns
+      .map((turn) => this.sanitizeTeachingString(turn.prompt, 1_000) ?? '')
+      .filter((prompt) => this.isMeaningfulMeetingPrompt(prompt));
+    const combined = meaningfulPrompts.join('\n').toLowerCase();
+    const presentSignals = REQUIRED_MEETING_SIGNALS.filter((signal) =>
+      this.hasMeetingSignal(signal, combined),
     );
+    const missingSignals = REQUIRED_MEETING_SIGNALS.filter(
+      (signal) => !presentSignals.includes(signal),
+    );
+    const meaningfulStudentTurnCount = meaningfulPrompts.length;
+    const turnScore = Math.min(30, Math.round((meaningfulStudentTurnCount / 3) * 30));
+    const signalScore = Math.round((presentSignals.length / REQUIRED_MEETING_SIGNALS.length) * 70);
+    const score = Math.min(100, turnScore + signalScore);
+
+    return {
+      conversationId,
+      lessonSessionId: lessonSession?.id,
+      canCreateProfile:
+        meaningfulStudentTurnCount >= 3 &&
+        turns.length >= 4 &&
+        missingSignals.length === 0,
+      score,
+      tutorTurnCount: turns.length,
+      meaningfulStudentTurnCount,
+      presentSignals,
+      missingSignals,
+      requiredSignals: [...REQUIRED_MEETING_SIGNALS],
+    };
+  }
+
+  private getMeetingLessonSession(
+    userId: string,
+    conversationId: string,
+  ): { id: string; status: string } | undefined {
+    return this.db.get<{ id: string; status: string }>(
+      `SELECT id, status
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND lesson_type = 'meeting'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId, conversationId],
+    );
+  }
+
+  private isMeaningfulMeetingPrompt(prompt: string): boolean {
+    const normalized = prompt.trim().toLowerCase();
+    if (normalized.length < 8) {
+      return false;
+    }
+    return !(
+      normalized.includes('начни первую голосовую встречу') ||
+      normalized.includes('начинаем первую встречу') ||
+      normalized.includes('start the first voice meeting') ||
+      normalized.includes('starting the first meeting')
+    );
+  }
+
+  private hasMeetingSignal(signal: StudentMeetingSignal, text: string): boolean {
+    switch (signal) {
+      case 'preparation_goal':
+        return /егэ|экзам|балл|поступ|цель|подготов|университет|ege|exam|score|goal|university|prepare/i.test(text);
+      case 'self_assessment':
+        return /уров|увер|тревож|средн|низк|высок|сложн|легко|не понимаю|плохо|нормально|confidence|level|hard|easy|anxious|medium|low|high/i.test(text);
+      case 'weak_topic':
+        return /производн|функц|уравнен|геометр|тригоном|логариф|стереометр|вероятност|параметр|пробел|застрева|сложн|weak|stuck|derivative|function|equation|geometry/i.test(text);
+      case 'explanation_preference':
+        return /пример|правил|схем|граф|визу|медлен|быстр|подсказ|практик|коротк|пошаг|example|rule|visual|graph|slow|hint|practice|step/i.test(text);
+      case 'diagnostic_or_contentful_reply':
+        return /[0-9]\s*[xх]|[xх]\s*=|=|задач|реш|ответ|пример|производн|функц|уравнен|граф|корн|derivative|equation|solve|answer|task/i.test(text);
+      default:
+        return false;
+    }
+  }
+
+  private getMissingOnboardingAnswerSignals(
+    answers: StudentOnboardingAnswers,
+  ): StudentMeetingSignal[] {
+    const missing: StudentMeetingSignal[] = [];
+    if (!answers.exam && !answers.motivation && !answers.targetScore) {
+      missing.push('preparation_goal');
+    }
+    if (!answers.currentLevel && !answers.confidence && !answers.mathFeeling) {
+      missing.push('self_assessment');
+    }
+    if (answers.weakTopics.length === 0) {
+      missing.push('weak_topic');
+    }
+    if (
+      !answers.explanationStyle &&
+      !answers.pacing &&
+      !answers.hintPreference &&
+      !answers.practicePreference &&
+      !answers.feedbackStyle &&
+      !answers.visualPreference
+    ) {
+      missing.push('explanation_preference');
+    }
+    if (answers.diagnosticAnswers.length === 0 && !answers.freeform) {
+      missing.push('diagnostic_or_contentful_reply');
+    }
+    return missing;
   }
 
   private normalizeAnswers(raw: StudentOnboardingAnswers): StudentOnboardingAnswers {

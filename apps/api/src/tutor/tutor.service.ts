@@ -8,7 +8,7 @@ import { DatabaseService } from '../database/database.service';
 import { CurriculumService } from '../lesson/curriculum.service';
 import { LessonDecisionService } from '../lesson/lesson-decision.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
-import { LessonService } from '../lesson/lesson.service';
+import { LessonBoundaryRejectedException, LessonService } from '../lesson/lesson.service';
 import { MathVerifierService } from '../lesson/math-verifier.service';
 import type {
   CurriculumContext,
@@ -252,15 +252,22 @@ export class TutorService {
     if (!lessonSessionId) {
       throw new BadRequestException('lessonSessionId is required');
     }
-    const row = this.lessonService.finishSession({
+    const result = this.lessonService.finishSessionWithTransition({
       userId: options.user.id,
       lessonSessionId,
       reason: 'student_finished_lesson',
     });
+    const row = result.session;
     if (!row) {
       throw new NotFoundException('Lesson session not found');
     }
-    this.enqueueLessonClosureReview(options.user, row, row.finish_reason ?? 'student_finished_lesson');
+    if (result.transitioned) {
+      this.enqueueLessonClosureReview(
+        options.user,
+        row,
+        row.finish_reason ?? 'student_finished_lesson',
+      );
+    }
     return this.buildLessonHistoryItem(options.user.id, row, 6);
   }
 
@@ -280,26 +287,22 @@ export class TutorService {
     const curriculum = this.curriculumService.resolve(message);
     const topicHint = curriculum.topicId;
     const correlationId = `turn_${randomUUID()}`;
-    const closureCandidates = this.getLessonSessionsClosedByNewBoundary(
-      options.user.id,
-      conversationId,
-      lessonType,
-    );
     let lifecycle: LessonLifecycleDto;
     try {
-      lifecycle = this.lessonService.beginTurn({
+      const beginTurn = this.lessonService.beginTurnWithTransitions({
         userId: options.user.id,
         conversationId,
         lessonType,
         topicHint,
       });
+      lifecycle = beginTurn.lifecycle;
+      this.enqueueLessonClosureReviews(options.user, beginTurn.closedSessions);
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        this.enqueueLessonClosureReviews(options.user, closureCandidates, conversationId, lessonType);
+      if (error instanceof LessonBoundaryRejectedException) {
+        this.enqueueLessonClosureReviews(options.user, error.closedSessions);
       }
       throw error;
     }
-    this.enqueueLessonClosureReviews(options.user, closureCandidates, conversationId, lessonType);
     if (lifecycle.shouldStop) {
       const answer = this.buildLimitStopAnswer(conversationId, lessonType, lifecycle);
       this.persistTutorTurn(options.user.id, conversationId, lessonType, message, answer, requestId);
@@ -973,45 +976,12 @@ export class TutorService {
     }
   }
 
-  private getLessonSessionsClosedByNewBoundary(
-    userId: string,
-    conversationId: string,
-    lessonType: LessonType,
-  ): LessonSessionRecord[] {
-    return this.db.all<LessonSessionRecord>(
-      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
-              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
-              started_at, last_activity_at, finished_at, created_at, updated_at
-       FROM lesson_sessions
-       WHERE user_id = ?
-         AND status NOT IN (${TERMINAL_LESSON_STATUSES.map(() => '?').join(', ')})
-         AND (
-           conversation_id != ?
-           OR (conversation_id = ? AND lesson_type != ?)
-         )
-       ORDER BY updated_at DESC`,
-      [
-        userId,
-        ...TERMINAL_LESSON_STATUSES,
-        conversationId,
-        conversationId,
-        lessonType,
-      ],
-    );
-  }
-
   private enqueueLessonClosureReviews(
     user: AuthSession,
     sessions: LessonSessionRecord[],
-    nextConversationId: string,
-    nextLessonType: LessonType,
   ): void {
     for (const session of sessions) {
-      const finishReason =
-        session.conversation_id === nextConversationId
-          ? `lesson_type_changed_to_${nextLessonType}`
-          : 'superseded_by_new_lesson_session';
-      this.enqueueLessonClosureReview(user, session, finishReason);
+      this.enqueueLessonClosureReview(user, session, session.finish_reason ?? undefined);
     }
   }
 

@@ -43,6 +43,25 @@ interface FinishSessionInput {
   reason: string;
 }
 
+export interface LessonBeginTurnResult {
+  lifecycle: LessonLifecycleDto;
+  closedSessions: LessonSessionRecord[];
+}
+
+export interface LessonFinishSessionResult {
+  session?: LessonSessionRecord;
+  transitioned: boolean;
+}
+
+export class LessonBoundaryRejectedException extends BadRequestException {
+  constructor(
+    message: string,
+    readonly closedSessions: LessonSessionRecord[] = [],
+  ) {
+    super(message);
+  }
+}
+
 const TERMINAL_STATUSES: LessonSessionStatus[] = [
   'hard_limit_reached',
   'goal_reached',
@@ -96,9 +115,13 @@ export class LessonService {
   ) {}
 
   beginTurn(input: BeginTurnInput): LessonLifecycleDto {
+    return this.beginTurnWithTransitions(input).lifecycle;
+  }
+
+  beginTurnWithTransitions(input: BeginTurnInput): LessonBeginTurnResult {
     const now = new Date();
     const nowIso = now.toISOString();
-    const session = this.getOrCreateSession(input, nowIso);
+    const { session, closedSessions } = this.getOrCreateSession(input, nowIso);
     const incrementSeconds = this.estimateActiveSeconds(
       session.last_activity_at,
       session.turn_count,
@@ -167,13 +190,16 @@ export class LessonService {
       updated_at: nowIso,
     };
 
-    return this.toLifecycle(
-      updatedSession,
-      dayActiveLearningSeconds,
-      dailyLimit,
-      continuousLimit,
-      input.topicHint,
-    );
+    return {
+      lifecycle: this.toLifecycle(
+        updatedSession,
+        dayActiveLearningSeconds,
+        dailyLimit,
+        continuousLimit,
+        input.topicHint,
+      ),
+      closedSessions,
+    };
   }
 
   completeTurn(input: CompleteTurnInput): LessonLifecycleDto {
@@ -268,6 +294,10 @@ export class LessonService {
   }
 
   finishSession(input: FinishSessionInput): LessonSessionRecord | undefined {
+    return this.finishSessionWithTransition(input).session;
+  }
+
+  finishSessionWithTransition(input: FinishSessionInput): LessonFinishSessionResult {
     const existing = this.db.get<LessonSessionRecord>(
       `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
               success_criteria_json, finish_reason, active_learning_seconds, turn_count,
@@ -279,36 +309,26 @@ export class LessonService {
       [input.lessonSessionId, input.userId],
     );
     if (!existing) {
-      return undefined;
+      return { session: undefined, transitioned: false };
     }
     if (TERMINAL_STATUSES.includes(existing.status)) {
-      return existing;
+      return { session: existing, transitioned: false };
     }
 
     const nowIso = new Date().toISOString();
-    this.db.run(
-      `UPDATE lesson_sessions
-       SET status = 'finished',
-           finish_reason = ?,
-           finished_at = ?,
-           updated_at = ?
-       WHERE id = ?
-         AND user_id = ?`,
-      [input.reason, nowIso, nowIso, input.lessonSessionId, input.userId],
-    );
+    const transitioned = this.finishSessionRecord(existing, input.reason, nowIso, nowIso);
 
-    return this.db.get<LessonSessionRecord>(
-      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
-              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
-              started_at, last_activity_at, finished_at, created_at, updated_at
-       FROM lesson_sessions
-       WHERE id = ?
-         AND user_id = ?`,
-      [input.lessonSessionId, input.userId],
-    );
+    return {
+      session: transitioned,
+      transitioned: Boolean(transitioned),
+    };
   }
 
-  private getOrCreateSession(input: BeginTurnInput, nowIso: string): LessonSessionRecord {
+  private getOrCreateSession(
+    input: BeginTurnInput,
+    nowIso: string,
+  ): { session: LessonSessionRecord; closedSessions: LessonSessionRecord[] } {
+    const closedSessions: LessonSessionRecord[] = [];
     const activeConversationSession = this.db.get<LessonSessionRecord>(
       `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
               success_criteria_json, finish_reason, active_learning_seconds, turn_count,
@@ -323,9 +343,20 @@ export class LessonService {
     );
     if (activeConversationSession) {
       if (activeConversationSession.lesson_type !== input.lessonType) {
-        this.finishSessionForLessonTypeChange(activeConversationSession, input.lessonType, nowIso);
+        const closed = this.finishSessionForLessonTypeChange(
+          activeConversationSession,
+          input.lessonType,
+          nowIso,
+        );
+        if (closed) {
+          closedSessions.push(closed);
+        }
+        throw new LessonBoundaryRejectedException(
+          'Finished lesson conversations cannot be reopened. Start a new lesson.',
+          closedSessions,
+        );
       } else {
-        return activeConversationSession;
+        return { session: activeConversationSession, closedSessions };
       }
     }
 
@@ -342,12 +373,12 @@ export class LessonService {
       [input.userId, input.conversationId, ...TERMINAL_STATUSES],
     );
     if (terminalConversationSession) {
-      throw new BadRequestException(
+      throw new LessonBoundaryRejectedException(
         'Finished lesson conversations cannot be reopened. Start a new lesson.',
       );
     }
 
-    this.finishSupersededActiveSessions(input, nowIso);
+    closedSessions.push(...this.finishSupersededActiveSessions(input, nowIso));
 
     const defaults = LESSON_GOALS[input.lessonType];
     const id = `lesson_${randomUUID()}`;
@@ -372,14 +403,10 @@ export class LessonService {
       ],
     );
 
-    return this.db.get<LessonSessionRecord>(
-      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
-              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
-              started_at, last_activity_at, finished_at, created_at, updated_at
-       FROM lesson_sessions
-       WHERE id = ?`,
-      [id],
-    )!;
+    return {
+      session: this.getSessionById(id)!,
+      closedSessions,
+    };
   }
 
   private toLifecycle(
@@ -605,33 +632,79 @@ export class LessonService {
     session: LessonSessionRecord,
     nextLessonType: LessonType,
     nowIso: string,
-  ): void {
-    this.db.run(
-      `UPDATE lesson_sessions
-       SET status = 'finished', finish_reason = ?, finished_at = ?, updated_at = ?
-       WHERE id = ?`,
-      [`lesson_type_changed_to_${nextLessonType}`, nowIso, nowIso, session.id],
+  ): LessonSessionRecord | undefined {
+    return this.finishSessionRecord(
+      session,
+      `lesson_type_changed_to_${nextLessonType}`,
+      nowIso,
+      nowIso,
     );
   }
 
-  private finishSupersededActiveSessions(input: BeginTurnInput, nowIso: string): void {
-    this.db.run(
+  private finishSupersededActiveSessions(
+    input: BeginTurnInput,
+    nowIso: string,
+  ): LessonSessionRecord[] {
+    const sessions = this.db.all<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND conversation_id != ?
+         AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})
+       ORDER BY updated_at DESC`,
+      [input.userId, input.conversationId, ...TERMINAL_STATUSES],
+    );
+
+    return sessions
+      .map((session) =>
+        this.finishSessionRecord(
+          session,
+          'superseded_by_new_lesson_session',
+          nowIso,
+          session.last_activity_at || session.updated_at || nowIso,
+        ),
+      )
+      .filter((session): session is LessonSessionRecord => Boolean(session));
+  }
+
+  private finishSessionRecord(
+    session: LessonSessionRecord,
+    reason: string,
+    finishedAt: string,
+    updatedAt: string,
+  ): LessonSessionRecord | undefined {
+    const result = this.db.run(
       `UPDATE lesson_sessions
        SET status = 'finished',
            finish_reason = ?,
            finished_at = ?,
-           updated_at = COALESCE(last_activity_at, updated_at, ?)
-       WHERE user_id = ?
-         AND conversation_id != ?
+           updated_at = ?
+       WHERE id = ?
          AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})`,
-      [
-        'superseded_by_new_lesson_session',
-        nowIso,
-        nowIso,
-        input.userId,
-        input.conversationId,
-        ...TERMINAL_STATUSES,
-      ],
+      [reason, finishedAt, updatedAt, session.id, ...TERMINAL_STATUSES],
+    );
+    if (result.changes <= 0) {
+      return undefined;
+    }
+    return {
+      ...session,
+      status: 'finished',
+      finish_reason: reason,
+      finished_at: finishedAt,
+      updated_at: updatedAt,
+    };
+  }
+
+  private getSessionById(id: string): LessonSessionRecord | undefined {
+    return this.db.get<LessonSessionRecord>(
+      `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+              success_criteria_json, finish_reason, active_learning_seconds, turn_count,
+              started_at, last_activity_at, finished_at, created_at, updated_at
+       FROM lesson_sessions
+       WHERE id = ?`,
+      [id],
     );
   }
 

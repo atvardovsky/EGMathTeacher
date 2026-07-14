@@ -258,7 +258,7 @@ describe('StudentProfileService', () => {
          success_criteria_json, active_learning_seconds, turn_count, started_at,
          last_activity_at, created_at, updated_at
        )
-       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 2, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 4, ?, ?, ?, ?)`,
       [
         'lesson-meeting-1',
         user.id,
@@ -295,6 +295,24 @@ describe('StudentProfileService', () => {
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        'turn-meeting-0',
+        user.id,
+        conversationId,
+        'request-meeting-0',
+        'meeting',
+        'Начни первую голосовую встречу с учеником для AI-репетитора ЕГЭ по математике',
+        JSON.stringify({
+          answer: 'Привет. Какая цель по ЕГЭ и где сейчас сложнее всего?',
+        }),
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
         'turn-meeting-2',
         user.id,
         conversationId,
@@ -308,6 +326,24 @@ describe('StudentProfileService', () => {
               text: 'Хорошо, я буду начинать с примера и проверять маленькими шагами.',
             },
           ],
+        }),
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'turn-meeting-3',
+        user.id,
+        conversationId,
+        'request-meeting-3',
+        'meeting',
+        'Уровень средний, уверенности мало, с графиками и производной часто застреваю',
+        JSON.stringify({
+          answer: 'Понял. Давай еще один короткий пример и потом соберем профиль.',
         }),
         now,
       ],
@@ -337,8 +373,17 @@ describe('StudentProfileService', () => {
     expect(extractionPayload.usageContext).toMatchObject({
       userId: user.id,
       conversationId,
+      lessonSessionId: 'lesson-meeting-1',
       lessonType: 'meeting',
     });
+    for (const [, payload] of (aiModel.createOperationResponse as jest.Mock).mock.calls.slice(1)) {
+      expect(payload.usageContext).toMatchObject({
+        userId: user.id,
+        conversationId,
+        lessonSessionId: 'lesson-meeting-1',
+        lessonType: 'meeting',
+      });
+    }
     expect(extractionPayload.input[0].content[0].text).toContain(
       'Хочу подготовиться к ЕГЭ',
     );
@@ -354,7 +399,64 @@ describe('StudentProfileService', () => {
     });
   });
 
-  it('rejects a conversation profile when the first meeting is too short', async () => {
+  it('reports meeting readiness and ignores the technical starter prompt', async () => {
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-ready';
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+         success_criteria_json, active_learning_seconds, turn_count, started_at,
+         last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 4, ?, ?, ?, ?)`,
+      [
+        'lesson-meeting-ready',
+        user.id,
+        conversationId,
+        'Понять стартовый учебный контекст ученика.',
+        JSON.stringify(['получены ответы о цели']),
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
+    for (const [index, prompt] of [
+      'Начни первую голосовую встречу с учеником для AI-репетитора ЕГЭ по математике',
+      'Готовлюсь к ЕГЭ, хочу 80 баллов, сложны производные',
+      'Уровень средний, уверенности мало, часто застреваю на графиках',
+      'Мне удобнее сначала пример и медленно; в задаче 2x + 5 = 17 ответ x = 6',
+    ].entries()) {
+      db.run(
+        `INSERT INTO tutor_turns (
+           id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `turn-ready-${index}`,
+          user.id,
+          conversationId,
+          `request-ready-${index}`,
+          'meeting',
+          prompt,
+          JSON.stringify({ answer: 'Следующий вопрос.' }),
+          now,
+        ],
+      );
+    }
+
+    expect(service.getMeetingReadiness(user, conversationId)).toEqual(
+      expect.objectContaining({
+        conversationId,
+        lessonSessionId: 'lesson-meeting-ready',
+        canCreateProfile: true,
+        meaningfulStudentTurnCount: 3,
+        missingSignals: [],
+      }),
+    );
+  });
+
+  it('rejects a conversation profile when the first meeting is too shallow', async () => {
     aiModel.createOperationResponse.mockReset();
     db.run(
       `INSERT INTO tutor_turns (
@@ -378,7 +480,7 @@ describe('StudentProfileService', () => {
         user,
         conversationId: 'meeting-conv-short',
       }),
-    ).rejects.toThrow('First meeting conversation needs at least two tutor turns');
+    ).rejects.toThrow('First meeting needs more teaching context');
     expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
   });
 

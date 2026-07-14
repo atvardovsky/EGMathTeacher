@@ -50,7 +50,8 @@ This file records runtime flows from current source evidence.
    user-triggered starter prompt to `POST /tutor/message` with
    `lessonType=meeting`.
 4. Browser speech synthesis speaks visible tutor answers when available; in
-   voice-dialog mode the mic reopens after the tutor finishes speaking.
+   voice-dialog mode the mic reopens after the tutor finishes speaking only
+   while the meeting lifecycle is non-terminal.
    Browser text input remains a fallback for unavailable or stopped speech
    recognition.
 5. The meeting gathers tutoring-relevant context through the AI dialog:
@@ -58,35 +59,48 @@ This file records runtime flows from current source evidence.
    weak topics, explanation style, pacing, hint/practice/visual preference,
    interests for analogies, and at least one short diagnostic or learning
    situation when the dialog reaches that point.
-6. When enough stored `meeting` turns exist, the web client calls
-   `POST /student-profile/me/from-conversation` with the `conversationId`.
-   The API reads `tutor_turns` for the authenticated user and conversation;
-   it does not trust frontend-submitted profile facts.
-7. `StudentProfileService` runs `onboardingConversationExtraction` to convert
+6. On first-meeting initialization and after stored meeting answers, the web
+   client calls `GET /student-profile/me/meeting-readiness`. The API reads
+   stored `meeting` turns, ignores the technical starter prompt, and requires
+   at least three meaningful student replies with preparation goal,
+   self-assessment, weak topic, explanation preference, and a diagnostic or
+   contentful math reply before profile creation is allowed.
+7. If the page reloads during an unfinished meeting, the web client hydrates
+   the latest active saved `meeting` lesson and its stored turns from
+   `GET /tutor/lessons?scope=active`.
+8. When backend readiness says the meeting is complete enough, the web client
+   calls `POST /student-profile/me/from-conversation` with the
+   `conversationId`. The API reads `tutor_turns` for the authenticated user
+   and conversation; it does not trust frontend-submitted profile facts.
+9. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
-   facts, and drops non-teaching sensitive details.
-8. `StudentProfileService` normalizes extracted answers, drops non-teaching
+   facts, drops non-teaching sensitive details, and must return the required
+   teaching signals before specialist calls are spent.
+10. `StudentProfileService` normalizes extracted answers, drops non-teaching
    sensitive details, and reads active vector store ids.
-9. `AiModelService` resolves role/operation policy and runs three specialist
+11. `AiModelService` resolves role/operation policy and runs three specialist
    model calls:
    - math knowledge diagnostician creates `knowledgeState`
    - tutoring-focused psychopedagogical profiler creates `learningPreferences`
      and `psychologicalProfile`
    - teaching strategy planner creates `explanationStrategy` and compact
      `aiSummary`
-10. Specialist prompts ask for confidence and evidence for meaningful profile
+12. The conversation extractor and all specialist calls carry local
+    `usageContext` with user id, conversation id, lesson session id, and
+    `lessonType=meeting`.
+13. Specialist prompts ask for confidence and evidence for meaningful profile
    inferences when possible.
-11. RAG is used only for shared AI knowledge such as questionnaire strategy,
+14. RAG is used only for shared AI knowledge such as questionnaire strategy,
    diagnostic rubrics, task strategy, and teaching playbooks.
-12. SQLite stores only teaching-useful personal profile signals in
+15. SQLite stores only teaching-useful personal profile signals in
     `student_profiles`.
-13. After successful conversation-based profile creation, the corresponding
+16. After successful conversation-based profile creation, the corresponding
     non-terminal `meeting` lesson session is marked `finished`,
     `goal_status=reached`, and `finish_reason=profile_created_from_meeting`.
-14. Future tutor requests reload the DB profile so context compaction does not
+17. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
-15. After profile creation, the web client opens the normal tutor workspace
+18. After profile creation, the web client opens the normal tutor workspace
     with a lesson launcher instead of a blank waiting state. The launcher shows
     a green first-lesson button and cards for first meeting, level check,
     linear-equation practice, topic explanation, and mistake review. No tutor
@@ -174,14 +188,17 @@ This file records runtime flows from current source evidence.
    `algebra.linear.solve_one_variable` /
    `ege.base.linear_equation_numeric`; unsupported skills remain routing
    context but cannot produce verified mastery.
-5. `LessonService` creates or touches the active `lesson_sessions` row for the
-   conversation and lesson type. A finished, goal-reached, or hard-limit
-   conversation id is rejected; terminal lesson records cannot be reopened. If
-   an older client reuses an active conversation id with a different lesson
-   type, the previous active session is finished and the reused id is rejected
-   so the client must start a fresh lesson boundary. When a new conversation
-   boundary starts, other non-terminal lesson sessions for the same signed-in
-   student are finished as superseded and queued for lesson-closure review. The
+5. `LessonService.beginTurnWithTransitions()` creates or touches the active
+   `lesson_sessions` row for the conversation and lesson type. A finished,
+   goal-reached, or hard-limit conversation id is rejected; terminal lesson
+   records cannot be reopened. If an older client reuses an active
+   conversation id with a different lesson type, the previous active session
+   is finished and the reused id is rejected so the client must start a fresh
+   lesson boundary. When a new conversation boundary starts, other
+   non-terminal lesson sessions for the same signed-in student are finished as
+   superseded. The service returns the exact list of sessions that actually
+   transitioned to terminal state; `TutorService` queues lesson-closure review
+   only for that returned list. The
    first turn adds no active-learning seconds; later quick turns use the
    configured minimum-turn heuristic. The service updates turn count,
    active-learning heuristic seconds, daily and continuous learning-limit
@@ -272,7 +289,9 @@ This file records runtime flows from current source evidence.
     Enqueue failures are isolated from the immediate answer path.
 24. If the turn made the lesson terminal through hard limit or backend-accepted
     goal completion, `TutorService` also enqueues lesson-closure background
-    review for the stored conversation.
+    review for the stored conversation. Repeated explicit finish calls and
+    terminal-conversation reuse rejections do not enqueue closure review unless
+    `LessonService` reports a new transition.
 25. API returns the tutor answer with lesson lifecycle, compact usage snapshot
     for current lesson/day, and user-visible debug facts for curriculum,
     decision policy, and verifier result.
@@ -303,9 +322,11 @@ This file records runtime flows from current source evidence.
 4. The voice-dialog switch is visible in the tutor composer, persisted in
    local storage, and disabled when browser speech synthesis is unavailable.
 5. When assistant speech ends and voice dialog is still enabled, the web client
-   automatically starts speech recognition to capture the next student turn.
-   If the browser blocks automatic mic start or speech recognition is
-   unsupported, the visible mic button remains the manual fallback.
+   automatically starts speech recognition to capture the next student turn
+   only when `lessonLifecycle.shouldStop=false` and the lesson status is not
+   `finished`, `goal_reached`, or `hard_limit_reached`. If the browser blocks
+   automatic mic start or speech recognition is unsupported, the visible mic
+   button remains the manual fallback.
 6. If browser speech recognition ends without a transcript because of silence,
    `no-speech`, `aborted`, permission, device, language, or network errors,
    the UI clears listening state and shows a short reason. In voice-dialog
@@ -316,6 +337,9 @@ This file records runtime flows from current source evidence.
    affect lesson, usage, or tutor-turn persistence.
 8. The POC voice output does not use OpenAI audio generation, does not upload
    generated audio, and does not store spoken audio.
+9. When a terminal tutor response arrives, the client clears the active
+   `conversationId`, opens the turn as read-only history state, disables
+   composer/voice/image actions, and shows the new-lesson action.
 9. Russian pronunciation improvements are limited to browser voice selection,
    slower speech rate, and light math-text normalization; stress and emotional
    prosody remain browser-voice limitations.
@@ -349,7 +373,9 @@ This file records runtime flows from current source evidence.
    `profile_strategy_refresh` job. In batched mode it also pulls any pending
    observations for that conversation into an immediate
    `learning_window_analysis` job. If no pending observations exist, the
-   session summary still analyzes the stored `tutor_turns` transcript.
+   session summary still analyzes the stored `tutor_turns` transcript. The
+   enqueue path is transition-confirmed: it runs only after `LessonService`
+   returns a closed session or after a turn lifecycle becomes terminal.
 8. Background jobs call `AiModelService` with role/operation policy and
    task-specific specialist prompts: `learning-window-analyzer`,
    `profile-strategy-background-refresher`, `learning-signal-extractor`,

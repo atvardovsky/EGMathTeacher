@@ -16,11 +16,12 @@ App
 │  ├─ LanguageSwitch
 │  ├─ Logout
 │  ├─ Meeting status strip
+│  ├─ Active meeting hydration from saved lesson history
 │  ├─ Green voice-meeting start/restart action
 │  ├─ Voice dialog switch
 │  ├─ Mic action
 │  ├─ Text fallback composer
-│  ├─ Create-profile-from-conversation action
+│  ├─ Backend readiness-gated create-profile-from-conversation action
 │  ├─ Voice status and readiness alerts
 │  └─ First-meeting transcript list
 │     ├─ Student prompt bubble
@@ -132,18 +133,23 @@ App
 - Authenticated users can switch to Settings.
 - Student users without a stored profile must complete the first meeting before
   the tutor workspace. The first meeting starts as an AI-led voice dialog; the
-  profile is created from stored `meeting` turns, not from a static form. After
-  setup, the tutor workspace starts at the lesson launcher rather than a blank
-  state.
+  profile is created from stored `meeting` turns, not from a static form. The
+  create-profile action is enabled only after
+  `GET /student-profile/me/meeting-readiness` reports enough teaching context.
+  Reloading this screen restores the latest active saved `meeting` lesson when
+  one exists. After setup, the tutor workspace starts at the lesson launcher
+  rather than a blank state.
 - The language switch changes static UI copy immediately and persists locally.
 - Browser speech recognition language follows the selected UI locale.
 - Browser speech synthesis can speak tutor answers aloud in the tutor
   workspace. Voice dialog is enabled by default when supported, can be turned
   off from the composer, and every tutor answer has a speak/stop action. In
-  voice-dialog mode, the mic starts again after the spoken tutor answer when
-  browser support and permissions allow it. If browser recognition stops from
-  silence, permission, device, language, network, or automatic-start limits,
-  a voice-status message explains the reason near the mic control.
+  voice-dialog mode, the mic starts again after the spoken tutor answer only
+  when the returned lesson lifecycle is non-terminal. Terminal responses clear
+  the active conversation boundary and open read-only history state. If browser
+  recognition stops from silence, permission, device, language, network, or
+  automatic-start limits, a voice-status message explains the reason near the
+  mic control.
 - Voice output reads only the visible tutor answer blocks locally in the
   browser; it does not call backend audio generation or store generated audio.
 - Settings is read-only for account/profile data in the current POC.
