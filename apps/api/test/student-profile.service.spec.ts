@@ -665,6 +665,77 @@ describe('StudentProfileService', () => {
     });
   });
 
+  it('reconciles an existing profile with the current running conversation when no conversation id is provided', async () => {
+    aiModel.createOperationResponse.mockReset();
+    const now = new Date().toISOString();
+    const conversationId = 'meeting-conv-existing-no-id';
+    insertReadyMeeting(conversationId, now);
+    const transcriptHash = getMeetingTranscriptHash(user.id, conversationId);
+    db.run(
+      `INSERT INTO student_profiles (
+         user_id, onboarding_completed_at, onboarding_answers_json,
+         knowledge_state_json, learning_preferences_json, psychological_profile_json,
+         explanation_strategy_json, ai_summary, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user.id,
+        now,
+        JSON.stringify({ exam: 'ЕГЭ', weakTopics: ['производная'] }),
+        JSON.stringify({ overallLevel: { value: 'medium' } }),
+        JSON.stringify({ explanationStyle: 'examples_first' }),
+        JSON.stringify({ confidenceWithMath: { value: 'low' } }),
+        JSON.stringify({ pacing: 'slow' }),
+        'Профиль уже создан.',
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'running', 1, NULL, ?, NULL, ?, ?)`,
+      [
+        'profile-run-existing-no-id',
+        user.id,
+        conversationId,
+        transcriptHash,
+        now,
+        now,
+        now,
+      ],
+    );
+
+    const status = await service.completeOnboardingFromConversation({ user });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).not.toHaveBeenCalled();
+    expect(
+      db.get<{ status: string; error_message: string | null }>(
+        `SELECT status, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-existing-no-id'],
+      ),
+    ).toEqual({
+      status: 'completed',
+      error_message: null,
+    });
+    expect(
+      db.get<{ status: string; finish_reason: string | null }>(
+        `SELECT status, finish_reason
+         FROM lesson_sessions
+         WHERE id = ?`,
+        [`lesson-${conversationId}`],
+      ),
+    ).toEqual({
+      status: 'finished',
+      finish_reason: 'profile_created_from_meeting',
+    });
+  });
+
   it('uses the latest meeting with saved turns when a newer active meeting is empty', async () => {
     mockConversationProfilePipeline();
     const now = new Date().toISOString();
@@ -837,6 +908,57 @@ describe('StudentProfileService', () => {
 
       expect(status.onboardingRequired).toBe(false);
       expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('aborts a pending onboarding AI request when the running claim is lost', async () => {
+    jest.useFakeTimers({ now: new Date('2026-01-01T12:00:00.000Z') });
+    try {
+      aiModel.createOperationResponse.mockReset();
+      const now = new Date().toISOString();
+      const conversationId = 'meeting-conv-claim-lost';
+      insertReadyMeeting(conversationId, now);
+      let abortObserved = false;
+      aiModel.createOperationResponse.mockImplementationOnce((_operation, payload) => {
+        const signal = payload.abortSignal as AbortSignal | undefined;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            abortObserved = true;
+            reject(new Error('request aborted after claim loss'));
+          });
+        });
+      });
+
+      const profilePromise = service.completeOnboardingFromConversation({
+        user,
+        conversationId,
+      });
+      const handledProfilePromise = profilePromise.catch((error: unknown) => error);
+      await Promise.resolve();
+      db.run(
+        `UPDATE student_profile_creation_runs
+         SET status = 'failed',
+             error_message = 'claim stolen by newer worker',
+             updated_at = ?
+         WHERE user_id = ?
+           AND conversation_id = ?
+           AND status = 'running'`,
+        [
+          new Date(Date.parse(now) + 1_000).toISOString(),
+          user.id,
+          conversationId,
+        ],
+      );
+
+      await jest.advanceTimersByTimeAsync(61_000);
+
+      const error = await handledProfilePromise;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('Profile creation claim is no longer active');
+      expect(abortObserved).toBe(true);
+      expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(1);
     } finally {
       jest.useRealTimers();
     }

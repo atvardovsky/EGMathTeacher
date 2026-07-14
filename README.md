@@ -61,7 +61,9 @@ Production domain:
   fresh in-progress claims are blocked even if the transcript changed, and
   stale in-progress claims can be retried after a lease timeout. Long
   onboarding AI calls refresh the lease while a provider request is still in
-  flight, not only between specialist calls. If the page reloads during an
+  flight, not only between specialist calls, and the API makes a best-effort
+  abort of the active provider request if the local claim is lost. If the
+  page reloads during an
   unfinished or terminal pre-profile meeting, the client and API fallback
   restore the saved meeting transcript from active meetings with turns or
   from historical lessons; empty active meeting shells are ignored. After

@@ -288,10 +288,14 @@ Rules from current implementation:
   tab changed the transcript; failed claims and stale running claims after
   `PROFILE_CREATION_RUNNING_TIMEOUT_MS` are retryable. Live long-running
   pipelines heartbeat the row during each onboarding AI request and between
-  AI calls. A completed run without a stored profile is treated as
+  AI calls. If a heartbeat fails because the claim is no longer active, the
+  current provider request receives a local abort signal before any later AI
+  stage starts. A completed run without a stored profile is treated as
   inconsistent/failed so it can recover. If a stored profile already exists,
   reconciliation closes only the still-running creation row for that
-  conversation and leaves failed or superseded rows intact as history.
+  conversation and leaves failed or superseded rows intact as history; when a
+  retry omits `conversationId`, the API reconciles the signed-in user's current
+  running conversation row if one exists.
 - Successful profile creation commits the profile, meeting finish, and
   creation-run completion together in SQLite after the AI calls have returned.
 - Specialist outputs should include confidence and evidence for meaningful

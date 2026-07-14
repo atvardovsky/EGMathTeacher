@@ -81,10 +81,12 @@ decisions.
 - Fresh running claims block duplicate profile creation even if another tab
   changed the transcript. Stale running claims can be retried after the
   configured heartbeat lease, failed/stale claim reclaims are conditional on
-  the old row version, active runs heartbeat during long provider requests,
+  the old row version, active runs heartbeat during long provider requests and
+  best-effort abort the active request if the claim is lost,
   completed-without-profile rows are recoverable, reconciliation preserves
-  failed/superseded history rows, and final profile/meeting/run writes are
-  committed together.
+  failed/superseded history rows, existing-profile retries without
+  `conversationId` can reconcile the current running conversation, and final
+  profile/meeting/run writes are committed together.
 - The legacy structured JSON onboarding endpoint is disabled for student use
   unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` enables a trusted
   fallback/import workflow.

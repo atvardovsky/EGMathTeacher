@@ -168,10 +168,13 @@ export class StudentProfileService {
     const requestedConversationId = this.cleanString(context.conversationId, 160);
     const existingProfile = this.getProfile(context.user.id);
     if (existingProfile) {
-      if (requestedConversationId) {
+      const reconcileConversationId =
+        requestedConversationId ??
+        this.getRunningProfileCreationConversationId(context.user.id);
+      if (reconcileConversationId) {
         this.reconcileExistingConversationProfile(
           context.user.id,
-          requestedConversationId,
+          reconcileConversationId,
         );
       }
       return {
@@ -378,10 +381,10 @@ export class StudentProfileService {
   ): Promise<Record<string, unknown>> {
     const response = await this.runWithProfileCreationHeartbeat(
       request.heartbeat,
-      () =>
+      (abortSignal) =>
         this.aiModel.createOperationResponse(
           request.operation,
-          this.buildProfileRequest(request),
+          this.withAbortSignal(this.buildProfileRequest(request), abortSignal),
         ),
     );
     const text = this.extractOutputText(response);
@@ -401,10 +404,10 @@ export class StudentProfileService {
   ): Promise<StudentOnboardingAnswers> {
     const response = await this.runWithProfileCreationHeartbeat(
       heartbeat,
-      () =>
+      (abortSignal) =>
         this.aiModel.createOperationResponse(
           'onboardingConversationExtraction',
-          {
+          this.withAbortSignal({
             instructions: this.getConversationExtractionInstructions(),
             usageContext: {
               userId: user.id,
@@ -431,7 +434,7 @@ export class StudentProfileService {
                 ],
               },
             ],
-          },
+          }, abortSignal),
         ),
     );
     const parsed = this.parseJsonObject(this.extractOutputText(response));
@@ -499,6 +502,13 @@ export class StudentProfileService {
       tools,
       include: useFileSearch ? ['file_search_call.results'] : undefined,
     };
+  }
+
+  private withAbortSignal(
+    payload: Record<string, unknown>,
+    abortSignal?: AbortSignal,
+  ): Record<string, unknown> {
+    return abortSignal ? { ...payload, abortSignal } : payload;
   }
 
   private getConversationExtractionInstructions(): string {
@@ -771,6 +781,18 @@ export class StudentProfileService {
     );
   }
 
+  private getRunningProfileCreationConversationId(userId: string): string | undefined {
+    return this.db.get<{ conversation_id: string }>(
+      `SELECT conversation_id
+       FROM student_profile_creation_runs
+       WHERE user_id = ?
+         AND status = 'running'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId],
+    )?.conversation_id;
+  }
+
   private getProfileCreationRunByTranscript(
     userId: string,
     conversationId: string,
@@ -888,19 +910,21 @@ export class StudentProfileService {
 
   private async runWithProfileCreationHeartbeat<T>(
     heartbeat: (() => void) | undefined,
-    operation: () => Promise<T>,
+    operation: (abortSignal?: AbortSignal) => Promise<T>,
   ): Promise<T> {
     if (!heartbeat) {
       return operation();
     }
 
     heartbeat();
+    const controller = new AbortController();
     let intervalError: unknown;
     const interval = setInterval(() => {
       try {
         heartbeat();
       } catch (error) {
         intervalError ??= error;
+        controller.abort(error);
       }
     }, this.getProfileCreationHeartbeatIntervalMs());
     const unref = (interval as { unref?: () => void }).unref;
@@ -909,12 +933,17 @@ export class StudentProfileService {
     }
 
     try {
-      const result = await operation();
+      const result = await operation(controller.signal);
       if (intervalError) {
         throw intervalError;
       }
       heartbeat();
       return result;
+    } catch (error) {
+      if (intervalError) {
+        throw intervalError;
+      }
+      throw error;
     } finally {
       clearInterval(interval);
     }

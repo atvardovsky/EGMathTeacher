@@ -6,6 +6,7 @@ import {
   AiModelProvider,
   AiOperationKey,
   ResolvedAiOperationPolicy,
+  AiProviderRequestOptions,
 } from './ai-model.types';
 import { UsageService } from '../usage/usage.service';
 
@@ -113,7 +114,10 @@ export class AiModelService implements AiModelProvider {
     payload: AiOperationPayload,
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const response = await this.provider.createResponse(request);
+    const options = this.getProviderRequestOptions(payload);
+    const response = options
+      ? await this.provider.createResponse(request, options)
+      : await this.provider.createResponse(request);
     this.usageService?.recordOperation(policy, payload.usageContext, request, response);
     return response;
   }
@@ -129,8 +133,18 @@ export class AiModelService implements AiModelProvider {
   }
 
   private withoutUsageContext(payload: AiOperationPayload): Record<string, unknown> {
-    const { usageContext: _usageContext, ...providerPayload } = payload;
+    const {
+      usageContext: _usageContext,
+      abortSignal: _abortSignal,
+      ...providerPayload
+    } = payload;
     return providerPayload;
+  }
+
+  private getProviderRequestOptions(
+    payload: AiOperationPayload,
+  ): AiProviderRequestOptions | undefined {
+    return payload.abortSignal ? { signal: payload.abortSignal } : undefined;
   }
 
   private mergeMetadata(

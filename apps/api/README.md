@@ -201,10 +201,12 @@ Tutor/product API surfaces also include:
   Stale `running` claims are recovered after
   `PROFILE_CREATION_RUNNING_TIMEOUT_MS`, long live runs refresh the lease
   during individual provider requests as well as between specialist calls,
+  lost claims send a best-effort abort signal to the active provider request,
   empty active meeting shells are ignored by no-conversation fallback
   selection, historical failed/superseded rows are preserved when an existing
-  profile is reconciled, and final profile storage, meeting finish, and
-  creation-run completion are committed together.
+  profile is reconciled, existing-profile retries without a `conversationId`
+  can reconcile the current running conversation, and final profile storage,
+  meeting finish, and creation-run completion are committed together.
 - `PUT /student-profile/me` for the legacy structured JSON onboarding payload.
   Student access is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED`
   is explicitly enabled for a trusted fallback/import workflow.

@@ -58,10 +58,14 @@ visible next actions.
   running claims are rejected even when the transcript changed in another tab,
   while failed claims and stale running claims can be retried after the
   configured heartbeat lease. Active profile runs refresh their lease during
-  each onboarding AI request as well as between requests. Completed run rows
-  without a stored profile are treated as inconsistent failed rows and can be
-  retried. When a profile already exists, reconciliation may finish the
-  meeting and close only the still-running creation row; failed and
+  each onboarding AI request as well as between requests. If a heartbeat
+  detects that the local claim was lost, the in-flight provider request is
+  aborted on a best-effort basis through the model provider boundary before
+  the next AI stage can start. Completed run rows without a stored profile are
+  treated as inconsistent failed rows and can be retried. When a profile
+  already exists, reconciliation may finish the meeting and close only the
+  still-running creation row; this also applies when the retry omitted
+  `conversationId` but a running row exists for the signed-in user. Failed and
   superseded creation rows remain historical evidence. After successful
   profile creation, the profile row, `meeting` lesson finish, and
   creation-run completion are committed together. The legacy structured JSON

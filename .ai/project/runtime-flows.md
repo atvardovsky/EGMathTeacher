@@ -96,7 +96,10 @@ This file records runtime flows from current source evidence.
 10. During the extraction and specialist pipeline, `StudentProfileService`
    updates the run heartbeat before, during, and after each onboarding AI
    request. Lease staleness is based on the last heartbeat (`updated_at`),
-   not only on the first attempt start time.
+   not only on the first attempt start time. If a heartbeat fails because the
+   running claim was lost, the current provider request is aborted on a
+   best-effort basis through `AbortSignal`; no later onboarding AI stage runs
+   and the old worker cannot save the profile.
 11. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
@@ -128,7 +131,9 @@ This file records runtime flows from current source evidence.
     If a later retry sees that the profile already exists, reconciliation
     finishes the requested meeting and completes only the currently running
     creation row for that conversation; historical failed or superseded rows
-    are preserved for analytics.
+    are preserved for analytics. If the retry omits `conversationId`, the API
+    uses the signed-in user's latest running profile-creation conversation for
+    this reconciliation.
 19. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
 20. After profile creation, the web client opens the normal tutor workspace

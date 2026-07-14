@@ -1,5 +1,6 @@
 import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { AiProviderRequestOptions } from '../ai-model/ai-model.types';
 
 interface RequestOptions extends RequestInit {
   timeoutMs?: number;
@@ -12,10 +13,14 @@ export class OpenAiClientService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async createResponse(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async createResponse(
+    payload: Record<string, unknown>,
+    requestOptions: AiProviderRequestOptions = {},
+  ): Promise<Record<string, unknown>> {
     return this.requestJson('/responses', {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal: requestOptions.signal,
     });
   }
 
@@ -103,6 +108,13 @@ export class OpenAiClientService {
       options.timeoutMs ?? this.configService.get<number>('ai.openai.requestTimeoutMs') ?? 30_000;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const callerSignal = options.signal;
+    const abortFromCaller = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) {
+      abortFromCaller();
+    } else {
+      callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+    }
 
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
@@ -126,6 +138,7 @@ export class OpenAiClientService {
       this.logger.error(`OpenAI request ${path} failed: ${message}`);
       throw new BadGatewayException('OpenAI request failed');
     } finally {
+      callerSignal?.removeEventListener('abort', abortFromCaller);
       clearTimeout(timeout);
     }
   }

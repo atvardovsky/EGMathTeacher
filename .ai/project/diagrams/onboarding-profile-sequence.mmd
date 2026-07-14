@@ -86,6 +86,10 @@ sequenceDiagram
     OpenAI-->>AIModel: Teaching-only onboarding answers
     AIModel-->>Profile: Extracted answer JSON
     Profile->>DB: Heartbeat running claim during and after extraction
+    opt Heartbeat detects lost claim
+      Profile->>AIModel: Abort in-flight provider request
+      Profile-->>API: Conflict without later AI stages or profile write
+    end
     Profile->>Knowledge: getActiveVectorStoreIds()
     Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
     Knowledge-->>Profile: Vector store ids

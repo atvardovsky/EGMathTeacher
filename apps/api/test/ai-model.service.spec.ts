@@ -95,6 +95,31 @@ describe('AiModelService', () => {
     );
   });
 
+  it('keeps abort signals local while passing them to the provider request options', async () => {
+    const provider = {
+      id: 'openai',
+      createResponse: jest.fn(async () => ({ output_text: '{}' })),
+      generateImage: jest.fn(),
+      createVectorStore: jest.fn(),
+      uploadFile: jest.fn(),
+      attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
+      listVectorStoreFiles: jest.fn(),
+    };
+    const controller = new AbortController();
+    const service = new AiModelService(provider);
+
+    await service.createOperationResponse('tutorAnswer', {
+      instructions: 'answer',
+      abortSignal: controller.signal,
+    });
+
+    expect(provider.createResponse).toHaveBeenCalledWith(
+      expect.not.objectContaining({ abortSignal: expect.anything() }),
+      { signal: controller.signal },
+    );
+  });
+
   it('applies operation image model policy', async () => {
     const provider = {
       id: 'openai',

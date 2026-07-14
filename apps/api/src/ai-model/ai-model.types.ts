@@ -42,7 +42,10 @@ export interface ResolvedAiOperationPolicy {
 
 export interface AiModelProvider {
   readonly id: string;
-  createResponse(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  createResponse(
+    payload: Record<string, unknown>,
+    options?: AiProviderRequestOptions,
+  ): Promise<Record<string, unknown>>;
   generateImage(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   createVectorStore(name: string): Promise<Record<string, unknown>>;
   uploadFile(file: Express.Multer.File): Promise<Record<string, unknown>>;
@@ -65,6 +68,11 @@ export interface AiUsageContext {
   correlationId?: string;
 }
 
+export interface AiProviderRequestOptions {
+  signal?: AbortSignal;
+}
+
 export interface AiOperationPayload extends Record<string, unknown> {
   usageContext?: AiUsageContext;
+  abortSignal?: AbortSignal;
 }

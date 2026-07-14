@@ -151,7 +151,8 @@ Current data-minimization rule:
   while a fresh run is active; stale running claims are retryable after the
   configured heartbeat lease while fresh running claims remain blocked to
   avoid duplicate spend; active claims heartbeat during individual provider
-  requests as well as between calls
+  requests as well as between calls, and a lost claim sends a best-effort
+  local abort signal to the active provider request
 - the legacy structured JSON onboarding endpoint is disabled for student use
   by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
   trusted fallback/import workflows
