@@ -604,6 +604,24 @@ describe('StudentProfileService', () => {
         now,
       ],
     );
+    db.run(
+      `INSERT INTO student_profile_creation_runs (
+         id, user_id, conversation_id, transcript_hash, status, attempts,
+         error_message, started_at, completed_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, 'failed', 1, ?, ?, ?, ?, ?)`,
+      [
+        'profile-run-reconcile-old-failed',
+        user.id,
+        conversationId,
+        'old-transcript-hash',
+        'previous provider failure',
+        now,
+        now,
+        now,
+        now,
+      ],
+    );
 
     const status = await service.completeOnboardingFromConversation({
       user,
@@ -634,6 +652,194 @@ describe('StudentProfileService', () => {
       status: 'completed',
       error_message: null,
     });
+    expect(
+      db.get<{ status: string; error_message: string | null }>(
+        `SELECT status, error_message
+         FROM student_profile_creation_runs
+         WHERE id = ?`,
+        ['profile-run-reconcile-old-failed'],
+      ),
+    ).toEqual({
+      status: 'failed',
+      error_message: 'previous provider failure',
+    });
+  });
+
+  it('uses the latest meeting with saved turns when a newer active meeting is empty', async () => {
+    mockConversationProfilePipeline();
+    const now = new Date().toISOString();
+    const terminalConversationId = 'meeting-conv-terminal-with-turns';
+    insertReadyMeeting(terminalConversationId, now);
+    db.run(
+      `UPDATE lesson_sessions
+       SET status = 'goal_reached',
+           goal_status = 'reached',
+           finished_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      [
+        new Date(Date.parse(now) + 1_000).toISOString(),
+        new Date(Date.parse(now) + 1_000).toISOString(),
+        `lesson-${terminalConversationId}`,
+      ],
+    );
+    const emptyActiveConversationId = 'meeting-conv-empty-active';
+    db.run(
+      `INSERT INTO lesson_sessions (
+         id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
+         success_criteria_json, active_learning_seconds, turn_count, started_at,
+         last_activity_at, created_at, updated_at
+       )
+       VALUES (?, ?, ?, 'meeting', 'active', 'in_progress', ?, ?, 0, 0, ?, ?, ?, ?)`,
+      [
+        'lesson-empty-active',
+        user.id,
+        emptyActiveConversationId,
+        'Пустая новая встреча после сбоя AI-запроса.',
+        JSON.stringify(['нет сохраненных ходов']),
+        new Date(Date.parse(now) + 5_000).toISOString(),
+        new Date(Date.parse(now) + 5_000).toISOString(),
+        new Date(Date.parse(now) + 5_000).toISOString(),
+        new Date(Date.parse(now) + 5_000).toISOString(),
+      ],
+    );
+
+    expect(service.getMeetingReadiness(user)).toEqual(
+      expect.objectContaining({
+        conversationId: terminalConversationId,
+        canCreateProfile: true,
+      }),
+    );
+
+    const status = await service.completeOnboardingFromConversation({ user });
+
+    expect(status.onboardingRequired).toBe(false);
+    expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    expect(
+      db.get<{ status: string }>(
+        `SELECT status
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?`,
+        [user.id, terminalConversationId],
+      ),
+    ).toEqual({ status: 'completed' });
+    expect(
+      db.get<{ status: string }>(
+        `SELECT status
+         FROM lesson_sessions
+         WHERE id = ?`,
+        ['lesson-empty-active'],
+      ),
+    ).toEqual({ status: 'active' });
+  });
+
+  it('heartbeats the running profile creation lease during a long AI request', async () => {
+    jest.useFakeTimers({ now: new Date('2026-01-01T12:00:00.000Z') });
+    try {
+      aiModel.createOperationResponse.mockReset();
+      const now = new Date().toISOString();
+      const conversationId = 'meeting-conv-long-request';
+      insertReadyMeeting(conversationId, now);
+      let resolveExtraction: (value: unknown) => void = () => undefined;
+      const extractionPromise = new Promise((resolve) => {
+        resolveExtraction = resolve;
+      });
+      aiModel.createOperationResponse
+        .mockImplementationOnce(() => extractionPromise)
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            knowledgeState: {
+              overallLevel: {
+                value: 'medium',
+                confidence: 'medium',
+                evidence: ['решила линейное уравнение'],
+              },
+              priorityTopics: ['производная'],
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            learningPreferences: {
+              explanationStyle: 'examples_first',
+              visualSupport: true,
+            },
+            psychologicalProfile: {
+              confidenceWithMath: {
+                value: 'low',
+                confidence: 'medium',
+                evidence: ['просит медленный темп'],
+              },
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            explanationStrategy: {
+              pacing: 'slow',
+              structure: 'example_then_rule',
+            },
+            aiSummary: 'Лучше начинать с короткого примера и затем давать правило.',
+          }),
+        });
+
+      const profilePromise = service.completeOnboardingFromConversation({
+        user,
+        conversationId,
+      });
+      await Promise.resolve();
+
+      const firstHeartbeat = db.get<{ updated_at: string }>(
+        `SELECT updated_at
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?`,
+        [user.id, conversationId],
+      )?.updated_at;
+
+      await jest.advanceTimersByTimeAsync(61_000);
+
+      const secondHeartbeat = db.get<{ updated_at: string }>(
+        `SELECT updated_at
+         FROM student_profile_creation_runs
+         WHERE user_id = ?
+           AND conversation_id = ?`,
+        [user.id, conversationId],
+      )?.updated_at;
+      expect(Date.parse(secondHeartbeat ?? '')).toBeGreaterThan(
+        Date.parse(firstHeartbeat ?? ''),
+      );
+
+      resolveExtraction({
+        output_text: JSON.stringify({
+          answers: {
+            exam: 'ЕГЭ',
+            grade: '10',
+            currentLevel: 'средне',
+            mathFeeling: 'тревожно',
+            weakTopics: ['производная'],
+            motivation: 'поступить на инженерное направление',
+            explanationStyle: 'сначала пример',
+            pacing: 'медленно',
+            visualPreference: true,
+            analogyInterests: ['техника'],
+            diagnosticAnswers: [
+              {
+                prompt: 'Реши 2x + 5 = 17',
+                answer: 'x = 6',
+              },
+            ],
+          },
+        }),
+      });
+      const status = await profilePromise;
+
+      expect(status.onboardingRequired).toBe(false);
+      expect(aiModel.createOperationResponse).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('recovers a stale running conversation profile claim and completes it', async () => {

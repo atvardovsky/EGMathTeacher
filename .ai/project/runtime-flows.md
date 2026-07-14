@@ -75,8 +75,11 @@ This file records runtime flows from current source evidence.
    ignored for hydration. If no active meeting with turns exists, the client
    checks `GET /tutor/lessons?scope=history` so a terminal pre-profile
    meeting can still show as read-only and create the profile from the saved
-   transcript. `GET /student-profile/me/meeting-readiness` can also provide
-   the finalizable `conversationId` when the transcript is not locally loaded.
+   transcript. `GET /student-profile/me/meeting-readiness` and
+   `POST /student-profile/me/from-conversation` without an explicit
+   conversation id use the same backend fallback rule: prefer a saved active
+   meeting with turns, otherwise use the latest saved meeting with turns, and
+   do not let an empty active meeting shell hide a terminal transcript.
 8. When backend readiness says the meeting is complete enough, the web client
    calls `POST /student-profile/me/from-conversation` with the
    `conversationId`. The API reads `tutor_turns` for the authenticated user
@@ -91,8 +94,9 @@ This file records runtime flows from current source evidence.
    Completed run rows without a stored profile are marked inconsistent/failed
    and reclaimed instead of remaining permanently stuck.
 10. During the extraction and specialist pipeline, `StudentProfileService`
-   updates the run heartbeat between AI calls. Lease staleness is based on the
-   last heartbeat (`updated_at`), not only on the first attempt start time.
+   updates the run heartbeat before, during, and after each onboarding AI
+   request. Lease staleness is based on the last heartbeat (`updated_at`),
+   not only on the first attempt start time.
 11. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
@@ -121,6 +125,10 @@ This file records runtime flows from current source evidence.
     (`status=finished`, `goal_status=reached`,
     `finish_reason=profile_created_from_meeting`), and creation-run
     `completed` state in one short transaction.
+    If a later retry sees that the profile already exists, reconciliation
+    finishes the requested meeting and completes only the currently running
+    creation row for that conversation; historical failed or superseded rows
+    are preserved for analytics.
 19. Future tutor requests reload the DB profile so context compaction does not
    erase who the AI is speaking with.
 20. After profile creation, the web client opens the normal tutor workspace

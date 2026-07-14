@@ -34,6 +34,7 @@ interface ProfileSpecialistRequest {
   userId: string;
   conversationId?: string;
   lessonSessionId?: string;
+  heartbeat?: () => void;
   instructions: string;
   inputText: string;
   vectorStoreIds: string[];
@@ -230,6 +231,7 @@ export class StudentProfileService {
         conversationId,
         turns,
         readiness.lessonSessionId,
+        heartbeat,
       );
       heartbeat();
       const profile = await this.generateProfile(context.user, answers, {
@@ -273,6 +275,7 @@ export class StudentProfileService {
       userId: user.id,
       conversationId: usageContext.conversationId,
       lessonSessionId: usageContext.lessonSessionId,
+      heartbeat: usageContext.heartbeat,
       instructions: this.getKnowledgeDiagnosticInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -298,6 +301,7 @@ export class StudentProfileService {
       userId: user.id,
       conversationId: usageContext.conversationId,
       lessonSessionId: usageContext.lessonSessionId,
+      heartbeat: usageContext.heartbeat,
       instructions: this.getPsychopedagogicalInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -328,6 +332,7 @@ export class StudentProfileService {
       userId: user.id,
       conversationId: usageContext.conversationId,
       lessonSessionId: usageContext.lessonSessionId,
+      heartbeat: usageContext.heartbeat,
       instructions: this.getTeachingStrategyInstructions(vectorStoreIds.length > 0),
       inputText: [
         `Имя ученика: ${user.name}`,
@@ -371,9 +376,13 @@ export class StudentProfileService {
   private async runProfileSpecialist(
     request: ProfileSpecialistRequest,
   ): Promise<Record<string, unknown>> {
-    const response = await this.aiModel.createOperationResponse(
-      request.operation,
-      this.buildProfileRequest(request),
+    const response = await this.runWithProfileCreationHeartbeat(
+      request.heartbeat,
+      () =>
+        this.aiModel.createOperationResponse(
+          request.operation,
+          this.buildProfileRequest(request),
+        ),
     );
     const text = this.extractOutputText(response);
     const parsed = this.parseJsonObject(text);
@@ -388,37 +397,42 @@ export class StudentProfileService {
     conversationId: string,
     turns: OnboardingConversationTurn[],
     lessonSessionId?: string,
+    heartbeat?: () => void,
   ): Promise<StudentOnboardingAnswers> {
-    const response = await this.aiModel.createOperationResponse(
-      'onboardingConversationExtraction',
-      {
-        instructions: this.getConversationExtractionInstructions(),
-        usageContext: {
-          userId: user.id,
-          conversationId,
-          lessonSessionId,
-          lessonType: 'meeting',
-        },
-        metadata: {
-          profile_specialist: 'first-meeting-conversation-extractor',
-        },
-        input: [
+    const response = await this.runWithProfileCreationHeartbeat(
+      heartbeat,
+      () =>
+        this.aiModel.createOperationResponse(
+          'onboardingConversationExtraction',
           {
-            role: 'user',
-            content: [
+            instructions: this.getConversationExtractionInstructions(),
+            usageContext: {
+              userId: user.id,
+              conversationId,
+              lessonSessionId,
+              lessonType: 'meeting',
+            },
+            metadata: {
+              profile_specialist: 'first-meeting-conversation-extractor',
+            },
+            input: [
               {
-                type: 'input_text',
-                text: [
-                  `Имя ученика: ${user.name}`,
-                  `Conversation ID: ${conversationId}`,
-                  'Сохраненный transcript первой встречи:',
-                  this.formatMeetingTranscript(turns),
-                ].join('\n'),
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: [
+                      `Имя ученика: ${user.name}`,
+                      `Conversation ID: ${conversationId}`,
+                      'Сохраненный transcript первой встречи:',
+                      this.formatMeetingTranscript(turns),
+                    ].join('\n'),
+                  },
+                ],
               },
             ],
           },
-        ],
-      },
+        ),
     );
     const parsed = this.parseJsonObject(this.extractOutputText(response));
     if (!parsed) {
@@ -546,12 +560,19 @@ export class StudentProfileService {
 
   private getLatestMeetingConversationId(userId: string): string | undefined {
     const activeSession = this.db.get<{ conversation_id: string }>(
-      `SELECT conversation_id
-       FROM lesson_sessions
-       WHERE user_id = ?
-         AND lesson_type = 'meeting'
-         AND status NOT IN ('hard_limit_reached', 'goal_reached', 'finished')
-       ORDER BY updated_at DESC
+      `SELECT session.conversation_id
+       FROM lesson_sessions AS session
+       WHERE session.user_id = ?
+         AND session.lesson_type = 'meeting'
+         AND session.status NOT IN ('hard_limit_reached', 'goal_reached', 'finished')
+         AND EXISTS (
+           SELECT 1
+           FROM tutor_turns AS turn
+           WHERE turn.user_id = session.user_id
+             AND turn.conversation_id = session.conversation_id
+             AND turn.lesson_type = 'meeting'
+         )
+       ORDER BY session.updated_at DESC
        LIMIT 1`,
       [userId],
     );
@@ -560,11 +581,18 @@ export class StudentProfileService {
     }
 
     const session = this.db.get<{ conversation_id: string }>(
-      `SELECT conversation_id
-       FROM lesson_sessions
-       WHERE user_id = ?
-         AND lesson_type = 'meeting'
-       ORDER BY updated_at DESC
+      `SELECT session.conversation_id
+       FROM lesson_sessions AS session
+       WHERE session.user_id = ?
+         AND session.lesson_type = 'meeting'
+         AND EXISTS (
+           SELECT 1
+           FROM tutor_turns AS turn
+           WHERE turn.user_id = session.user_id
+             AND turn.conversation_id = session.conversation_id
+             AND turn.lesson_type = 'meeting'
+         )
+       ORDER BY session.updated_at DESC
        LIMIT 1`,
       [userId],
     );
@@ -836,18 +864,60 @@ export class StudentProfileService {
   }
 
   private isProfileCreationRunStale(record: ProfileCreationRunRecord, now: string): boolean {
-    const configuredTimeoutMs =
-      this.configService.get<number>('app.profileCreationRunningTimeoutMs') ?? 900_000;
-    const timeoutMs =
-      Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
-        ? configuredTimeoutMs
-        : 900_000;
+    const timeoutMs = this.getProfileCreationRunningTimeoutMs();
     const leaseAtMs = Date.parse(record.updated_at);
     const nowMs = Date.parse(now);
     if (!Number.isFinite(leaseAtMs) || !Number.isFinite(nowMs)) {
       return true;
     }
     return nowMs - leaseAtMs > timeoutMs;
+  }
+
+  private getProfileCreationRunningTimeoutMs(): number {
+    const configuredTimeoutMs =
+      this.configService.get<number>('app.profileCreationRunningTimeoutMs') ?? 900_000;
+    return Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? configuredTimeoutMs
+      : 900_000;
+  }
+
+  private getProfileCreationHeartbeatIntervalMs(): number {
+    const timeoutMs = this.getProfileCreationRunningTimeoutMs();
+    return Math.max(1_000, Math.min(60_000, Math.floor(timeoutMs / 3)));
+  }
+
+  private async runWithProfileCreationHeartbeat<T>(
+    heartbeat: (() => void) | undefined,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (!heartbeat) {
+      return operation();
+    }
+
+    heartbeat();
+    let intervalError: unknown;
+    const interval = setInterval(() => {
+      try {
+        heartbeat();
+      } catch (error) {
+        intervalError ??= error;
+      }
+    }, this.getProfileCreationHeartbeatIntervalMs());
+    const unref = (interval as { unref?: () => void }).unref;
+    if (typeof unref === 'function') {
+      unref.call(interval);
+    }
+
+    try {
+      const result = await operation();
+      if (intervalError) {
+        throw intervalError;
+      }
+      heartbeat();
+      return result;
+    } finally {
+      clearInterval(interval);
+    }
   }
 
   private heartbeatProfileCreationRun(
@@ -913,7 +983,7 @@ export class StudentProfileService {
              updated_at = ?
          WHERE user_id = ?
            AND conversation_id = ?
-           AND status != 'completed'`,
+           AND status = 'running'`,
         [now, now, userId, conversationId],
       );
     });

@@ -200,7 +200,10 @@ Tutor/product API surfaces also include:
   running rows block a second request even if the transcript hash changed.
   Stale `running` claims are recovered after
   `PROFILE_CREATION_RUNNING_TIMEOUT_MS`, long live runs refresh the lease
-  between specialist calls, and final profile storage, meeting finish, and
+  during individual provider requests as well as between specialist calls,
+  empty active meeting shells are ignored by no-conversation fallback
+  selection, historical failed/superseded rows are preserved when an existing
+  profile is reconciled, and final profile storage, meeting finish, and
   creation-run completion are committed together.
 - `PUT /student-profile/me` for the legacy structured JSON onboarding payload.
   Student access is disabled unless `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED`

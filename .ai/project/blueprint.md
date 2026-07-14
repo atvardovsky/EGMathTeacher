@@ -57,8 +57,12 @@ visible next actions.
   instead of rerunning the extractor or three specialist AI calls. Fresh
   running claims are rejected even when the transcript changed in another tab,
   while failed claims and stale running claims can be retried after the
-  configured heartbeat lease. Completed run rows without a stored profile are
-  treated as inconsistent failed rows and can be retried. After successful
+  configured heartbeat lease. Active profile runs refresh their lease during
+  each onboarding AI request as well as between requests. Completed run rows
+  without a stored profile are treated as inconsistent failed rows and can be
+  retried. When a profile already exists, reconciliation may finish the
+  meeting and close only the still-running creation row; failed and
+  superseded creation rows remain historical evidence. After successful
   profile creation, the profile row, `meeting` lesson finish, and
   creation-run completion are committed together. The legacy structured JSON
   onboarding endpoint is a trusted fallback/import path only and is disabled

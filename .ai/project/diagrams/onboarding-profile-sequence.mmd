@@ -55,7 +55,7 @@ sequenceDiagram
   Student->>Web: Create profile from conversation
   Web->>API: POST /student-profile/me/from-conversation
   API->>Profile: completeOnboardingFromConversation(user, conversationId)
-  Profile->>DB: Read stored meeting tutor_turns for user and conversation
+  Profile->>DB: Read stored meeting tutor_turns for user and conversation, ignoring empty active meeting fallback
   DB-->>Profile: Meeting transcript
   Profile->>Profile: Recheck readiness and required teaching signals
   Profile->>DB: Claim student_profile_creation_runs with one running run per conversation and transcript hash
@@ -78,18 +78,18 @@ sequenceDiagram
     opt Existing failed or stale running claim
       Profile->>DB: Reclaim claim if old row version still matches
     end
-    Profile->>DB: Heartbeat running claim before paid AI calls
+    Profile->>DB: Start periodic heartbeat for running claim
     Profile->>AIModel: Extract onboarding answers from transcript with lessonSessionId
     AIModel->>Policy: Resolve onboardingConversationExtraction policy
     Policy-->>AIModel: Extractor role, model, metadata, optional service tier
     AIModel->>OpenAI: Create extraction response
     OpenAI-->>AIModel: Teaching-only onboarding answers
     AIModel-->>Profile: Extracted answer JSON
-    Profile->>DB: Heartbeat running claim after extraction
+    Profile->>DB: Heartbeat running claim during and after extraction
     Profile->>Knowledge: getActiveVectorStoreIds()
     Knowledge->>DB: Read env ids, project_ai_resources, or active knowledge_files
     Knowledge-->>Profile: Vector store ids
-    Profile->>DB: Heartbeat running claim before each specialist call
+    Profile->>DB: Heartbeat running claim before and during each specialist call
     Profile->>AIModel: Math knowledge diagnostician with conversationId and lessonSessionId
     AIModel->>Policy: Resolve onboardingKnowledgeDiagnosis policy
     Policy-->>AIModel: Specialist role, model, metadata, optional service tier
@@ -110,7 +110,7 @@ sequenceDiagram
     AIModel->>OpenAI: Create specialist response
     OpenAI-->>AIModel: explanationStrategy and aiSummary
     AIModel-->>Profile: strategy and summary
-    Profile->>DB: Transaction: upsert profile + finish meeting + mark run completed
+    Profile->>DB: Transaction: upsert profile + finish meeting + mark active run completed
     Profile-->>API: Profile status
     API-->>Web: onboardingRequired=false and profile
     Web-->>Student: Open tutor workspace with lesson launcher

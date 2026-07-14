@@ -291,10 +291,13 @@ claim with a different transcript hash is first marked failed/superseded,
 then the new transcript can claim a fresh row. Reclaim updates are conditional
 on the previously read row version so concurrent retry workers cannot both
 acquire the same failed or stale claim. While the profile pipeline is live,
-the service heartbeats `updated_at` between AI calls. Completed run rows that
-lost their profile row are marked inconsistent/failed and then retried. After
-AI calls complete, profile upsert, meeting finish, and run completion are
-written in one SQLite transaction.
+the service heartbeats `updated_at` before, during, and after each onboarding
+AI call. Completed run rows that lost their profile row are marked
+inconsistent/failed and then retried. After AI calls complete, profile upsert,
+meeting finish, and run completion are written in one SQLite transaction. If
+a stored profile already exists, reconciliation completes only the still
+running row for the requested conversation; older failed or superseded rows
+are left unchanged as historical evidence.
 
 Background student profile and strategy refresh jobs can merge sanitized JSON
 patches into these fields after tutor turns. Batched mode combines profile and

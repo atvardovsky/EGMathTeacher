@@ -59,10 +59,13 @@ Production domain:
   profile-creation claim per authenticated user and conversation. Retries or
   multiple tabs do not repeat the four onboarding AI calls after success,
   fresh in-progress claims are blocked even if the transcript changed, and
-  stale in-progress claims can be retried after a lease timeout. If the page
-  reloads during an unfinished or terminal pre-profile meeting, the client
-  restores the saved meeting transcript from active meetings with turns or
-  from historical lessons. After setup, the tutor workspace opens with a
+  stale in-progress claims can be retried after a lease timeout. Long
+  onboarding AI calls refresh the lease while a provider request is still in
+  flight, not only between specialist calls. If the page reloads during an
+  unfinished or terminal pre-profile meeting, the client and API fallback
+  restore the saved meeting transcript from active meetings with turns or
+  from historical lessons; empty active meeting shells are ignored. After
+  setup, the tutor workspace opens with a
   lesson launcher and a green first-lesson button instead of a blank state.
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,

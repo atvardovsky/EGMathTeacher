@@ -150,7 +150,8 @@ Current data-minimization rule:
   same or slightly changed transcript through the four onboarding AI calls
   while a fresh run is active; stale running claims are retryable after the
   configured heartbeat lease while fresh running claims remain blocked to
-  avoid duplicate spend
+  avoid duplicate spend; active claims heartbeat during individual provider
+  requests as well as between calls
 - the legacy structured JSON onboarding endpoint is disabled for student use
   by default; `ONBOARDING_STRUCTURED_ENDPOINT_ENABLED=true` is required for
   trusted fallback/import workflows

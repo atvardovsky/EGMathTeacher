@@ -38,8 +38,10 @@ Current covered areas:
   conversation-profile creation, conversation-level active-run locking,
   changed-transcript duplicate-run rejection, stale changed-transcript
   recovery, completed-without-profile recovery, stale running profile-creation
-  claim recovery, fresh running claim rejection, finalization transaction use, and
-  the disabled-by-default legacy structured onboarding endpoint for students
+  claim recovery, fresh running claim rejection, empty active meeting fallback
+  avoidance, long-request lease heartbeat, preservation of historical failed
+  run rows during reconciliation, finalization transaction use, and the
+  disabled-by-default legacy structured onboarding endpoint for students
 - background AI job queueing, optional observation-window batching, legacy
   per-turn mode, flex-tier and prompt-cache payload shape, learning-signal
   storage, profile/strategy refresh merging, failed window observation release,
