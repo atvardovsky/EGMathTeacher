@@ -151,7 +151,7 @@ Use the returned `client_secret.value` when authenticating directly with the Ope
 
 When the provider module is set to `openai-realtime`, the bridge talks to OpenAI’s REST Realtime endpoint. The handshake looks like this:
 
-1. **Create the session** using `POST /v1/realtime/sessions` with `model` and optional `voice`, `instructions`, and `input_audio_transcription`.
+1. **Create the session** using `POST /v1/realtime/sessions` with `model` and optional `voice`, `instructions`, and `input_audio_transcription`. For signed-in tutoring sessions, `instructions` include compact server-only teaching context from the active lesson and recent analytic memory.
 2. **Exchange SDP** – the bridge posts `pcProvider.localDescription.sdp` to `POST /v1/realtime?model=…` and applies the returned answer.
 3. **Open the data channel** – once the “oai-events” channel opens, translator sessions send a system message with strict translation rules:
    ```json
@@ -182,12 +182,17 @@ captured. If token usage was not captured, the ledger row uses
 `usage_unavailable:realtime_tokens` and keeps the local cost estimate at zero.
 The ledger row intentionally stores safe session metadata only, not raw
 transcripts or provider payloads.
+When the transcript contains teaching-useful content, close can also enqueue a
+`realtime_session_review` background job. That job uses the cheaper background
+model policy to store sanitized teaching observations and an optional compact
+session summary. It must not write `tutor_turns`, verifier attempts,
+`student_skill_progress`, mastery evidence, or goal-completion state.
 
 ## Session Lifecycle
 
 1. **Create** – `WebRtcSessionService.createSession()` reserves a session id and associates it with the conversation plus optional signed-in user, lesson session id, and lesson type metadata for usage attribution.
 2. **Activate** – When the media bridge is ready (future implementation), call `activateSession()` so status becomes `active`.
-3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, and records authenticated Realtime usage.
+3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, records authenticated Realtime usage, and can enqueue the safe background Realtime teaching review.
 4. **Retrieve Transcript & Token Stats** – Use `getTranscriptForSession()` or the conversation service helpers to access the saved text or file path. Finalization logs include total “incoming” (caller) and “outgoing” (assistant) token counts once the media bridge begins recording usage.
 5. **Teardown Bridge** – Clients (or future automation) should hit `POST /webrtc/session/{sessionId}/close` to invoke `WebRtcMediaService.closeSession`, which finalizes transcripts and clears in-memory bridge state.
 
@@ -213,6 +218,10 @@ Environment variables used by the module:
 | `OPENAI_REQUEST_TIMEOUT_MS` | Timeout for OpenAI REST calls made by the bridge. | `10000` |
 | `OPENAI_REQUEST_RETRIES` | Retry count for OpenAI REST calls made by the bridge. | `2` |
 | `OPENAI_CLIENT_SECRET_GRACE_MS` | Refresh threshold before OpenAI client-secret expiry. | `5000` |
+| `AI_BACKGROUND_REALTIME_REVIEW_ENABLED` | Enable the optional post-close Realtime teaching-observation background review. | `true` |
+| `AI_BACKGROUND_REALTIME_REVIEW_MAX_TRANSCRIPT_CHARS` | Maximum sanitized transcript characters sent to the Realtime review job. | `4000` |
+| `AI_OPERATION_BACKGROUND_REALTIME_SESSION_REVIEW_MODEL` | Optional model override for the Realtime review background operation. | _(empty = background model defaults)_ |
+| `AI_OPERATION_BACKGROUND_REALTIME_SESSION_REVIEW_SERVICE_TIER` | Optional service-tier override for the Realtime review operation. | _(empty = background service tier)_ |
 | `TRANSCRIPT_LOG_DIR` | Directory where final transcript `.txt` files are written. | `./logs` |
 | `ASSISTANT_PERSONALITY_NAME` | Display name for the assistant persona. | `EGE Math Tutor` |
 | `ASSISTANT_PERSONALITY_DESCRIPTION` | Short description exposed to OpenAI Realtime. | `A realtime voice tutor for Russian EGE math students aged 14-16.` |
@@ -258,6 +267,6 @@ The scaffold omits several critical pieces that need to be built:
 2. **Signaling Channel** – ✅ REST endpoints available for SDP/ICE exchange; the bridge consumes them directly.
 3. **Media Bridge** – ✅ Browser audio is forwarded to OpenAI Realtime and synthetic speech is relayed back to the client. Persona metadata is collapsed into the `instructions` field (file search ids are currently ignored until tooling is added). Gemini/Hume/Retell support still TODO.
 4. **Session Limits & Cleanup** – ✅ Limit enforcement in place; wire up periodic calls to `cleanupClosedSessions()` and add retry policies.
-5. **Observability** – Usage-ledger accounting exists for authenticated session close. Add metrics and structured logs for session state, transcription success, call quality, and provider-side billing reconciliation before production.
+5. **Observability** – Usage-ledger accounting and cheap background teaching review exist for authenticated session close. Add metrics and structured logs for session state, transcription success, call quality, and provider-side billing reconciliation before production.
 
 With these additions the module will provide a production-ready entry point for any WebRTC-capable voice client.

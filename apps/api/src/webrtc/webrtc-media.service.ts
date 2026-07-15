@@ -121,6 +121,7 @@ export class WebRtcMediaService {
       fileSearch: this.signalingService.getFileSearchConfig(),
       realtimeModel: this.signalingService.getRealtimeModel(),
       translatorMode: Boolean(translation),
+      teachingContextPrompt: this.sessionService.getSession(sessionId)?.teachingContext?.prompt,
       onServerIceCandidate: (candidate: string) => {
         this.sessionService.enqueueServerIceCandidate(sessionId, candidate);
       },

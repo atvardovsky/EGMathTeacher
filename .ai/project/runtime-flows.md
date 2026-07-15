@@ -364,10 +364,12 @@ This file records runtime flows from current source evidence.
    opens read-only history, changes lesson boundaries, starts a new lesson, or
    leaves the tutor workspace. In the current POC, realtime turns are not yet
    converted into `tutor_turns`; saved lessons, structured blocks, verifier
-   evidence, images, progress, and background analysis still use
-   `POST /tutor/message`. Authenticated realtime sessions do write
-   session-level usage ledger rows on close when the provider supplies token
-   usage or at least session duration can be recorded.
+   evidence, images, and progress still use `POST /tutor/message`.
+   Authenticated realtime sessions receive compact current-lesson and analytic
+   teaching context, write session-level usage ledger rows on close when the
+   provider supplies token usage or at least session duration can be recorded,
+   and can enqueue a cheap background review that stores sanitized teaching
+   observations for future context.
 4. Speech synthesis is the assistant output path for normal tutor answers:
    when a tutor answer arrives
    after a user-triggered message or launcher action, the browser reads the
@@ -391,8 +393,8 @@ This file records runtime flows from current source evidence.
 9. Normal tutor voice output does not use OpenAI audio generation, does not
    upload generated audio, and does not store spoken audio. The WebRTC preview
    uses OpenAI Realtime through `/webrtc`, writes the inherited realtime
-   transcript log on close, and records a safe usage-ledger row for signed-in
-   sessions.
+   transcript log on close, records a safe usage-ledger row for signed-in
+   sessions, and may enqueue a sanitized teaching-observation review.
 10. When a terminal tutor response arrives, the client clears the active
    `conversationId`, opens the turn as read-only history state, disables
    composer/voice/image actions, and shows the new-lesson action.
@@ -436,7 +438,8 @@ This file records runtime flows from current source evidence.
    task-specific specialist prompts: `learning-window-analyzer`,
    `profile-strategy-background-refresher`, `learning-signal-extractor`,
    `session-summarizer`, `student-profile-background-refresher`,
-   `teaching-strategy-background-planner`, and
+   `teaching-strategy-background-planner`,
+   `realtime-session-background-reviewer`, and
    `tutor-quality-background-reviewer`.
 9. When the OpenAI provider is used, background operation service-tier policy
    can include `service_tier=flex`; per-operation tier overrides fall back to
@@ -465,7 +468,13 @@ This file records runtime flows from current source evidence.
     and job-type filters, resets attempts, and only requeues safe background job
     types. Recovery schedules future worker execution; it does not run the
     OpenAI call synchronously in the request.
-16. Background work must not store non-teaching sensitive details and must not
+16. Realtime session review jobs are optional through
+   `AI_BACKGROUND_REALTIME_REVIEW_ENABLED`, use the cheap background operation
+   policy, and can write `student_learning_signals` plus
+   `student_session_summaries`. They must not write `tutor_turns`,
+   `student_attempts`, `mastery_evidence`, `student_skill_progress`, or lesson
+   goal status.
+17. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
 ## Tutor Image Flow
@@ -629,19 +638,28 @@ High-level flow:
    lesson session id and lesson type for usage attribution.
 2. API creates in-memory WebRTC session and conversation state. The endpoint
    remains usable without auth, but signed-in sessions keep optional user and
-   lesson attribution metadata in memory.
+   lesson attribution metadata in memory and build compact server-only
+   teaching context from the current lesson, profile summary/strategy, recent
+   summaries, learning signals, and scoped skill trends.
 3. Client can request a realtime token with
-   `POST /webrtc/session/:sessionId/token`.
+   `POST /webrtc/session/:sessionId/token`. Direct token creation receives the
+   same server-only teaching context in persona rules, but the bootstrap
+   payload does not expose that context to the browser.
 4. Client submits SDP offer to `POST /webrtc/session/:sessionId/offer`.
-5. API media bridge negotiates with OpenAI Realtime and returns SDP answer.
+5. API media bridge appends the compact teaching context to Realtime
+   instructions, negotiates with OpenAI Realtime, and returns SDP answer.
 6. ICE candidates can be queued or drained through the documented endpoints.
 7. Provider events update conversation transcript state.
 8. Session close finalizes transcript text and writes transcript file when
    available.
-9. The current tutor UI treats this as a fast audio preview. It does not yet
+9. For signed-in sessions with transcript content, close enqueues
+   `realtime_session_review` as delayed background work. The review stores
+   sanitized teaching observations and an optional compact summary only; it
+   does not write proof/progress state.
+10. The current tutor UI treats this as a fast audio preview. It does not yet
    transform realtime transcript events into durable `tutor_turns`, lesson
-   decisions, verifier attempts, images, or background learning observations.
-10. For signed-in sessions, close records one `ai_usage_ledger` row with
+   decisions, verifier attempts, images, or verified progress.
+11. For signed-in sessions, close records one `ai_usage_ledger` row with
     operation `webrtc.realtime_session`, model, input/output token counts when
     Realtime provider events supplied usage, session duration, and safe session
     metadata. If provider token usage was not captured, the row uses

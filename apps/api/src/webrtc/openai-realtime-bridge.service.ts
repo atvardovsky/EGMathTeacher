@@ -79,6 +79,7 @@ export interface BridgeSessionOptions {
   realtimeModel?: string;
   onServerIceCandidate?: (candidate: string) => void;
   translatorMode?: boolean;
+  teachingContextPrompt?: string;
 }
 
 interface BridgeSessionState extends BridgeSessionOptions {
@@ -296,6 +297,8 @@ export class OpenAiRealtimeBridgeService {
       state.realtimeModel = options.realtimeModel ?? state.realtimeModel;
       state.onServerIceCandidate = options.onServerIceCandidate ?? state.onServerIceCandidate;
       state.translatorMode = options.translatorMode ?? state.translatorMode;
+      state.teachingContextPrompt =
+        options.teachingContextPrompt ?? state.teachingContextPrompt;
     }
     state.onServerIceCandidate = options.onServerIceCandidate ?? state.onServerIceCandidate;
     if (!state.pendingClientIceCandidates) {
@@ -526,7 +529,7 @@ export class OpenAiRealtimeBridgeService {
     const transcriptionModel =
       this.configService.get<string>('webrtc.inputAudioTranscriptionModel')?.trim() ?? '';
 
-    const instructions = this.composeInstructions(state.persona);
+    const instructions = this.composeInstructions(state.persona, state.teachingContextPrompt);
     const payload: Record<string, unknown> = {
       model,
     };
@@ -840,7 +843,7 @@ export class OpenAiRealtimeBridgeService {
       return false;
     }
 
-    const instructions = this.composeInstructions(state.persona);
+    const instructions = this.composeInstructions(state.persona, state.teachingContextPrompt);
     const responsePayload: Record<string, unknown> = {
       modalities: ['audio', 'text'],
     };
@@ -900,7 +903,7 @@ export class OpenAiRealtimeBridgeService {
       return false;
     }
 
-    const baseInstructions = this.composeInstructions(state.persona);
+    const baseInstructions = this.composeInstructions(state.persona, state.teachingContextPrompt);
     const translationInstructions = [
       baseInstructions,
       'Translate the following text and output only the translation.',
@@ -1117,7 +1120,7 @@ export class OpenAiRealtimeBridgeService {
     if (!channel || channel.readyState !== 'open') {
       return;
     }
-    const instructions = this.composeInstructions(state.persona);
+    const instructions = this.composeInstructions(state.persona, state.teachingContextPrompt);
     if (!instructions) {
       return;
     }
@@ -1232,7 +1235,7 @@ export class OpenAiRealtimeBridgeService {
     return undefined;
   }
 
-  private composeInstructions(persona: PersonalityConfig): string {
+  private composeInstructions(persona: PersonalityConfig, teachingContextPrompt?: string): string {
     const pieces: string[] = [];
     if (persona?.name?.trim()) {
       pieces.push(`You are "${persona.name.trim()}".`);
@@ -1249,6 +1252,9 @@ export class OpenAiRealtimeBridgeService {
     }
     if (persona?.rules?.trim()) {
       pieces.push(`Rules: ${persona.rules.trim()}`);
+    }
+    if (teachingContextPrompt?.trim()) {
+      pieces.push(teachingContextPrompt.trim());
     }
     if (pieces.length === 0) {
       return 'You are a helpful voice assistant. Respond concisely.';

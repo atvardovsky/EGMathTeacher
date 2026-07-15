@@ -56,7 +56,11 @@ profile creation, and migration `014_profile_creation_conversation_lock` after
 adding a partial unique lock that allows only one running profile-creation row
 per user and conversation. Migration `015_profile_creation_user_lock` upgrades
 that invariant to one running profile-creation row per user, matching the
-single-row `student_profiles` ownership model.
+single-row `student_profiles` ownership model. Migration
+`016_realtime_usage_ledger_metadata` adds session-duration and safe metadata
+fields for WebRTC Realtime usage rows. Migration
+`017_realtime_session_review_jobs` widens the `background_ai_jobs.type`
+constraint for post-close Realtime teaching-observation review jobs.
 Migrations are applied inside a local SQLite transaction, and table-rebuild
 migrations must pass `PRAGMA foreign_key_check` before the version is
 recorded. This is a lightweight migration ledger, not a full production
@@ -320,7 +324,7 @@ eventually consistent and use only teaching-useful signals stored in SQLite.
 | Column | Type | Rule |
 | --- | --- | --- |
 | `id` | `TEXT` | primary key |
-| `type` | `TEXT` | required; one of `learning_signal_extraction`, `learning_window_analysis`, `session_summary`, `student_profile_refresh`, `profile_strategy_refresh`, `teaching_strategy_refresh`, `tutor_quality_review` |
+| `type` | `TEXT` | required; one of `learning_signal_extraction`, `learning_window_analysis`, `realtime_session_review`, `session_summary`, `student_profile_refresh`, `profile_strategy_refresh`, `teaching_strategy_refresh`, `tutor_quality_review` |
 | `status` | `TEXT` | required; `pending`, `running`, `succeeded`, or `failed` |
 | `user_id` | `TEXT` | required, references `users(id)` |
 | `conversation_id` | `TEXT` | optional tutor conversation id |
@@ -348,6 +352,12 @@ teaching strategy from stored data. Tutor runtime enqueues these jobs only
 from transition-confirmed closed sessions or from a current turn lifecycle
 that became terminal; rejected terminal-conversation reuse and repeated finish
 requests do not create new closure rows.
+Realtime session close can enqueue `realtime_session_review` for signed-in
+sessions when sanitized transcript content exists. This job stores
+teaching-useful `student_learning_signals` and optional
+`student_session_summaries`, but must not write `tutor_turns`,
+`student_attempts`, `mastery_evidence`, `student_skill_progress`, or lesson
+goal state.
 Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
 before each drain: jobs with retry attempts left return to `pending`, and
 exhausted jobs become `failed`.
@@ -937,6 +947,8 @@ prompts.
 - conversation id
 - optional signed-in user id for usage attribution
 - optional lesson session id and lesson type for usage attribution
+- optional compact realtime teaching context for provider instructions and
+  post-close background review
 - timestamps
 - status: `pending`, `active`, or `closed`
 - preferred voice
@@ -957,6 +969,9 @@ Closed sessions are cleaned from memory after the configured cleanup window.
 - finalized transcript metadata
 
 This is not durable storage.
+On authenticated close, WebRTC also records one safe `ai_usage_ledger` row
+and may enqueue a `realtime_session_review` background job that stores only
+sanitized teaching observations or summaries.
 
 ## File Artifacts
 

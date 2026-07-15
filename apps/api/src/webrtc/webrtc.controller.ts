@@ -15,8 +15,14 @@ import {
 import { randomUUID } from 'crypto';
 import type { Request } from 'express';
 import { AuthService } from '../auth/auth.service';
-import { ConversationService } from '../conversation/conversation.service';
+import { BackgroundAiService } from '../background-ai/background-ai.service';
+import {
+  ConversationService,
+  type ConversationRecord,
+} from '../conversation/conversation.service';
 import { DatabaseService } from '../database/database.service';
+import { TeachingContextService } from '../teaching-context/teaching-context.service';
+import { RealtimeTeachingContext } from '../teaching-context/teaching-context.types';
 import type { LessonType } from '../tutor/tutor.types';
 import { UsageService } from '../usage/usage.service';
 import { WebRtcSession, WebRtcSessionService } from './webrtc-session.service';
@@ -24,6 +30,7 @@ import {
   WebRtcSignalingService,
   WebRtcBootstrapPayload,
   TranslationConfig,
+  PersonalityConfig,
 } from './webrtc-signaling.service';
 import { WebRtcAuthService, RealtimeEphemeralToken } from './webrtc-auth.service';
 import { WebRtcMediaService } from './webrtc-media.service';
@@ -99,6 +106,8 @@ export class WebRtcController {
     private readonly appAuthService: AuthService,
     private readonly usageService: UsageService,
     private readonly db: DatabaseService,
+    private readonly teachingContextService: TeachingContextService,
+    private readonly backgroundAiService: BackgroundAiService,
   ) {}
 
   @Post('session')
@@ -117,6 +126,15 @@ export class WebRtcController {
       conversationId,
       body,
     );
+    const teachingContext = this.teachingContextService.buildRealtimeTeachingContext({
+      userId: metadata.userId,
+      conversationId,
+      lessonSessionId: metadata.lessonSessionId,
+      lessonType: metadata.lessonType,
+    });
+    if (teachingContext) {
+      metadata.teachingContext = teachingContext;
+    }
 
     try {
       this.sessionService.assertCapacity();
@@ -199,7 +217,7 @@ export class WebRtcController {
       sessionId: session.id,
       conversationId: session.conversationId,
       voice: requestedVoice,
-      personality,
+      personality: this.withTeachingContextRules(personality, session.teachingContext),
       fileSearch: this.signalingService.getFileSearchConfig(),
     });
 
@@ -343,6 +361,7 @@ export class WebRtcController {
     const transcript = await this.mediaService.closeSession(sessionId);
     const record = this.conversationService.getConversationRecord(session.conversationId);
     this.recordRealtimeUsage(session, record);
+    this.enqueueRealtimeReview(session, record, transcript);
     const transcriptFile = transcript
       ? this.conversationService.getFinalTranscriptFile(session.conversationId)
       : undefined;
@@ -422,7 +441,12 @@ export class WebRtcController {
     userId: string | undefined,
     conversationId: string,
     body: StartSessionRequest,
-  ): { userId?: string; lessonSessionId?: string; lessonType?: LessonType } {
+  ): {
+    userId?: string;
+    lessonSessionId?: string;
+    lessonType?: LessonType;
+    teachingContext?: RealtimeTeachingContext;
+  } {
     const requestedLessonType = this.normalizeLessonType(body.lessonType);
     if (!userId) {
       return {
@@ -487,12 +511,7 @@ export class WebRtcController {
 
   private recordRealtimeUsage(
     session: WebRtcSession,
-    record:
-      | {
-          tokenUsage: { incoming: number; outgoing: number };
-          turns: unknown[];
-        }
-      | undefined,
+    record: ConversationRecord | undefined,
   ): void {
     if (!session.userId) {
       return;
@@ -520,5 +539,53 @@ export class WebRtcController {
         }`,
       );
     }
+  }
+
+  private enqueueRealtimeReview(
+    session: WebRtcSession,
+    record: ConversationRecord | undefined,
+    transcript: string | undefined,
+  ): void {
+    if (!session.userId) {
+      return;
+    }
+
+    try {
+      this.backgroundAiService.enqueueRealtimeSessionReview({
+        userId: session.userId,
+        conversationId: session.conversationId,
+        webrtcSessionId: session.id,
+        lessonSessionId: session.lessonSessionId,
+        lessonType: session.lessonType as LessonType | undefined,
+        transcript,
+        turns: (record?.turns ?? []).map((turn) => ({
+          participant: turn.participant,
+          transcript: turn.transcript,
+          timestamp: turn.timestamp,
+          durationMillis: turn.durationMillis,
+        })),
+        tokenUsage: record?.tokenUsage,
+        teachingContext: session.teachingContext?.reviewContext,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to enqueue WebRTC realtime review for session ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private withTeachingContextRules(
+    personality: PersonalityConfig,
+    teachingContext: RealtimeTeachingContext | undefined,
+  ): PersonalityConfig {
+    if (!teachingContext?.prompt) {
+      return personality;
+    }
+    return {
+      ...personality,
+      rules: [personality.rules, teachingContext.prompt].filter(Boolean).join('\n\n'),
+    };
   }
 }

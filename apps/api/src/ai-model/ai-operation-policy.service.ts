@@ -128,6 +128,23 @@ const OPERATION_DEFINITIONS: Record<AiOperationKey, AiOperationDefinition> = {
     ],
     promptCacheKeyEnabled: true,
   },
+  backgroundRealtimeSessionReview: {
+    operation: 'background.review_realtime_session',
+    role: 'background_learning_analyst',
+    responseFormat: 'json',
+    modelPaths: [
+      'ai.operationModels.backgroundRealtimeSessionReview',
+      'ai.background.responsesModel',
+      'ai.background.windowResponsesModel',
+      'ai.openai.responsesModel',
+    ],
+    fallbackModel: 'gpt-5.5',
+    serviceTierPaths: [
+      'ai.operationServiceTiers.backgroundRealtimeSessionReview',
+      'ai.background.serviceTier',
+    ],
+    promptCacheKeyEnabled: true,
+  },
   backgroundSessionSummary: {
     operation: 'background.create_session_summary',
     role: 'background_learning_analyst',

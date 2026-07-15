@@ -14,6 +14,7 @@ flowchart TB
   AppModule --> Knowledge[KnowledgeModule]
   AppModule --> Health[HealthModule]
   AppModule --> ModelProvider[AiModelModule]
+  TeachingContext[TeachingContextModule]
 
   Tutor --> Auth
   Tutor --> StudentProfile
@@ -48,7 +49,12 @@ flowchart TB
 
   WebRTC --> Conversation
   WebRTC --> Providers
+  WebRTC --> Usage
+  WebRTC --> TeachingContext
+  WebRTC --> BackgroundAI
   WebRTC --> OpenAIRealtimeBridge[OpenAiRealtimeBridgeService]
+
+  TeachingContext --> DatabaseService
 
   Health --> OpenAIRealtimeBridge
   Auth --> DatabaseService

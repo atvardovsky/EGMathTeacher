@@ -154,6 +154,9 @@ Derived surfaces:
 - `.ai/project/diagrams.md`
 - `.ai/project/knowledge-pack-runtime-repair-plan.md` for knowledge-pack
   runtime/sync repair implementation facts and residual risks
+- `apps/api/docs/webrtc-module.md` and `apps/api/src/webrtc` for WebRTC
+  Realtime flow boundaries, signed-in teaching context injection, and
+  post-close realtime background-review enqueueing
 - `README.md`
 - deployment reference docs under `deploy/`
 

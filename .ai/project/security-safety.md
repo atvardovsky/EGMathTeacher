@@ -138,6 +138,10 @@ Current data-minimization rule:
   results must sanitize payloads before storage; session summaries and skill
   progress/regression rows must stay teaching-useful and must not store raw
   sensitive personal details, clinical diagnoses, or non-teaching facts
+- realtime voice reviews may store sanitized teaching observations and session
+  summaries after a signed-in WebRTC session closes; they must not store raw
+  hidden realtime context, mark verified mastery, complete lesson goals, or
+  mutate the long-term profile directly
 - lesson decision rows must store teaching-action evidence and policy results,
   not clinical labels, sensitive personal details, raw hidden prompts, provider
   request ids, secrets, or billing credentials

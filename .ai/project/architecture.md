@@ -22,14 +22,16 @@ EGMathTeacher is a browser-based POC with:
   lesson-decision, background, quality-review, and image assistant roles can
   use different models and service-tier settings
 - SQLite-backed background AI worker for optional grouped learning observation
-  windows, learning signals, session summaries, skill progress/regression,
-  profile/strategy refreshes, and rare quality reviews
+  windows, learning signals, realtime session teaching-observation reviews,
+  session summaries, skill progress/regression, profile/strategy refreshes,
+  and rare quality reviews
 - SQLite-backed lesson lifecycle, Lesson Decision Agent observability,
   DB-backed curriculum/task-bank runtime lookups, deterministic verifier V1,
   imported mastery-criteria policy, and usage ledger for lesson goals,
   time-limit heuristics, backend policy decisions, effectiveness signals,
   verified learning outcomes, and user-visible cost estimates
-- OpenAI Realtime for inherited realtime voice
+- OpenAI Realtime for inherited realtime voice, with compact current-lesson
+  and analytic teaching context injected into signed-in sessions
 - optional production reverse proxy references under `deploy/`
 
 No packaged desktop runtime was found.
@@ -81,14 +83,15 @@ flowchart LR
 | `DatabaseModule` | `apps/api/src/database` | SQLite database initialization and query helpers. |
 | `OpenAiClientModule` | `apps/api/src/openai` | REST client for OpenAI Responses, images, files, and vector stores. |
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
-| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, lesson-closure conversation review, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
+| `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, realtime session teaching-observation review, lesson-closure conversation review, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
 | `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, terminal-conversation reopening guard, transition-confirmed closed-session reporting for closure jobs, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
 | `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, including model operations, image estimates, WebRTC Realtime session rows, decision observability, verified outcome counts, and safe background job status/result/error projections. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling, saved lesson history, and image generation. |
 | `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, strict authoritative deleted-path reconciliation, sync-job recovery for failed and attached timeout jobs, optional vector-store wait-ready with pending-index state, archive guardrails, vector store status, and local project vector-store id persistence. |
-| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events, optional signed-in lesson attribution, and Realtime close-session usage accounting. |
+| `TeachingContextModule` | `apps/api/src/teaching-context` | Read-only compact teaching-context builder for Realtime sessions from current lesson state, stored profile summary, recent summaries, learning signals, and scoped skill trends. |
+| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events, optional signed-in lesson attribution, compact teaching-context injection, Realtime close-session usage accounting, and post-close background review enqueue. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
 
@@ -116,9 +119,11 @@ Main UI areas in `apps/web/src/App.tsx`:
   restart only for non-terminal lesson lifecycles plus visible recognition
   stop reasons in voice-dialog mode. The workspace also has an explicit
   WebRTC/OpenAI Realtime voice preview that negotiates through `/webrtc` after
-  a user click, sends active lesson attribution when present, closes on
-  lesson-boundary/read-only state changes, and refreshes usage after close; it
-  does not yet replace the structured `/tutor/message` lesson pipeline.
+  a user click, sends active lesson attribution when present, receives
+  server-side current lesson and analytic teaching context, closes on
+  lesson-boundary/read-only state changes, refreshes usage after close, and
+  can trigger a cheap background review for teaching observations; it does not
+  yet replace the structured `/tutor/message` lesson pipeline.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
@@ -169,6 +174,12 @@ evidence. A hardcoded linear task remains only as a logged POC fallback when
 no imported task-bank row is available, and `TASK_BANK_REQUIRED=true` disables
 that fallback.
 
+`apps/api/src/teaching-context` owns read-only context assembly for realtime
+voice. It compacts current lesson state, recent visible tutor turns, stored
+profile summary/strategy, recent session summaries, learning signals, and
+scoped skill trends into provider instructions. It must not mutate profile,
+progress, mastery, lesson state, or usage rows.
+
 `apps/api/src/background-ai` owns local background orchestration. It persists
 jobs and sanitized tutor-turn observations in SQLite, drains them in-process on
 an interval, and calls the model provider from delayed jobs instead of the
@@ -177,8 +188,12 @@ window size, idle timeout, or quality trigger, then can run a combined
   profile/strategy refresh. Lesson closure paths enqueue immediate transcript
   summary and profile/strategy review jobs only after confirmed terminal
   transitions so finished conversations can still improve the student's future
-  teaching strategy without analyzing active lessons prematurely. Legacy
-  per-turn extraction remains available through configuration.
+  teaching strategy without analyzing active lessons prematurely. Realtime
+  session close can enqueue `realtime_session_review`, which uses background
+  model policy to store sanitized teaching observations and an optional
+  session summary; it must not write verifier attempts, mastery evidence,
+  `student_skill_progress`, or goal state. Legacy per-turn extraction remains
+  available through configuration.
 
 ## Endpoint Map
 
@@ -201,7 +216,7 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution but does not require auth. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, and post-close background review, but does not require auth. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
 
 Local operator command:
 

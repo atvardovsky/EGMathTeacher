@@ -74,6 +74,12 @@ controller source:
 - `GET /health`
 - `/webrtc/*`
 
+`/webrtc/*` remains unguarded for compatibility with the inherited voice
+assistant shape. When a valid signed session cookie is present, the controller
+may attach server-only teaching context, session-level usage attribution, and a
+post-close background review to the signed-in user. Missing or invalid cookies
+must leave the session anonymous instead of exposing another user's context.
+
 This file records current behavior; it does not approve the security model for
 production use.
 

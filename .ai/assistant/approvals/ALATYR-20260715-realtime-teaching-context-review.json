@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260715-realtime-teaching-context-review",
+  "operation": {
+    "id": "realtime-teaching-context-review-20260715",
+    "type": "runtime-architecture-data-provider-boundary-repair"
+  },
+  "plan": {
+    "version": "2026-07-15-realtime-teaching-context-review-v1",
+    "sha256": "not available; approval was given as a direct implementation request",
+    "file": "not available; user requested implementation in active chat"
+  },
+  "diff": {
+    "base": "f6d5c0520120094e752ee1265ac8af4077909070",
+    "patch_sha256": "not available before final patch; local validation evidence to be recorded in markdown approval",
+    "repository_revision_at_approval": "f6d5c0520120094e752ee1265ac8af4077909070"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Inject compact server-only teaching context into signed-in WebRTC Realtime sessions.",
+      "Queue a cheap post-close realtime background review that may store sanitized teaching observations and session summaries.",
+      "Add operation/model routing for realtime background review.",
+      "Add database migration support for realtime_session_review background jobs.",
+      "Update unit tests, public docs, project docs, diagrams, and Alatyr approval evidence.",
+      "Run a quick low-cost real OpenAI Responses smoke from .env to verify credentials/model reachability."
+    ],
+    "allowed_files_or_surfaces": [
+      "README.md",
+      "apps/api/.env.example",
+      "apps/api/Agent.md",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "apps/api/src/ai-model",
+      "apps/api/src/background-ai",
+      "apps/api/src/config",
+      "apps/api/src/database",
+      "apps/api/src/teaching-context",
+      "apps/api/src/webrtc",
+      "apps/api/test",
+      ".ai/project",
+      ".ai/assistant/approvals/ALATYR-20260715-realtime-teaching-context-review.*"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials"
+    ],
+    "excluded_actions": [
+      "No full live WebRTC/OpenAI Realtime session validation in this operation.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No auth guard weakening for /webrtc.",
+      "No durable tutor-turn persistence from realtime transcripts.",
+      "No mastery, skill-progress, profile, or goal-state mutation directly from realtime review.",
+      "No destructive production database operation."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Durable tutor-turn persistence from realtime, verified mastery/progress from realtime, production deployment, new provider, new dependency, auth guard weakening, system web server changes, destructive data operations, or broad live OpenAI Realtime validation require fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-15T15:55:00+02:00",
+    "source_or_message": "User requested implementation of cheap background checks for realtime voice, with current lesson context plus analytic background context, and allowed a quick low-cost real OpenAI key check from .env.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "realtime-teaching-context-review-20260715",
+    "patch_changed_after_approval": "yes; final patch added teaching-context runtime code, realtime review job handling, tests, docs, diagrams, and approval evidence within the approved scope",
+    "implementation_within_scope": "yes",
+    "validation": "npm run diagrams:render; npm run diagrams:check; npm run test --workspace @egmathteacher/api -- --runTestsByPath test/webrtc.controller.spec.ts test/background-ai.service.spec.ts test/ai-model.service.spec.ts; npm run build; npm test; npm run lint; npm run alatyr:check; git diff --check; npm run smoke:dev; tiny live OpenAI Responses smoke using .env with max_output_tokens=32; npm run e2e; targeted local-path/API-key leak scan over changed docs/config examples",
+    "result_evidence": "diagram render completed for 10 diagrams and drift check passed; focused API tests passed 3 suites / 25 tests; root build passed with existing Vite large-chunk warning; full Jest passed 17 suites / 128 tests with existing worker-teardown warning; lint passed; Alatyr consistency passed; whitespace check passed; dev smoke passed for https://localhost:5137; first live smoke wrapper failed before provider contact due Node inline module format and was rerun correctly; live OpenAI Responses smoke succeeded with configured model gpt-5.5-2026-04-23 and output {\"ok\":true}; mocked Playwright E2E passed 9 tests; strict local-path/API-key scan had no matches after excluding rendered SVG artifacts",
+    "residual_risk": "Full live OpenAI Realtime audio/WebRTC behavior was intentionally not run to avoid a longer spend-affecting session. Realtime voice is now context-aware and reviewable after close, but it still does not create durable tutor_turns, verified attempts, mastery, progress, profile mutation, or goal completion; those remain owned by the normal tutor/message lesson engine. Local usage estimates remain non-authoritative provider billing evidence."
+  }
+}

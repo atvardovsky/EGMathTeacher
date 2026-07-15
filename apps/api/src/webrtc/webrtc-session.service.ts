@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { ConversationService } from '../conversation/conversation.service';
+import { RealtimeTeachingContext } from '../teaching-context/teaching-context.types';
 import { TranslationConfig } from './webrtc-signaling.service';
 
 export interface WebRtcSession {
@@ -10,6 +11,7 @@ export interface WebRtcSession {
   userId?: string;
   lessonSessionId?: string;
   lessonType?: string;
+  teachingContext?: RealtimeTeachingContext;
   createdAt: number;
   updatedAt: number;
   status: 'pending' | 'active' | 'closed';
@@ -28,6 +30,7 @@ export interface WebRtcSessionMetadata {
   userId?: string;
   lessonSessionId?: string;
   lessonType?: string;
+  teachingContext?: RealtimeTeachingContext;
 }
 
 @Injectable()
@@ -64,6 +67,7 @@ export class WebRtcSessionService implements OnModuleDestroy {
       userId: metadata.userId,
       lessonSessionId: metadata.lessonSessionId,
       lessonType: metadata.lessonType,
+      teachingContext: metadata.teachingContext,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       status: 'pending',

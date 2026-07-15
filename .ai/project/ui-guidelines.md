@@ -147,9 +147,10 @@ landing page.
   voice action. It must be user-started, clearly show connection state, be
   disabled for read-only history records, and stop when the student changes
   lesson boundary or leaves the tutor workspace. Closing a signed-in realtime
-  session should refresh the usage panel when accounting is enabled. Until
-  realtime transcript events are connected to the lesson pipeline, the UI must
-  keep the normal saved-message composer visible.
+  session should refresh the usage panel when accounting or background review
+  is enabled. Until realtime transcript events are connected to the lesson
+  pipeline as structured saved turns, the UI must keep the normal
+  saved-message composer visible.
 - In voice-dialog mode, the browser should hand the turn back to the student:
   after assistant speech ends, speech recognition starts automatically when the
   browser supports it, permissions allow it, and the returned lesson lifecycle

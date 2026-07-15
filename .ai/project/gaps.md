@@ -173,14 +173,17 @@ tutor composer as a live voice preview. Remaining product/runtime integration:
 
 - map realtime transcript events into authenticated `tutor_turns`
 - enforce realtime terminal lesson policy while the call is still open
-- feed realtime turns into background learning observations and profile
-  refresh jobs
+- decide whether realtime observations should ever trigger profile/strategy
+  refresh beyond the current cheap post-close teaching-observation review
 - render realtime tutor outputs as structured text/task/example/image blocks
   when the conversation needs saved lesson continuity
 
 Realtime sessions now send optional active lesson attribution from the web UI
-and record one authenticated `ai_usage_ledger` row on close, but they remain a
-preview path rather than a durable pedagogical loop.
+receive compact server-side teaching context, record one authenticated
+`ai_usage_ledger` row on close, and can enqueue a safe
+`realtime_session_review` background job. They remain a preview path rather
+than a durable pedagogical loop because they still do not create structured
+turns, verifier attempts, images, or verified progress.
 
 ### Production Deployment And Operations
 

@@ -3,6 +3,7 @@ import type { LessonType } from '../tutor/tutor.types';
 export type BackgroundAiJobType =
   | 'learning_signal_extraction'
   | 'learning_window_analysis'
+  | 'realtime_session_review'
   | 'session_summary'
   | 'student_profile_refresh'
   | 'profile_strategy_refresh'
@@ -54,6 +55,21 @@ export interface LessonClosureBackgroundInput {
   lessonSessionId: string;
   lessonType: LessonType;
   finishReason?: string;
+}
+
+export interface RealtimeSessionReviewBackgroundInput {
+  userId: string;
+  conversationId: string;
+  webrtcSessionId: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
+  transcript?: string;
+  turns?: Array<Record<string, unknown>>;
+  tokenUsage?: {
+    incoming?: number;
+    outgoing?: number;
+  };
+  teachingContext?: Record<string, unknown>;
 }
 
 export interface BackgroundAiStatus {

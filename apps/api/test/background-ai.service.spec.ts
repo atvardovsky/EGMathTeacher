@@ -407,6 +407,108 @@ describe('BackgroundAiService', () => {
     ).toBe(0);
   });
 
+  it('reviews closed realtime sessions as cheap background teaching observations', async () => {
+    aiModel.createOperationResponse.mockReset();
+    aiModel.createOperationResponse.mockResolvedValueOnce({
+      output_text: JSON.stringify({
+        summary: 'В realtime ученик попросил объяснять медленнее и через пример.',
+        observations: [
+          {
+            kind: 'pace_preference',
+            value: 'нужен медленный темп',
+            scope: 'current_lesson',
+            confidence: 'medium',
+            evidence: ['попросил объяснять медленнее'],
+            nextAction: 'давать один шаг и проверочный вопрос',
+          },
+        ],
+        sessionSummary: {
+          summary: 'Realtime разговор дал сигнал по темпу объяснения.',
+          topicsWorked: ['линейные уравнения'],
+          nextSteps: ['короткая задача с одним шагом'],
+          strategyHints: ['пример перед правилом'],
+        },
+        teachingStrategyHints: ['пример перед правилом'],
+        nextTutorContext: 'Начать следующий ответ с короткого примера.',
+        profileUpdateRecommended: false,
+        masteryUpdateAllowed: false,
+      }),
+    });
+
+    service.enqueueRealtimeSessionReview({
+      userId: 'student-1',
+      conversationId: 'conv-rtc',
+      webrtcSessionId: 'rtc-1',
+      lessonSessionId: 'lesson-rtc-1',
+      lessonType: 'tutor',
+      transcript:
+        '1. Caller: Объясни медленнее, пожалуйста\n2. Assistant: Давай разберём на примере.',
+      turns: [
+        {
+          participant: 'user',
+          transcript: 'Объясни медленнее, пожалуйста',
+          timestamp: Date.now(),
+        },
+        {
+          participant: 'assistant',
+          transcript: 'Давай разберём на примере.',
+          timestamp: Date.now(),
+        },
+      ],
+      tokenUsage: { incoming: 12, outgoing: 20 },
+      teachingContext: { strategyHints: ['пример перед правилом'] },
+    });
+
+    expect(service.getStatus().pending).toBe(1);
+    await expect(service.drainPending()).resolves.toBe(1);
+
+    expect(aiModel.createOperationResponse).toHaveBeenCalledWith(
+      'backgroundRealtimeSessionReview',
+      expect.objectContaining({
+        prompt_cache_key: expect.stringMatching(/^egmt:realtimesess:[a-f0-9]{32}$/),
+        metadata: expect.objectContaining({
+          background_ai: 'true',
+          background_specialist: 'realtime-session-background-reviewer',
+        }),
+        usageContext: expect.objectContaining({
+          userId: 'student-1',
+          conversationId: 'conv-rtc',
+          lessonSessionId: 'lesson-rtc-1',
+          lessonType: 'tutor',
+        }),
+      }),
+    );
+
+    expect(
+      db.get<{ signal_type: string; signal_json: string }>(
+        'SELECT signal_type, signal_json FROM student_learning_signals WHERE conversation_id = ?',
+        ['conv-rtc'],
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        signal_type: 'realtime_teaching_observation',
+        signal_json: expect.stringContaining('pace_preference'),
+      }),
+    );
+    expect(
+      db.get<{ lesson_type: string; summary_json: string }>(
+        'SELECT lesson_type, summary_json FROM student_session_summaries WHERE conversation_id = ?',
+        ['conv-rtc'],
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        lesson_type: 'tutor',
+        summary_json: expect.stringContaining('медленнее'),
+      }),
+    );
+    expect(
+      db.get<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM student_skill_progress WHERE conversation_id = ?',
+        ['conv-rtc'],
+      )?.count,
+    ).toBe(0);
+  });
+
   it('does not enqueue jobs when background processing is disabled', () => {
     const config = {
       get: <T>(key: string) =>

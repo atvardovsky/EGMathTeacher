@@ -1355,6 +1355,60 @@ export class DatabaseService implements OnModuleDestroy {
       ALTER TABLE ai_usage_ledger
         ADD COLUMN metadata_json TEXT;
     `);
+
+    this.applyMigration('017_realtime_session_review_jobs', `
+      PRAGMA legacy_alter_table = ON;
+
+      ALTER TABLE background_ai_jobs RENAME TO background_ai_jobs_old;
+
+      CREATE TABLE background_ai_jobs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN (
+          'learning_signal_extraction',
+          'learning_window_analysis',
+          'realtime_session_review',
+          'session_summary',
+          'student_profile_refresh',
+          'profile_strategy_refresh',
+          'teaching_strategy_refresh',
+          'tutor_quality_review'
+        )),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        payload_json TEXT NOT NULL,
+        result_json TEXT,
+        error_message TEXT,
+        scheduled_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+
+      INSERT INTO background_ai_jobs (
+        id, type, status, user_id, conversation_id, attempts, payload_json,
+        result_json, error_message, scheduled_at, started_at, completed_at,
+        created_at, updated_at
+      )
+      SELECT
+        id, type, status, user_id, conversation_id, attempts, payload_json,
+        result_json, error_message, scheduled_at, started_at, completed_at,
+        created_at, updated_at
+      FROM background_ai_jobs_old;
+
+      DROP TABLE background_ai_jobs_old;
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_status_scheduled
+        ON background_ai_jobs(status, scheduled_at);
+
+      CREATE INDEX IF NOT EXISTS idx_background_ai_jobs_user_type
+        ON background_ai_jobs(user_id, type, status);
+
+      PRAGMA legacy_alter_table = OFF;
+    `, { disableForeignKeys: true });
   }
 
   private applyMigration(

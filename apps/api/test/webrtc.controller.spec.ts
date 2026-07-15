@@ -8,6 +8,8 @@ import { WebRtcMediaService } from '../src/webrtc/webrtc-media.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsageService } from '../src/usage/usage.service';
 import { DatabaseService } from '../src/database/database.service';
+import { TeachingContextService } from '../src/teaching-context/teaching-context.service';
+import { BackgroundAiService } from '../src/background-ai/background-ai.service';
 
 const createSession = (overrides: Partial<WebRtcSession> = {}): WebRtcSession => ({
   id: 'sess-123',
@@ -33,6 +35,8 @@ describe('WebRtcController', () => {
   let appAuthService: jest.Mocked<AuthService>;
   let usageService: jest.Mocked<UsageService>;
   let db: jest.Mocked<DatabaseService>;
+  let teachingContextService: jest.Mocked<TeachingContextService>;
+  let backgroundAiService: jest.Mocked<BackgroundAiService>;
 
   beforeEach(() => {
     conversationService = {
@@ -125,6 +129,14 @@ describe('WebRtcController', () => {
       get: jest.fn(),
     } as unknown as jest.Mocked<DatabaseService>;
 
+    teachingContextService = {
+      buildRealtimeTeachingContext: jest.fn(),
+    } as unknown as jest.Mocked<TeachingContextService>;
+
+    backgroundAiService = {
+      enqueueRealtimeSessionReview: jest.fn(),
+    } as unknown as jest.Mocked<BackgroundAiService>;
+
     controller = new WebRtcController(
       conversationService,
       sessionService,
@@ -134,6 +146,8 @@ describe('WebRtcController', () => {
       appAuthService,
       usageService,
       db,
+      teachingContextService,
+      backgroundAiService,
     );
   });
 
@@ -169,6 +183,50 @@ describe('WebRtcController', () => {
         lessonType: 'practice',
       });
     });
+
+    it('attaches server-only teaching context to signed-in realtime sessions', () => {
+      appAuthService.getSessionFromRequest.mockReturnValue({
+        id: 'student-1',
+        name: 'Маша',
+        role: 'student',
+        createdAt: '2026-07-15T10:00:00.000Z',
+        iat: 1,
+        exp: 2,
+      });
+      db.get.mockReturnValue({
+        id: 'lesson-1',
+        conversation_id: 'conv-abc',
+        lesson_type: 'tutor',
+        status: 'active',
+      });
+      teachingContextService.buildRealtimeTeachingContext.mockReturnValue({
+        prompt: 'Server teaching context.',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'tutor',
+        reviewContext: { strategyHints: ['пример перед правилом'] },
+      });
+
+      controller.startSession(
+        {
+          conversationSeed: 'conv-abc',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'tutor',
+        },
+        { headers: { cookie: 'egmathteacher_session=test' } } as any,
+      );
+
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        'conv-abc',
+        expect.objectContaining({
+          userId: 'student-1',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'tutor',
+          teachingContext: expect.objectContaining({
+            prompt: 'Server teaching context.',
+          }),
+        }),
+      );
+    });
   });
 
   describe('createEphemeralToken', () => {
@@ -197,6 +255,27 @@ describe('WebRtcController', () => {
         expect.objectContaining({
           voice: 'verse',
           personality: expect.objectContaining({ locale: 'en-GB' }),
+        }),
+      );
+    });
+
+    it('adds teaching context rules to direct realtime token creation', async () => {
+      sessionService.getSession.mockReturnValue(
+        createSession({
+          teachingContext: {
+            prompt: 'Server teaching context for token.',
+            reviewContext: {},
+          },
+        }),
+      );
+
+      await controller.createEphemeralToken('sess-123', {});
+
+      expect(authService.createEphemeralToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          personality: expect.objectContaining({
+            rules: expect.stringContaining('Server teaching context for token.'),
+          }),
         }),
       );
     });
@@ -255,6 +334,16 @@ describe('WebRtcController', () => {
           inputTokens: 42,
           outputTokens: 21,
           turnCount: 2,
+        }),
+      );
+      expect(backgroundAiService.enqueueRealtimeSessionReview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'student-1',
+          conversationId: 'conv-abc',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'tutor',
+          transcript: '1. Caller: привет\n2. Assistant: привет',
+          tokenUsage: { incoming: 42, outgoing: 21 },
         }),
       );
     });

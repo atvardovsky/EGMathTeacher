@@ -91,9 +91,12 @@ Current covered areas:
   replacements before remote `completed`
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
-- WebRTC controller token/event paths
+- WebRTC controller token/event paths, signed-in teaching-context attachment,
+  and post-close background review enqueue
 - WebRTC provider event transcript/token accumulation behavior
 - WebRTC provider event debug logging avoids raw transcript text
+- background realtime session review job operation policy, sanitized teaching
+  signal storage, session-summary storage, and no skill-progress mutation
 - student profile teaching-only storage sanitation, POC migration ledger
   through background observation-window storage, and SQLite foreign-key
   integrity after migrations

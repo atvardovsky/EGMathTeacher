@@ -211,10 +211,12 @@ Production domain:
   transcript directly when recognition ends.
 - WebRTC/OpenAI Realtime voice preview in the tutor workspace. The student can
   start a low-latency live audio session from the composer. Signed-in sessions
-  record a session-level usage row on close when Realtime token usage or
-  duration is available; current structured lesson records, tasks, images,
-  progress, and memory still use the normal `/tutor/message` path until
-  realtime transcripts are wired into the lesson pipeline.
+  receive compact server-side teaching context from the current lesson and
+  recent analytic memory, record a session-level usage row on close when
+  Realtime token usage or duration is available, and enqueue a cheap
+  background review that stores sanitized teaching observations. Current
+  structured lesson records, tasks, images, verifier attempts, and mastery
+  progress still use the normal `/tutor/message` path.
 
 ## Checks
 

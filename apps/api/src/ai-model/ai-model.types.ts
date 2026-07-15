@@ -21,6 +21,7 @@ export type AiOperationKey =
   | 'onboardingStrategyPlan'
   | 'backgroundLearningSignal'
   | 'backgroundLearningWindow'
+  | 'backgroundRealtimeSessionReview'
   | 'backgroundSessionSummary'
   | 'backgroundProfileRefresh'
   | 'backgroundTeachingStrategyRefresh'

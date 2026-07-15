@@ -9,22 +9,27 @@ sequenceDiagram
   participant Provider as OpenAI Realtime API
   participant Conv as ConversationService
   participant Usage as UsageService
+  participant Context as TeachingContextService
+  participant Background as BackgroundAiService
   participant DB as SQLite
   participant Logs as Transcript files
 
   Client->>API: POST /webrtc/session with optional lesson attribution
+  API->>Context: Build compact teaching context when signed in
+  Context->>DB: Read lesson, profile, summaries, signals, recent turns
+  Context-->>API: Server-only teaching context prompt
   API->>Sessions: assertCapacity and createSession with metadata
   API->>Conv: initializeConversation
   API->>Signaling: buildBootstrapPayload
   API-->>Client: sessionId, conversationId, ICE, persona, voices
   Client->>API: POST /webrtc/session/:id/token
-  API->>Auth: createEphemeralToken
+  API->>Auth: createEphemeralToken with persona plus teaching context
   Auth->>Provider: Create realtime session
   Provider-->>Auth: client secret
   API-->>Client: ephemeral token
   Client->>API: POST /webrtc/session/:id/offer
   API->>Media: handleClientOffer
-  Media->>Bridge: ensure client and provider peers
+  Media->>Bridge: ensure peers with teaching-context instructions
   Bridge->>Provider: SDP exchange
   Provider-->>Bridge: SDP answer and realtime events
   Bridge-->>Media: client SDP answer
@@ -40,4 +45,6 @@ sequenceDiagram
   Conv->>Logs: Write transcript when available
   API->>Usage: recordRealtimeSession when signed in
   Usage->>DB: Insert ai_usage_ledger session row
+  API->>Background: enqueueRealtimeSessionReview when signed in and useful
+  Background->>DB: Insert background_ai_jobs realtime_session_review
   API-->>Client: close status and transcript metadata

@@ -14,6 +14,7 @@ import {
   BackgroundAiStatus,
   BackgroundLearningObservationRecord,
   LessonClosureBackgroundInput,
+  RealtimeSessionReviewBackgroundInput,
   TutorTurnBackgroundInput,
 } from './background-ai.types';
 
@@ -85,7 +86,7 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     const filters = [
       'user_id = ?',
       "status = 'failed'",
-      "type IN ('learning_window_analysis', 'session_summary', 'student_profile_refresh', 'profile_strategy_refresh', 'teaching_strategy_refresh', 'tutor_quality_review')",
+      "type IN ('learning_window_analysis', 'realtime_session_review', 'session_summary', 'student_profile_refresh', 'profile_strategy_refresh', 'teaching_strategy_refresh', 'tutor_quality_review')",
     ];
     if (options.conversationId?.trim()) {
       filters.push('conversation_id = ?');
@@ -208,6 +209,44 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
       conversationId: input.conversationId,
       payload,
       dedupePending: true,
+    });
+  }
+
+  enqueueRealtimeSessionReview(input: RealtimeSessionReviewBackgroundInput): void {
+    if (!this.isEnabled() || !this.isRealtimeReviewEnabled()) {
+      return;
+    }
+
+    const transcript = this.sanitizeTeachingString(
+      input.transcript,
+      this.getRealtimeReviewMaxTranscriptChars(),
+    );
+    const turns = this.sanitizeVoiceTurns(input.turns ?? []);
+    if (!transcript && turns.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    this.enqueueJob({
+      type: 'realtime_session_review',
+      userId: input.userId,
+      conversationId: input.conversationId,
+      payload: {
+        triggerReason: 'realtime_session_closed',
+        source: 'webrtc_realtime',
+        webrtcSessionId: this.cleanString(input.webrtcSessionId, 120),
+        lessonSessionId: this.cleanString(input.lessonSessionId, 120),
+        lessonType: input.lessonType,
+        transcript,
+        turns,
+        tokenUsage: {
+          incoming: this.normalizeTokenLikeNumber(input.tokenUsage?.incoming),
+          outgoing: this.normalizeTokenLikeNumber(input.tokenUsage?.outgoing),
+        },
+        teachingContext: input.teachingContext ?? {},
+        capturedAt: now,
+      },
+      dedupePending: false,
     });
   }
 
@@ -347,6 +386,8 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
         return this.extractLearningSignals(job);
       case 'learning_window_analysis':
         return this.analyzeLearningWindow(job);
+      case 'realtime_session_review':
+        return this.reviewRealtimeSession(job);
       case 'session_summary':
         return this.createSessionSummary(job);
       case 'student_profile_refresh':
@@ -784,6 +825,57 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     });
     this.persistLearningSignal(job, 'quality_review', parsed);
     return parsed;
+  }
+
+  private async reviewRealtimeSession(job: BackgroundAiJobRecord): Promise<Record<string, unknown>> {
+    const payload = this.parsePayload(job);
+    const transcript = this.pickString(payload, ['transcript']);
+    const turns = this.pickArray(payload, ['turns']);
+    if (!transcript && turns.length === 0) {
+      return { skipped: 'no_realtime_transcript' };
+    }
+
+    const lessonType = this.normalizeLessonType(payload.lessonType) ?? 'tutor';
+    const parsed = await this.createBackgroundJsonResponse({
+      operation: 'backgroundRealtimeSessionReview',
+      specialist: 'realtime-session-background-reviewer',
+      userId: job.user_id,
+      conversationId: job.conversation_id ?? undefined,
+      lessonSessionId: this.pickString(payload, ['lessonSessionId', 'lesson_session_id']),
+      lessonType,
+      instructions: this.getRealtimeSessionReviewInstructions(),
+      inputText: [
+        'Закрытая realtime voice-сессия ученика. Это preview-голос, не основной tutor_turn.',
+        JSON.stringify(
+          {
+            source: 'webrtc_realtime',
+            webrtcSessionId: this.pickString(payload, ['webrtcSessionId']),
+            lessonType,
+            lessonSessionId: this.pickString(payload, [
+              'lessonSessionId',
+              'lesson_session_id',
+            ]),
+            transcript,
+            turns,
+            teachingContext: this.pickObject(payload, ['teachingContext']),
+            tokenUsage: this.pickObject(payload, ['tokenUsage']),
+          },
+          null,
+          2,
+        ),
+      ].join('\n'),
+      useRag: false,
+      promptCacheKey: this.buildPromptCacheKey(
+        job.user_id,
+        job.conversation_id,
+        'realtime-session',
+      ),
+    });
+
+    const result = this.normalizeRealtimeReviewResult(parsed);
+    this.persistLearningSignal(job, 'realtime_teaching_observation', result);
+    this.persistSessionSummary(job, result, lessonType);
+    return result;
   }
 
   private async createBackgroundJsonResponse(options: {
@@ -1820,6 +1912,115 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return undefined;
   }
 
+  private sanitizeVoiceTurns(turns: Array<Record<string, unknown>>): Record<string, unknown>[] {
+    return turns
+      .slice(-12)
+      .map((turn) =>
+        this.sanitizeTeachingObject({
+          participant: this.pickString(turn, ['participant', 'role']),
+          transcript: this.pickString(turn, ['transcript', 'text']),
+          timestamp: turn.timestamp,
+          durationMillis: turn.durationMillis,
+        }),
+      )
+      .filter((turn) => Object.keys(turn).length > 0);
+  }
+
+  private normalizeTokenLikeNumber(value: unknown): number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? Math.trunc(value)
+      : 0;
+  }
+
+  private normalizeRealtimeReviewResult(
+    parsed: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const observations = this.pickArray(parsed, ['observations', 'signals'])
+      .filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === 'object' && !Array.isArray(item)),
+      )
+      .slice(0, 8)
+      .map((item) =>
+        this.sanitizeTeachingObject({
+          kind:
+            this.pickString(item, ['kind', 'category', 'type']) ??
+            'teaching_observation',
+          value: this.pickString(item, ['value', 'summary', 'observation']),
+          scope: this.pickString(item, ['scope']) ?? 'realtime_voice',
+          confidence: this.normalizeConfidence(this.pickString(item, ['confidence'])),
+          evidence: this.pickStringArray(item, ['evidence']),
+          nextAction: this.pickString(item, [
+            'nextAction',
+            'next_action',
+            'recommendedNextAction',
+            'recommended_next_action',
+          ]),
+        }),
+      )
+      .filter((item) => Object.keys(item).length > 0);
+    const summary =
+      this.pickString(parsed, ['summary', 'sessionSummaryText']) ??
+      this.pickString(this.pickObject(parsed, ['sessionSummary', 'session_summary']), [
+        'summary',
+        'text',
+      ]);
+
+    return this.sanitizeTeachingObject({
+      source: 'webrtc_realtime_review',
+      summary,
+      sessionSummary: {
+        summary,
+        topicsWorked: this.pickStringArray(parsed, ['topicsWorked', 'topics_worked']),
+        successes: this.pickStringArray(parsed, ['successes']),
+        mistakes: this.pickStringArray(parsed, ['mistakes']),
+        nextSteps: this.pickStringArray(parsed, ['nextSteps', 'next_steps']),
+        strategyHints: this.pickStringArray(parsed, [
+          'strategyHints',
+          'strategy_hints',
+          'teachingStrategyHints',
+        ]),
+      },
+      observations,
+      signals: observations,
+      teachingStrategyHints: this.pickStringArray(parsed, [
+        'teachingStrategyHints',
+        'strategyHints',
+        'strategy_hints',
+      ]),
+      evidenceLevels: {
+        L0: 'raw realtime transcript stored separately in transcript logs and not repeated in long-term memory',
+        L1: observations.length,
+        L2: Boolean(summary),
+        L3: observations.length,
+        L4: 'not_updated_from_realtime_review',
+        L5: this.pickStringArray(parsed, [
+          'teachingStrategyHints',
+          'strategyHints',
+          'strategy_hints',
+        ]).length,
+      },
+      nextTutorContext: this.pickString(parsed, [
+        'nextTutorContext',
+        'next_tutor_context',
+      ]),
+      profileUpdateRecommended: false,
+      masteryUpdateAllowed: false,
+    });
+  }
+
+  private getRealtimeSessionReviewInstructions(): string {
+    return [
+      'Ты дешёвый фоновый анализатор закрытой realtime voice-сессии AI-репетитора ЕГЭ.',
+      'Realtime-сессия помогает понять контекст общения, но сама не является доказанным учебным результатом.',
+      'Выделяй только сведения, которые помогут следующему уроку: что ученик хотел, где запутался, какой темп/пример/подсказка/визуальная опора могут помочь.',
+      'Не обновляй mastery, не ставь progress/regression по навыкам, не заверши цель урока и не делай профильные ярлыки.',
+      'Не сохраняй диагнозы, семейные подробности, адреса, контакты, религию, политику, здоровье, травмы или другие неучебные чувствительные сведения.',
+      'Если в разговоре есть только бытовая болтовня или недостаточно данных, верни пустые observations и короткое summary.',
+      'Верни только валидный JSON без Markdown.',
+      'Формат JSON: {"summary":"...","observations":[{"kind":"lesson_intent|confusion_signal|explanation_preference|pace_preference|visual_support|engagement_signal","value":"...","scope":"current_lesson|algebra|general","confidence":"low|medium|high","evidence":["короткая цитата/пересказ без личных данных"],"nextAction":"..."}],"sessionSummary":{"summary":"...","topicsWorked":[],"successes":[],"mistakes":[],"nextSteps":[],"strategyHints":[]},"teachingStrategyHints":[],"nextTutorContext":"коротко, что учесть следующему tutor ответу","profileUpdateRecommended":false,"masteryUpdateAllowed":false}.',
+    ].join(' ');
+  }
+
   private getLearningSignalInstructions(): string {
     return [
       'Ты фоновый анализатор учебных сигналов для AI-репетитора ЕГЭ.',
@@ -1919,6 +2120,10 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.configService.get<boolean>('ai.background.promptCacheKeyEnabled') ?? true;
   }
 
+  private isRealtimeReviewEnabled(): boolean {
+    return this.configService.get<boolean>('ai.background.realtimeReviewEnabled') ?? true;
+  }
+
   private getDrainIntervalMs(): number {
     return this.positiveNumber(this.configService.get<number>('ai.background.drainIntervalMs'), 2_000);
   }
@@ -1970,6 +2175,13 @@ export class BackgroundAiService implements OnModuleInit, OnModuleDestroy {
     return this.positiveNumber(
       this.configService.get<number>('ai.background.sessionSummaryTurnInterval'),
       5,
+    );
+  }
+
+  private getRealtimeReviewMaxTranscriptChars(): number {
+    return this.positiveNumber(
+      this.configService.get<number>('ai.background.realtimeReviewMaxTranscriptChars'),
+      4_000,
     );
   }
 

@@ -49,6 +49,9 @@ export default registerAs('ai', () => {
       backgroundLearningWindow:
         process.env.AI_OPERATION_BACKGROUND_LEARNING_WINDOW_MODEL ??
         backgroundWindowModel,
+      backgroundRealtimeSessionReview:
+        process.env.AI_OPERATION_BACKGROUND_REALTIME_SESSION_REVIEW_MODEL ??
+        backgroundResponsesModel,
       backgroundSessionSummary:
         process.env.AI_OPERATION_BACKGROUND_SESSION_SUMMARY_MODEL ??
         backgroundResponsesModel,
@@ -86,6 +89,9 @@ export default registerAs('ai', () => {
       backgroundLearningWindow:
         process.env.AI_OPERATION_BACKGROUND_LEARNING_WINDOW_SERVICE_TIER ??
         backgroundServiceTier,
+      backgroundRealtimeSessionReview:
+        process.env.AI_OPERATION_BACKGROUND_REALTIME_SESSION_REVIEW_SERVICE_TIER ??
+        backgroundServiceTier,
       backgroundSessionSummary:
         process.env.AI_OPERATION_BACKGROUND_SESSION_SUMMARY_SERVICE_TIER ??
         backgroundServiceTier,
@@ -111,6 +117,12 @@ export default registerAs('ai', () => {
       serviceTier: backgroundServiceTier,
       promptCacheKeyEnabled:
         (process.env.AI_BACKGROUND_PROMPT_CACHE_KEY_ENABLED ?? 'true').toLowerCase() !== 'false',
+      realtimeReviewEnabled:
+        (process.env.AI_BACKGROUND_REALTIME_REVIEW_ENABLED ?? 'true').toLowerCase() !== 'false',
+      realtimeReviewMaxTranscriptChars: parseInt(
+        process.env.AI_BACKGROUND_REALTIME_REVIEW_MAX_TRANSCRIPT_CHARS ?? '4000',
+        10,
+      ),
       drainIntervalMs: parseInt(process.env.AI_BACKGROUND_DRAIN_INTERVAL_MS ?? '2000', 10),
       drainBatchSize: parseInt(process.env.AI_BACKGROUND_DRAIN_BATCH_SIZE ?? '3', 10),
       maxAttempts: parseInt(process.env.AI_BACKGROUND_MAX_ATTEMPTS ?? '2', 10),

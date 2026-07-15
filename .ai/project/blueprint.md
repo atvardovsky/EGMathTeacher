@@ -99,12 +99,15 @@ visible next actions.
 - Tutor workspace has an explicit WebRTC/OpenAI Realtime voice preview for
   low-latency live audio. It starts only after a user click, uses the inherited
   `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
-  and does not replace the saved `/tutor/message` lesson pipeline yet. Until
-  realtime transcript-to-lesson integration is built, structured lesson
-  records, tasks, images, progress updates, and background analysis remain
-  owned by the normal tutor message flow. Authenticated realtime sessions
-  record a session-level usage ledger row on close when provider usage events
-  or duration are available.
+  receives compact server-only teaching context from the current lesson and
+  recent analytic memory, and does not replace the saved `/tutor/message`
+  lesson pipeline yet. Until realtime transcript-to-lesson integration is
+  built, structured lesson records, tasks, images, verifier attempts, and
+  mastery progress remain owned by the normal tutor message flow.
+  Authenticated realtime sessions record a session-level usage ledger row on
+  close when provider usage events or duration are available and can enqueue a
+  cheap `realtime_session_review` background job that stores sanitized
+  teaching observations and optional summaries for future context.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI

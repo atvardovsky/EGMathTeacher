@@ -266,4 +266,47 @@ describe('AiModelService', () => {
       }),
     );
   });
+
+  it('applies cheap background policy to realtime session reviews', async () => {
+    const provider = {
+      id: 'openai',
+      createResponse: jest.fn(async () => ({ output_text: '{}' })),
+      generateImage: jest.fn(),
+      createVectorStore: jest.fn(),
+      uploadFile: jest.fn(),
+      attachFileToVectorStore: jest.fn(),
+      removeFileFromVectorStore: jest.fn(),
+      listVectorStoreFiles: jest.fn(),
+    };
+    const config = {
+      get: jest.fn((key: string) => {
+        const values: Record<string, unknown> = {
+          'ai.modelProvider': 'openai',
+          'ai.operationModels.backgroundRealtimeSessionReview': 'gpt-background-cheap',
+          'ai.operationServiceTiers.backgroundRealtimeSessionReview': 'flex',
+          'ai.background.promptCacheKeyEnabled': true,
+        };
+        return values[key];
+      }),
+    };
+    const service = new AiModelService(
+      provider,
+      new AiOperationPolicyService(config as any),
+    );
+
+    await service.createOperationResponse('backgroundRealtimeSessionReview', {
+      instructions: 'review',
+    });
+
+    expect(provider.createResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gpt-background-cheap',
+        service_tier: 'flex',
+        metadata: expect.objectContaining({
+          ai_role: 'background_learning_analyst',
+          ai_operation: 'background.review_realtime_session',
+        }),
+      }),
+    );
+  });
 });
