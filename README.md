@@ -38,6 +38,10 @@ Production domain:
   building the web app.
 - Optional reverse-proxy reference configs:
   `deploy/apache-atvardovsky.dev.conf` and `deploy/nginx-atvardovsky.dev.conf`.
+  The Apache reference is a checked-in template rendered by
+  `deploy/install-apache-atvardovsky.sh`; override `PROJECT_DIR`, `SERVER_NAME`,
+  `API_UPSTREAM`, or `CERT_DIR` for a specific host instead of committing
+  machine-local paths or certificate material.
   Do not install or reload system web server configuration unless that is the
   explicit deployment task.
 

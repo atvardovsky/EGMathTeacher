@@ -257,7 +257,11 @@ Adding production dependencies or external services requires approval.
 ## Deployment Safety
 
 Deployment reference files exist under `deploy/`. They are repository
-references, not proof of active server state.
+references, not proof of active server state. Checked-in deployment
+references must remain repo-neutral: do not commit machine-local project
+paths, certificate private-key contents, API keys, cookies, tokens, or other
+secret values. Host-specific paths may be rendered or supplied only during an
+explicit deployment action.
 
 Do not install, reload, or alter Apache, Nginx, PM2, certificate, or system
 configuration unless the user explicitly asks for that deployment action.

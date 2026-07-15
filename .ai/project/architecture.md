@@ -218,9 +218,14 @@ Production references:
 
 - `README.md` names `https://atvardovsky.dev`.
 - `deploy/pm2-egmathteacher.config.cjs` starts API from `apps/api/dist/main.js`
-  on port `3000`.
+  on port `3000` and derives its working directory from the checked-in config
+  location instead of a machine-local absolute path.
 - `deploy/nginx-atvardovsky.dev.conf` and
   `deploy/apache-atvardovsky.dev.conf` are reference reverse-proxy configs.
+  The Apache file is a template rendered by
+  `deploy/install-apache-atvardovsky.sh`; host-specific project root,
+  upstream, server name, and certificate paths are install-time values and
+  must not be committed as local machine paths or key material.
 
 System web server config must not be installed or reloaded unless the user
 explicitly asks for that deployment task.
