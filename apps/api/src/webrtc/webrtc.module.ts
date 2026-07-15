@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { BackgroundAiModule } from '../background-ai/background-ai.module';
 import webrtcConfiguration from '../config/webrtc.configuration';
 import { ConversationModule } from '../conversation/conversation.module';
+import { LessonModule } from '../lesson/lesson.module';
 import { AiProviderModule } from '../providers/ai-provider.module';
 import { TeachingContextModule } from '../teaching-context/teaching-context.module';
 import { UsageModule } from '../usage/usage.module';
@@ -22,6 +23,7 @@ import { OpenAiRealtimeBridgeService } from './openai-realtime-bridge.service';
     ConversationModule,
     AiProviderModule,
     UsageModule,
+    LessonModule,
     TeachingContextModule,
     BackgroundAiModule,
   ],

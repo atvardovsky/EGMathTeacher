@@ -43,9 +43,19 @@ interface FinishSessionInput {
   reason: string;
 }
 
+interface CompleteRealtimeTurnInput {
+  userId: string;
+  lessonSessionId: string;
+  durationSeconds: number;
+}
+
 export interface LessonBeginTurnResult {
   lifecycle: LessonLifecycleDto;
   closedSessions: LessonSessionRecord[];
+}
+
+export interface LessonRealtimeSessionResult extends LessonBeginTurnResult {
+  created: boolean;
 }
 
 export interface LessonFinishSessionResult {
@@ -202,6 +212,100 @@ export class LessonService {
     };
   }
 
+  ensureRealtimeSessionWithTransitions(input: BeginTurnInput): LessonRealtimeSessionResult {
+    const nowIso = new Date().toISOString();
+    const { session, closedSessions, created } = this.getOrCreateSession(input, nowIso);
+    return {
+      lifecycle: this.toCurrentLifecycle(session, input.topicHint),
+      closedSessions,
+      created,
+    };
+  }
+
+  completeRealtimeTurn(input: CompleteRealtimeTurnInput): LessonLifecycleDto | undefined {
+    const existing = this.getSessionById(input.lessonSessionId);
+    if (
+      !existing ||
+      existing.user_id !== input.userId ||
+      TERMINAL_STATUSES.includes(existing.status)
+    ) {
+      return undefined;
+    }
+
+    const nowIso = new Date().toISOString();
+    const incrementSeconds = this.normalizeRealtimeDurationSeconds(input.durationSeconds);
+    const activeLearningSeconds = existing.active_learning_seconds + incrementSeconds;
+    const dayActiveLearningSeconds =
+      this.getTodayActiveSeconds(input.userId, existing.id) + activeLearningSeconds;
+    const dailyLimit = this.buildLimitState(
+      dayActiveLearningSeconds,
+      this.dailySoftLimitSeconds,
+      this.dailyHardLimitSeconds,
+    );
+    const continuousLimit = this.buildLimitState(
+      activeLearningSeconds,
+      this.continuousSoftLimitSeconds,
+      this.continuousHardLimitSeconds,
+    );
+    const hardLimitReached =
+      dailyLimit.status === 'hard_limit' || continuousLimit.status === 'hard_limit';
+    const softLimitReached =
+      dailyLimit.status === 'soft_limit' || continuousLimit.status === 'soft_limit';
+    const status: LessonSessionStatus = hardLimitReached
+      ? 'hard_limit_reached'
+      : softLimitReached
+        ? 'soft_limit_reached'
+        : 'active';
+    const goalStatus: LessonGoalStatus = hardLimitReached
+      ? 'stopped_by_limit'
+      : existing.goal_status;
+    const finishReason = hardLimitReached
+      ? this.limitFinishReason(dailyLimit, continuousLimit)
+      : existing.finish_reason ?? undefined;
+
+    const update = this.db.run(
+      `UPDATE lesson_sessions
+       SET status = ?, goal_status = ?, finish_reason = ?,
+           active_learning_seconds = ?, turn_count = turn_count + 1,
+           last_activity_at = ?, finished_at = ?, updated_at = ?
+       WHERE id = ?
+         AND user_id = ?
+         AND status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(', ')})`,
+      [
+        status,
+        goalStatus,
+        finishReason ?? null,
+        activeLearningSeconds,
+        nowIso,
+        hardLimitReached ? nowIso : existing.finished_at,
+        nowIso,
+        existing.id,
+        input.userId,
+        ...TERMINAL_STATUSES,
+      ],
+    );
+    if (update.changes <= 0) {
+      return undefined;
+    }
+
+    return this.toLifecycle(
+      {
+        ...existing,
+        status,
+        goal_status: goalStatus,
+        finish_reason: finishReason ?? null,
+        active_learning_seconds: activeLearningSeconds,
+        turn_count: existing.turn_count + 1,
+        last_activity_at: nowIso,
+        finished_at: hardLimitReached ? nowIso : existing.finished_at,
+        updated_at: nowIso,
+      },
+      dayActiveLearningSeconds,
+      dailyLimit,
+      continuousLimit,
+    );
+  }
+
   completeTurn(input: CompleteTurnInput): LessonLifecycleDto {
     const nowIso = new Date().toISOString();
     const requestedGoalStatus = this.normalizeGoalStatus(input.goalStatus);
@@ -327,7 +431,7 @@ export class LessonService {
   private getOrCreateSession(
     input: BeginTurnInput,
     nowIso: string,
-  ): { session: LessonSessionRecord; closedSessions: LessonSessionRecord[] } {
+  ): { session: LessonSessionRecord; closedSessions: LessonSessionRecord[]; created: boolean } {
     const closedSessions: LessonSessionRecord[] = [];
     const activeConversationSession = this.db.get<LessonSessionRecord>(
       `SELECT id, user_id, conversation_id, lesson_type, status, goal_status, goal_text,
@@ -356,7 +460,7 @@ export class LessonService {
           closedSessions,
         );
       } else {
-        return { session: activeConversationSession, closedSessions };
+        return { session: activeConversationSession, closedSessions, created: false };
       }
     }
 
@@ -406,7 +510,34 @@ export class LessonService {
     return {
       session: this.getSessionById(id)!,
       closedSessions,
+      created: true,
     };
+  }
+
+  private toCurrentLifecycle(
+    session: LessonSessionRecord,
+    topicHint?: string,
+  ): LessonLifecycleDto {
+    const dayActiveLearningSeconds =
+      this.getTodayActiveSeconds(session.user_id, session.id) +
+      session.active_learning_seconds;
+    const dailyLimit = this.buildLimitState(
+      dayActiveLearningSeconds,
+      this.dailySoftLimitSeconds,
+      this.dailyHardLimitSeconds,
+    );
+    const continuousLimit = this.buildLimitState(
+      session.active_learning_seconds,
+      this.continuousSoftLimitSeconds,
+      this.continuousHardLimitSeconds,
+    );
+    return this.toLifecycle(
+      session,
+      dayActiveLearningSeconds,
+      dailyLimit,
+      continuousLimit,
+      topicHint,
+    );
   }
 
   private toLifecycle(
@@ -769,6 +900,13 @@ export class LessonService {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? Math.floor(value)
       : 0;
+  }
+
+  private normalizeRealtimeDurationSeconds(value: number): number {
+    if (!Number.isFinite(value) || value <= 0) {
+      return 0;
+    }
+    return Math.min(this.maxTurnGapSeconds, Math.floor(value));
   }
 
   private get dailySoftLimitSeconds(): number {

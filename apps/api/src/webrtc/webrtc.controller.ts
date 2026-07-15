@@ -19,11 +19,17 @@ import { BackgroundAiService } from '../background-ai/background-ai.service';
 import {
   ConversationService,
   type ConversationRecord,
+  type VoiceTurn,
 } from '../conversation/conversation.service';
 import { DatabaseService } from '../database/database.service';
+import {
+  LessonBoundaryRejectedException,
+  LessonService,
+} from '../lesson/lesson.service';
+import type { LessonSessionRecord } from '../lesson/lesson.types';
 import { TeachingContextService } from '../teaching-context/teaching-context.service';
 import { RealtimeTeachingContext } from '../teaching-context/teaching-context.types';
-import type { LessonType } from '../tutor/tutor.types';
+import type { LessonType, TutorAnswer, TutorLessonHistoryTurn } from '../tutor/tutor.types';
 import { UsageService } from '../usage/usage.service';
 import { WebRtcSession, WebRtcSessionService } from './webrtc-session.service';
 import {
@@ -67,8 +73,12 @@ interface IceCandidatePayload {
 
 interface CloseSessionResponse {
   status: 'closed' | 'already_closed';
+  conversationId?: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
   transcript?: string;
   transcriptFile?: string;
+  syncedTurn?: TutorLessonHistoryTurn;
 }
 
 interface ProviderEventsRequest {
@@ -108,6 +118,7 @@ export class WebRtcController {
     private readonly db: DatabaseService,
     private readonly teachingContextService: TeachingContextService,
     private readonly backgroundAiService: BackgroundAiService,
+    private readonly lessonService: LessonService,
   ) {}
 
   @Post('session')
@@ -351,15 +362,21 @@ export class WebRtcController {
       const transcriptFile = this.conversationService.getFinalTranscriptFile(
         session.conversationId,
       );
+      const syncedTurn = this.getSyncedRealtimeTurn(session);
       return {
         status: 'already_closed',
+        conversationId: session.conversationId,
+        lessonSessionId: session.lessonSessionId,
+        lessonType: this.normalizeLessonType(session.lessonType),
         transcript: transcript ?? undefined,
         transcriptFile: transcriptFile ?? undefined,
+        syncedTurn,
       };
     }
 
     const transcript = await this.mediaService.closeSession(sessionId);
     const record = this.conversationService.getConversationRecord(session.conversationId);
+    const syncedTurn = this.syncRealtimeTranscriptToLessonTurn(session, record, transcript);
     this.recordRealtimeUsage(session, record);
     this.enqueueRealtimeReview(session, record, transcript);
     const transcriptFile = transcript
@@ -372,8 +389,12 @@ export class WebRtcController {
 
     return {
       status: 'closed',
+      conversationId: session.conversationId,
+      lessonSessionId: session.lessonSessionId,
+      lessonType: this.normalizeLessonType(session.lessonType),
       transcript: transcript ?? undefined,
       transcriptFile: transcriptFile ?? undefined,
+      syncedTurn,
     };
   }
 
@@ -507,6 +528,243 @@ export class WebRtcController {
     return normalized && LESSON_TYPES.has(normalized)
       ? (normalized as LessonType)
       : undefined;
+  }
+
+  private syncRealtimeTranscriptToLessonTurn(
+    session: WebRtcSession,
+    record: ConversationRecord | undefined,
+    transcript: string | undefined,
+  ): TutorLessonHistoryTurn | undefined {
+    if (!session.userId || !this.hasTeachingTranscript(record, transcript)) {
+      return undefined;
+    }
+
+    const existing = this.getSyncedRealtimeTurn(session);
+    if (existing) {
+      return existing;
+    }
+
+    const lessonType = this.normalizeLessonType(session.lessonType) ?? 'tutor';
+    if (!session.lessonSessionId) {
+      try {
+        const ensured = this.lessonService.ensureRealtimeSessionWithTransitions({
+          userId: session.userId,
+          conversationId: session.conversationId,
+          lessonType,
+        });
+        session.lessonSessionId = ensured.lifecycle.lessonSessionId;
+        session.lessonType = ensured.lifecycle.lessonType;
+        this.enqueueLessonClosureReviews(session.userId, ensured.closedSessions);
+      } catch (error) {
+        if (error instanceof LessonBoundaryRejectedException) {
+          this.enqueueLessonClosureReviews(session.userId, error.closedSessions);
+        }
+        this.logger.warn(
+          `Failed to attach WebRTC session ${session.id} to lesson history: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return undefined;
+      }
+    }
+
+    const lifecycle = this.lessonService.completeRealtimeTurn({
+      userId: session.userId,
+      lessonSessionId: session.lessonSessionId,
+      durationSeconds: this.getSessionDurationSeconds(session),
+    });
+    if (!lifecycle) {
+      return undefined;
+    }
+
+    session.lessonSessionId = lifecycle.lessonSessionId;
+    session.lessonType = lifecycle.lessonType;
+    const prompt = this.buildRealtimeVoicePrompt(record, transcript);
+    const answerText = this.buildRealtimeVoiceAnswer(record, transcript);
+    const turnId = randomUUID();
+    const createdAt = new Date(session.finalizedAt ?? Date.now()).toISOString();
+    const answer: TutorAnswer & Record<string, unknown> = {
+      turnId,
+      conversationId: session.conversationId,
+      lessonType: lifecycle.lessonType,
+      lessonLifecycle: lifecycle,
+      usage: this.usageService.getLessonUsageSnapshot(session.userId, lifecycle.lessonSessionId),
+      answer: answerText,
+      blocks: [
+        {
+          id: `block_${randomUUID()}`,
+          type: 'text',
+          text: answerText,
+        },
+      ],
+      tasks: [],
+      examples: [],
+      needsImage: false,
+      citations: [],
+      source: 'webrtc_realtime',
+      realtimeTranscript: this.truncateText(transcript, 4_000),
+    };
+
+    this.db.run(
+      `INSERT INTO tutor_turns (
+         id, user_id, conversation_id, request_id, lesson_type, prompt, answer_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        turnId,
+        session.userId,
+        session.conversationId,
+        this.realtimeRequestId(session.id),
+        lifecycle.lessonType,
+        prompt,
+        JSON.stringify(answer),
+        createdAt,
+      ],
+    );
+
+    return {
+      id: turnId,
+      prompt,
+      lessonType: lifecycle.lessonType,
+      source: 'voice',
+      answer,
+      createdAt,
+    };
+  }
+
+  private getSyncedRealtimeTurn(session: WebRtcSession): TutorLessonHistoryTurn | undefined {
+    if (!session.userId) {
+      return undefined;
+    }
+    const row = this.db.get<{
+      id: string;
+      prompt: string;
+      answer_json: string;
+      lesson_type: LessonType;
+      created_at: string;
+    }>(
+      `SELECT id, prompt, answer_json, lesson_type, created_at
+       FROM tutor_turns
+       WHERE user_id = ?
+         AND request_id = ?
+       LIMIT 1`,
+      [session.userId, this.realtimeRequestId(session.id)],
+    );
+    if (!row) {
+      return undefined;
+    }
+    const answer = this.parseJsonObject(row.answer_json) as TutorAnswer | undefined;
+    if (!answer) {
+      return undefined;
+    }
+    const lessonType = this.normalizeLessonType(row.lesson_type) ?? answer.lessonType ?? 'tutor';
+    session.lessonSessionId = answer.lessonLifecycle?.lessonSessionId ?? session.lessonSessionId;
+    session.lessonType = lessonType;
+    return {
+      id: row.id,
+      prompt: row.prompt,
+      lessonType,
+      source: 'voice',
+      answer: {
+        ...answer,
+        lessonType,
+      },
+      createdAt: row.created_at,
+    };
+  }
+
+  private hasTeachingTranscript(
+    record: ConversationRecord | undefined,
+    transcript: string | undefined,
+  ): boolean {
+    if (this.extractVoiceTexts(record?.turns ?? [], 'user').length > 0) {
+      return true;
+    }
+    return Boolean(transcript?.trim());
+  }
+
+  private buildRealtimeVoicePrompt(
+    record: ConversationRecord | undefined,
+    transcript: string | undefined,
+  ): string {
+    const userTexts = this.extractVoiceTexts(record?.turns ?? [], 'user');
+    const source = userTexts.length > 0
+      ? userTexts.slice(-4).join(' / ')
+      : transcript?.trim() ?? '';
+    return `Живая голосовая сессия: ${this.truncateText(source, 900)}`;
+  }
+
+  private buildRealtimeVoiceAnswer(
+    record: ConversationRecord | undefined,
+    transcript: string | undefined,
+  ): string {
+    const assistantTexts = this.extractVoiceTexts(record?.turns ?? [], 'assistant');
+    const lastAssistant = assistantTexts.at(-1);
+    if (lastAssistant) {
+      return [
+        'Живая голосовая часть урока сохранена в истории.',
+        `Последний ответ репетитора: ${this.truncateText(lastAssistant, 1_000)}`,
+        'Следующий шаг продолжит занятие с учетом этой стенограммы.',
+      ].join('\n');
+    }
+    return [
+      'Живая голосовая часть урока сохранена в истории.',
+      transcript?.trim()
+        ? `Стенограмма: ${this.truncateText(transcript, 1_200)}`
+        : 'Стенограмма содержит только технические голосовые события.',
+      'Следующий шаг продолжит занятие с этого места.',
+    ].join('\n');
+  }
+
+  private extractVoiceTexts(turns: VoiceTurn[], participant: VoiceTurn['participant']): string[] {
+    return turns
+      .filter((turn) => turn.participant === participant)
+      .map((turn) => turn.transcript?.trim() ?? '')
+      .filter((text) => text.length > 0);
+  }
+
+  private getSessionDurationSeconds(session: WebRtcSession): number {
+    const closedAt = session.finalizedAt ?? session.updatedAt ?? Date.now();
+    return Math.max(0, Math.floor((closedAt - session.createdAt) / 1000));
+  }
+
+  private realtimeRequestId(sessionId: string): string {
+    return `webrtc:${sessionId}`;
+  }
+
+  private parseJsonObject(value: string): Record<string, unknown> | undefined {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private truncateText(value: string | undefined, maxLength: number): string {
+    const normalized = value?.trim() ?? '';
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+  }
+
+  private enqueueLessonClosureReviews(userId: string, sessions: LessonSessionRecord[]): void {
+    for (const session of sessions) {
+      try {
+        this.backgroundAiService.enqueueLessonClosureReview({
+          userId,
+          conversationId: session.conversation_id,
+          lessonSessionId: session.id,
+          lessonType: session.lesson_type,
+          finishReason: session.finish_reason ?? undefined,
+        });
+      } catch {
+        // Background review must not block realtime session lifecycle.
+      }
+    }
   }
 
   private recordRealtimeUsage(

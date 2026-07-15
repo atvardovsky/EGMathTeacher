@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260715-webrtc-lesson-continuity",
+  "operation": {
+    "id": "webrtc-lesson-continuity-20260715",
+    "type": "product-runtime-architecture-repair"
+  },
+  "plan": {
+    "version": "2026-07-15-webrtc-lesson-continuity-v1",
+    "sha256": "not available; approval was given as a direct repair request",
+    "file": "not available; user requested implementation in active chat"
+  },
+  "diff": {
+    "base": "7149840",
+    "patch_sha256": "not available before final patch; validation evidence recorded in markdown approval",
+    "repository_revision_at_approval": "7149840"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Make authenticated WebRTC close create or reuse a lesson session when useful transcript content exists.",
+      "Save one compact voice-origin tutor_turns row for realtime lesson continuity.",
+      "Return synced lesson metadata and the synced turn to the browser on WebRTC close.",
+      "Update lesson runtime accounting for realtime duration/turn count without creating verifier attempts or mastery evidence.",
+      "Update WebRTC assistant default wording so it no longer says realtime is detached from lesson records.",
+      "Keep realtime outside the verified lesson engine: no realtime verifier attempts, mastery evidence, images, or structured task/example/image blocks.",
+      "Synchronize tests, public docs, Alatyr docs, diagrams, UI copy, and approval evidence."
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/api/src/config",
+      "apps/api/src/openai",
+      "apps/api/src/providers",
+      "apps/api/src/lesson",
+      "apps/api/src/tutor",
+      "apps/api/src/webrtc",
+      "apps/api/test",
+      "apps/api/.env.example",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "apps/web/src",
+      "apps/web/e2e",
+      "README.md",
+      ".ai/project",
+      ".ai/assistant/approvals"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials"
+    ],
+    "excluded_actions": [
+      "No live OpenAI or external provider validation for this repair.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No auth guard weakening for /webrtc.",
+      "No realtime verifier attempts, mastery evidence, generated images, or student progress writes.",
+      "No destructive database cleanup or migration requiring data deletion."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Live provider validation, production deployment, new provider, new dependency, auth guard weakening, destructive data operations, system web server changes, or storing realtime transcripts as verifier/mastery evidence require fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-15T15:19:29Z",
+    "source_or_message": "User reported that lessons cannot continue after interruption and that WebRTC feels unused/slow, then asked to fix the current behavior.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "webrtc-lesson-continuity-20260715",
+    "patch_changed_after_approval": "yes; TypeScript narrowing and E2E strict-locator fixes stayed within the approved WebRTC continuity/UI test scope",
+    "implementation_within_scope": "yes; changed files are within approved API/WebRTC/lesson/tutor/web/test/doc/diagram/approval surfaces",
+    "validation": "npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run build; npm run lint; npm run test --workspace @egmathteacher/api -- --runTestsByPath test/webrtc.controller.spec.ts test/openai-client.service.spec.ts test/ai-model.service.spec.ts; npm run e2e; npm test; git diff --check; npm run smoke:dev; changed-file local path and secret scan",
+    "result_evidence": "diagram render completed; diagram drift check passed for 10 diagrams; Alatyr consistency check passed; build passed with existing Vite chunk-size warning; API lint passed; targeted API tests passed 3 suites / 21 tests; Playwright E2E passed 9 tests; full Jest passed 17 suites / 129 tests with existing worker-teardown warning; whitespace check passed; dev smoke passed for https://localhost:5137; changed-file local path and secret scan produced no findings",
+    "residual_risk": "No live OpenAI Realtime call was run in this repair; realtime still saves one compact post-close continuity turn rather than streaming structured lesson-engine actions while audio is open; provider billing for cancelled or failed realtime requests remains best-effort local observability, not billing truth"
+  }
+}

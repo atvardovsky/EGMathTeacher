@@ -1793,6 +1793,15 @@ function TutorWorkspace({
           lessonType,
         }),
       });
+      if (bootstrap.lessonSessionId) {
+        conversationIdRef.current = bootstrap.conversationId;
+        setConversationId(bootstrap.conversationId);
+        setActiveLessonSessionId(bootstrap.lessonSessionId);
+        setHistoryRecordLessonId(undefined);
+        if (bootstrap.lessonType) {
+          setLessonType(bootstrap.lessonType);
+        }
+      }
 
       peerConnection = new RTCPeerConnection({ iceServers: bootstrap.iceServers });
       remoteAudio = new Audio();
@@ -1904,7 +1913,33 @@ function TutorWorkspace({
           `/webrtc/session/${encodeURIComponent(sessionId)}/close`,
           { method: 'POST' },
         );
-        void refreshUsage(activeLessonSessionId);
+        if (closeResult.syncedTurn?.answer) {
+          const syncedTurn = closeResult.syncedTurn;
+          const syncedAnswer = syncedTurn.answer as TutorAnswer;
+          const terminalAnswer = isTerminalTutorAnswer(syncedAnswer);
+          setTurns((current) =>
+            current.some((turn) => turn.id === syncedTurn.id)
+              ? current
+              : [syncedTurn, ...current],
+          );
+          setLessonType(closeResult.lessonType ?? syncedTurn.lessonType);
+          if (terminalAnswer) {
+            conversationIdRef.current = undefined;
+            setConversationId(undefined);
+            setActiveLessonSessionId(undefined);
+            setHistoryRecordLessonId(syncedAnswer.lessonLifecycle.lessonSessionId);
+          } else {
+            conversationIdRef.current = closeResult.conversationId ?? syncedAnswer.conversationId;
+            setConversationId(closeResult.conversationId ?? syncedAnswer.conversationId);
+            setActiveLessonSessionId(
+              closeResult.lessonSessionId ?? syncedAnswer.lessonLifecycle.lessonSessionId,
+            );
+            setHistoryRecordLessonId(undefined);
+          }
+          setContinuityNotice(t.tutor.realtimeVoice.closedWithTranscript);
+        }
+        void refreshUsage(closeResult.lessonSessionId ?? activeLessonSessionId);
+        void refreshLessonHistory();
       } catch {
         // Closing the local audio path is more important than blocking the UI on teardown.
       }

@@ -75,11 +75,14 @@ Rules from current implementation:
 - Browser speech synthesis quality, Russian stress, and emotional prosody are
   browser-voice limitations in the POC. Better voice quality requires a future
   OpenAI audio integration.
-- The tutor composer also exposes an explicit WebRTC/OpenAI Realtime voice
-  preview for low-latency live audio. It is user-started, can be stopped from
+- The tutor composer also exposes an explicit WebRTC/OpenAI Realtime live
+  voice path for low-latency audio. It is user-started, can be stopped from
   the composer, and is closed when the UI moves to a different lesson boundary
-  or read-only history. It does not yet write realtime turns into
-  `tutor_turns`, usage, progress, images, or background jobs.
+  or read-only history. On authenticated close, useful transcripts are saved
+  as one compact voice-origin `tutor_turns` row, usage is recorded when
+  available, and a cheap background review can store sanitized teaching
+  observations. It does not write verifier progress, images, structured task
+  blocks, or mastery evidence.
 - The request may include `lessonType`; older clients can omit it and the API
   infers a conservative type from the prompt.
 - Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
@@ -433,7 +436,7 @@ Rules from current implementation:
   archive guardrails bound local pack processing.
 - Non-dry-run `--sync-rag` is a protected live OpenAI side effect.
 
-### Use WebRTC Realtime Tutor Preview
+### Use WebRTC Realtime Tutor Voice
 
 The inherited voice service exposes WebRTC endpoints under `/webrtc`.
 
@@ -442,12 +445,13 @@ Rules from current implementation:
 - Sessions are in memory.
 - Conversation transcripts can be written to the transcript log directory on
   close.
-- The tutor workspace can start this flow as a realtime voice preview, but
-  saved tutor lessons still use `/tutor/message` until transcript-to-lesson
-  integration is implemented.
+- The tutor workspace can start this flow as realtime live voice. On
+  authenticated close, the API can create or reuse a lesson session and save
+  one compact voice-origin `tutor_turns` row for continuity.
 - Signed-in realtime sessions can be attributed to the active lesson for
-  usage accounting and write one `ai_usage_ledger` row on close. This is not
-  evidence of learning progress by itself.
+  usage accounting and write one `ai_usage_ledger` row on close. This saved
+  voice turn is continuity evidence, not verifier-backed learning progress by
+  itself.
 - OpenAI Realtime is implemented; Gemini Live, Hume EVI, and Retell are
   configured as stubs.
 - Translation mode is supported by passing two languages during session

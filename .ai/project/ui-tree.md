@@ -64,9 +64,10 @@ App
       │  │  ├─ Retry-one action for visible failed background jobs
       │  │  └─ Expandable safe operation/model/token/image/duration/decision/background-job details
       │  ├─ Textarea composer
-      │  ├─ WebRTC/OpenAI Realtime live voice preview
+      │  ├─ WebRTC/OpenAI Realtime live voice
       │  │  ├─ Start/stop live voice action
       │  │  ├─ Connection state and model badge
+      │  │  ├─ Synced compact voice turn after close when transcript exists
       │  │  ├─ Usage refresh after close
       │  │  └─ Disabled state for read-only history records
       │  ├─ Voice dialog switch
@@ -161,11 +162,14 @@ App
   automatic-start limits, a voice-status message explains the reason near the
   mic control.
 - The tutor composer exposes a separate WebRTC/OpenAI Realtime live voice
-  preview for faster audio. It starts only from a user click, shows idle,
+  path for faster audio. It starts only from a user click, shows idle,
   connecting, live, closing, and error states, is disabled for read-only
-  history, and closes on lesson-boundary changes. The normal message composer
-  remains visible because realtime transcripts are not yet durable tutor
-  lesson turns.
+  history, and closes on lesson-boundary changes. On authenticated close with
+  useful transcript content, the UI receives a compact synced voice turn,
+  prepends it to the current lesson, refreshes usage/history, and keeps the
+  lesson resumable when non-terminal. The normal message composer remains
+  visible because verified tasks, images, mastery, and structured response
+  blocks still use the normal tutor message pipeline.
 - Voice output reads only the visible tutor answer blocks locally in the
   browser; it does not call backend audio generation or store generated audio.
 - Settings is read-only for account/profile data in the current POC.

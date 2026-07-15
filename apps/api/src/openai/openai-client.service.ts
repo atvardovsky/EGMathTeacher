@@ -112,7 +112,7 @@ export class OpenAiClientService {
     }
 
     const timeoutMs =
-      options.timeoutMs ?? this.configService.get<number>('ai.openai.requestTimeoutMs') ?? 30_000;
+      options.timeoutMs ?? this.configService.get<number>('ai.openai.requestTimeoutMs') ?? 90_000;
     const controller = new AbortController();
     let abortReason: 'timeout' | 'caller' | undefined;
     const timeout = setTimeout(() => {

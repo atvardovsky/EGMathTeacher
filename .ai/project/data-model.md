@@ -355,9 +355,11 @@ requests do not create new closure rows.
 Realtime session close can enqueue `realtime_session_review` for signed-in
 sessions when sanitized transcript content exists. This job stores
 teaching-useful `student_learning_signals` and optional
-`student_session_summaries`, but must not write `tutor_turns`,
-`student_attempts`, `mastery_evidence`, `student_skill_progress`, or lesson
-goal state.
+`student_session_summaries`, but must not write `student_attempts`,
+`mastery_evidence`, `student_skill_progress`, or lesson goal state. The
+WebRTC close handler itself may save one compact voice-origin `tutor_turns`
+row before enqueueing the background job; that row is lesson continuity
+context, not verifier-backed progress evidence.
 Running jobs older than `AI_BACKGROUND_RUNNING_JOB_TIMEOUT_MS` are recovered
 before each drain: jobs with retry attempts left return to `pending`, and
 exhausted jobs become `failed`.
@@ -930,6 +932,14 @@ matching image block in `answer_json` so resumed POC lessons can show the
 visual. This is local POC continuity storage, not a production media-storage
 design.
 
+WebRTC Realtime close reuses this table for authenticated lesson continuity.
+When useful voice transcript content exists, the API inserts one compact
+voice-origin row with `request_id=webrtc:<sessionId>`,
+`answer_json.source=webrtc_realtime`, a compact student voice prompt, and a
+text block summarizing the saved voice segment. This is deliberately not a
+structured verifier turn: it does not create lesson tasks, images, mastery
+evidence, or `student_skill_progress`.
+
 The saved-lessons endpoint also uses `tutor_turns` directly for turn previews
 and backward-compatible legacy history. When a conversation has stored turns
 but no `lesson_sessions` row, the API exposes it through history as a
@@ -969,8 +979,9 @@ Closed sessions are cleaned from memory after the configured cleanup window.
 - finalized transcript metadata
 
 This is not durable storage.
-On authenticated close, WebRTC also records one safe `ai_usage_ledger` row
-and may enqueue a `realtime_session_review` background job that stores only
+On authenticated close, WebRTC can save one compact voice-origin
+`tutor_turns` row for continuity, records one safe `ai_usage_ledger` row, and
+may enqueue a `realtime_session_review` background job that stores only
 sanitized teaching observations or summaries.
 
 ## File Artifacts

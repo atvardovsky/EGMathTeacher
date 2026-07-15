@@ -54,7 +54,7 @@ Client ──POST /webrtc/session──────▶ WebRtcController
       "description": "A realtime voice tutor for Russian EGE math students aged 14-16.",
       "tone": "calm, concise, and supportive",
       "locale": "ru-RU",
-      "rules": "Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview."
+      "rules": "Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone."
     },
     "fileSearch": {
       "documentationIds": ["file_doc1", "file_doc2"],
@@ -182,17 +182,24 @@ captured. If token usage was not captured, the ledger row uses
 `usage_unavailable:realtime_tokens` and keeps the local cost estimate at zero.
 The ledger row intentionally stores safe session metadata only, not raw
 transcripts or provider payloads.
-When the transcript contains teaching-useful content, close can also enqueue a
-`realtime_session_review` background job. That job uses the cheaper background
-model policy to store sanitized teaching observations and an optional compact
-session summary. It must not write `tutor_turns`, verifier attempts,
-`student_skill_progress`, mastery evidence, or goal-completion state.
+When the transcript contains teaching-useful content for a signed-in app
+session, close can create or reuse a lesson session and write one compact
+voice-origin `tutor_turns` row so the next tutor message can continue from the
+live discussion. That saved row is continuity context only: it is not verifier
+evidence and does not create task blocks, images, mastery evidence, or
+goal-completion state.
+
+Close can also enqueue a `realtime_session_review` background job. That job
+uses the cheaper background model policy to store sanitized teaching
+observations and an optional compact session summary. It must not write
+verifier attempts, `student_skill_progress`, mastery evidence, or
+goal-completion state.
 
 ## Session Lifecycle
 
 1. **Create** – `WebRtcSessionService.createSession()` reserves a session id and associates it with the conversation plus optional signed-in user, lesson session id, and lesson type metadata for usage attribution.
 2. **Activate** – When the media bridge is ready (future implementation), call `activateSession()` so status becomes `active`.
-3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, records authenticated Realtime usage, and can enqueue the safe background Realtime teaching review.
+3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, saves a compact authenticated lesson turn when useful transcript content exists, records authenticated Realtime usage, and can enqueue the safe background Realtime teaching review.
 4. **Retrieve Transcript & Token Stats** – Use `getTranscriptForSession()` or the conversation service helpers to access the saved text or file path. Finalization logs include total “incoming” (caller) and “outgoing” (assistant) token counts once the media bridge begins recording usage.
 5. **Teardown Bridge** – Clients (or future automation) should hit `POST /webrtc/session/{sessionId}/close` to invoke `WebRtcMediaService.closeSession`, which finalizes transcripts and clears in-memory bridge state.
 
@@ -215,7 +222,7 @@ Environment variables used by the module:
 | `WEBRTC_ENABLE_BARGE_IN` | Cancel an in-flight response when caller speech starts. | `true` |
 | `WEBRTC_SESSION_IDLE_TIMEOUT_MS` | Milliseconds of inactivity before an open session is closed. | `300000` |
 | `WEBRTC_IDLE_SWEEP_INTERVAL_MS` | Interval for scanning and closing idle sessions. | `60000` |
-| `OPENAI_REQUEST_TIMEOUT_MS` | Timeout for OpenAI REST calls made by the bridge. | `10000` |
+| `OPENAI_REALTIME_REQUEST_TIMEOUT_MS` | Timeout for OpenAI REST calls made by the Realtime bridge. Falls back to legacy `OPENAI_REQUEST_TIMEOUT_MS` when unset. | `30000` |
 | `OPENAI_REQUEST_RETRIES` | Retry count for OpenAI REST calls made by the bridge. | `2` |
 | `OPENAI_CLIENT_SECRET_GRACE_MS` | Refresh threshold before OpenAI client-secret expiry. | `5000` |
 | `AI_BACKGROUND_REALTIME_REVIEW_ENABLED` | Enable the optional post-close Realtime teaching-observation background review. | `true` |
@@ -227,7 +234,7 @@ Environment variables used by the module:
 | `ASSISTANT_PERSONALITY_DESCRIPTION` | Short description exposed to OpenAI Realtime. | `A realtime voice tutor for Russian EGE math students aged 14-16.` |
 | `ASSISTANT_PERSONALITY_TONE` | Qualifier for the assistant tone (e.g., `friendly`, `calm`). | `calm, concise, and supportive` |
 | `ASSISTANT_PERSONALITY_LOCALE` | Locale/voice hint for synthetic speech. | `ru-RU` |
-| `ASSISTANT_RULES` | Plain-text behavioral rules the assistant must follow. | `Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.` |
+| `ASSISTANT_RULES` | Plain-text behavioral rules the assistant must follow. | `Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim verifier-backed mastery or progress from realtime voice alone.` |
 | `FILE_SEARCH_DOCUMENTATION_IDS` | Comma-separated list of OpenAI File IDs to load as documentation context. | _(empty)_ |
 | `FILE_SEARCH_RULE_IDS` | Comma-separated list of OpenAI File IDs for rules/policies. | _(empty)_ |
 | `ASSISTANT_DEFAULT_VOICE` | Default OpenAI voice to use when none is specified by the client. | `alloy` |

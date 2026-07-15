@@ -1000,7 +1000,7 @@ test('tutor submits interim-only voice answer when recognition ends', async ({ p
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
 });
 
-test('student can start and stop realtime WebRTC voice preview', async ({ page }) => {
+test('student can start and stop realtime WebRTC voice lesson', async ({ page }) => {
   const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
   const webrtcRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
 
@@ -1029,7 +1029,40 @@ test('student can start and stop realtime WebRTC voice preview', async ({ page }
     webrtcRequests.push({ path: new URL(route.request().url()).pathname });
     return fulfillJson(route, {
       status: 'closed',
+      conversationId: 'rtc-conversation-1',
+      lessonSessionId: 'lesson-rtc-1',
+      lessonType: 'tutor',
       transcript: 'student: привет\nassistant: привет',
+      syncedTurn: {
+        id: 'turn-rtc-1',
+        prompt: 'Живая голосовая сессия: привет',
+        lessonType: 'tutor',
+        source: 'voice',
+        createdAt: '2026-07-12T10:20:00.000Z',
+        answer: {
+          conversationId: 'rtc-conversation-1',
+          lessonType: 'tutor',
+          lessonLifecycle: {
+            ...lessonLifecycle,
+            conversationId: 'rtc-conversation-1',
+            lessonSessionId: 'lesson-rtc-1',
+          },
+          answer:
+            'Живая голосовая часть урока сохранена в истории.\nПоследний ответ репетитора: привет',
+          blocks: [
+            {
+              id: 'block-rtc-1',
+              type: 'text',
+              text:
+                'Живая голосовая часть урока сохранена в истории.\nПоследний ответ репетитора: привет',
+            },
+          ],
+          tasks: [],
+          examples: [],
+          needsImage: false,
+          citations: [],
+        },
+      },
     });
   });
 
@@ -1054,7 +1087,11 @@ test('student can start and stop realtime WebRTC voice preview', async ({ page }
 
   await page.getByRole('button', { name: 'Завершить' }).click();
 
-  await expect(page.getByText('Голосовая сессия завершена, стенограмма сохранена отдельно.')).toBeVisible();
+  await expect(
+    page.getByText('Голосовая сессия завершена и сохранена в истории занятия.').first(),
+  ).toBeVisible();
+  await expect(page.getByText('Живая голосовая сессия: привет')).toBeVisible();
+  await expect(page.getByText('Последний ответ репетитора: привет')).toBeVisible();
   await expect.poll(() => webrtcRequests.length).toBe(3);
   expect(webrtcRequests[2]).toMatchObject({ path: '/webrtc/session/rtc-session-1/close' });
 });

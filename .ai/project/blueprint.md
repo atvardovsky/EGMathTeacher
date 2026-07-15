@@ -96,18 +96,20 @@ visible next actions.
   voice-dialog auto-listen retries once after silence before falling back to
   manual mic start. When speech recognition ends, the web client sends the
   best final or interim transcript directly as a voice-origin tutor request.
-- Tutor workspace has an explicit WebRTC/OpenAI Realtime voice preview for
-  low-latency live audio. It starts only after a user click, uses the inherited
+- Tutor workspace has an explicit WebRTC/OpenAI Realtime live voice path for
+  low-latency audio. It starts only after a user click, uses the inherited
   `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
-  receives compact server-only teaching context from the current lesson and
-  recent analytic memory, and does not replace the saved `/tutor/message`
-  lesson pipeline yet. Until realtime transcript-to-lesson integration is
-  built, structured lesson records, tasks, images, verifier attempts, and
-  mastery progress remain owned by the normal tutor message flow.
-  Authenticated realtime sessions record a session-level usage ledger row on
-  close when provider usage events or duration are available and can enqueue a
-  cheap `realtime_session_review` background job that stores sanitized
-  teaching observations and optional summaries for future context.
+  and receives compact server-only teaching context from the current lesson
+  and recent analytic memory. On authenticated close, useful transcripts are
+  saved back into the lesson as one compact voice-origin `tutor_turns` row so
+  the next `/tutor/message` call can continue from the voice discussion.
+  Realtime still does not run the full lesson engine while audio is open:
+  structured tasks, images, verifier attempts, and mastery progress remain
+  owned by the normal tutor message flow. Authenticated realtime sessions
+  record a session-level usage ledger row on close when provider usage events
+  or duration are available and can enqueue a cheap
+  `realtime_session_review` background job that stores sanitized teaching
+  observations and optional summaries for future context.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
@@ -360,8 +362,8 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
 - `schema_migrations`: applied POC SQLite schema migration versions and
   timestamps.
 - `knowledge_files`: local metadata for OpenAI file and vector store records.
-- `tutor_turns`: user prompt, conversation id, lesson type, answer JSON, and
-  timestamp.
+- `tutor_turns`: user prompt or compact realtime voice prompt, conversation
+  id, lesson type, answer JSON, source metadata in answer JSON, and timestamp.
   Scoped `GET /tutor/lessons` calls use these rows for turn previews and for
   legacy read-only history records when a conversation predates
   `lesson_sessions`.

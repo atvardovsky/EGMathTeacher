@@ -15,8 +15,8 @@ interface OpenAiSessionPayload {
   output_audio_format?: string;
 }
 
-const OPENAI_REQUEST_TIMEOUT_MS = 10_000;
-const OPENAI_REQUEST_RETRIES = 2;
+const DEFAULT_OPENAI_REALTIME_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_OPENAI_REQUEST_RETRIES = 2;
 
 async function fetchWithTimeout(
   url: string,
@@ -97,8 +97,8 @@ export class OpenAiRealtimeProvider implements AiProvider {
         },
         body: JSON.stringify(payload),
       },
-      OPENAI_REQUEST_TIMEOUT_MS,
-      OPENAI_REQUEST_RETRIES,
+      this.getRequestTimeoutMs(),
+      this.getRequestRetries(),
     );
 
     if (!response.ok) {
@@ -158,5 +158,20 @@ export class OpenAiRealtimeProvider implements AiProvider {
       return 'You are a helpful voice assistant. Respond concisely.';
     }
     return pieces.join(' ');
+  }
+
+  private getRequestTimeoutMs(): number {
+    return (
+      this.configService.get<number>('webrtc.openaiRequestTimeoutMs') ??
+      this.configService.get<number>('ai.openai.requestTimeoutMs') ??
+      DEFAULT_OPENAI_REALTIME_REQUEST_TIMEOUT_MS
+    );
+  }
+
+  private getRequestRetries(): number {
+    return (
+      this.configService.get<number>('webrtc.openaiRequestRetries') ??
+      DEFAULT_OPENAI_REQUEST_RETRIES
+    );
   }
 }

@@ -209,14 +209,15 @@ Production domain:
   policy; the web UI shows the stop reason, retries once after an automatic
   silence stop in voice-dialog mode, and submits the best final/interim
   transcript directly when recognition ends.
-- WebRTC/OpenAI Realtime voice preview in the tutor workspace. The student can
-  start a low-latency live audio session from the composer. Signed-in sessions
+- WebRTC/OpenAI Realtime live voice in the tutor workspace. The student can
+  start a low-latency audio session from the composer. Signed-in sessions
   receive compact server-side teaching context from the current lesson and
-  recent analytic memory, record a session-level usage row on close when
-  Realtime token usage or duration is available, and enqueue a cheap
-  background review that stores sanitized teaching observations. Current
-  structured lesson records, tasks, images, verifier attempts, and mastery
-  progress still use the normal `/tutor/message` path.
+  recent analytic memory. On close, the API saves a compact voice-origin
+  `tutor_turns` row for lesson continuity, records session-level usage when
+  Realtime token usage or duration is available, and enqueues a cheap
+  background review that stores sanitized teaching observations. Structured
+  tasks, images, verifier attempts, and mastery progress still use the normal
+  `/tutor/message` lesson engine.
 
 ## Checks
 

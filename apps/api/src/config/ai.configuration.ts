@@ -1,5 +1,13 @@
 import { registerAs } from '@nestjs/config';
 
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 export default registerAs('ai', () => {
   const responsesModel = process.env.OPENAI_RESPONSES_MODEL ?? 'gpt-5.5';
   const imageModel = process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
@@ -23,7 +31,11 @@ export default registerAs('ai', () => {
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean),
-      requestTimeoutMs: parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? '30000', 10),
+      requestTimeoutMs: parsePositiveInteger(
+        process.env.OPENAI_RESPONSES_REQUEST_TIMEOUT_MS ??
+          process.env.OPENAI_REQUEST_TIMEOUT_MS,
+        90_000,
+      ),
     },
     operationModels: {
       lessonDecision: process.env.AI_OPERATION_LESSON_DECISION_MODEL ?? responsesModel,

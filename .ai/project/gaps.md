@@ -169,21 +169,23 @@ Remaining frontend validation gaps:
 ### Realtime Voice Lesson Integration
 
 Current POC now exposes the inherited WebRTC/OpenAI Realtime bridge from the
-tutor composer as a live voice preview. Remaining product/runtime integration:
+tutor composer as live voice and saves useful authenticated transcripts as one
+compact voice-origin lesson turn on close. Remaining product/runtime
+integration:
 
-- map realtime transcript events into authenticated `tutor_turns`
 - enforce realtime terminal lesson policy while the call is still open
 - decide whether realtime observations should ever trigger profile/strategy
   refresh beyond the current cheap post-close teaching-observation review
 - render realtime tutor outputs as structured text/task/example/image blocks
-  when the conversation needs saved lesson continuity
+  while the call is open rather than saving one compact post-close text block
 
-Realtime sessions now send optional active lesson attribution from the web UI
-receive compact server-side teaching context, record one authenticated
-`ai_usage_ledger` row on close, and can enqueue a safe
-`realtime_session_review` background job. They remain a preview path rather
-than a durable pedagogical loop because they still do not create structured
-turns, verifier attempts, images, or verified progress.
+Realtime sessions now send optional active lesson attribution from the web UI,
+receive compact server-side teaching context, save one compact voice-origin
+`tutor_turns` row when useful transcript content exists, record one
+authenticated `ai_usage_ledger` row on close, and can enqueue a safe
+`realtime_session_review` background job. They remain outside the verified
+pedagogical loop because they still do not create verifier attempts, images,
+mastery evidence, or verified progress.
 
 ### Production Deployment And Operations
 

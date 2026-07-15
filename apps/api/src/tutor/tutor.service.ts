@@ -718,11 +718,14 @@ export class TutorService {
           this.normalizeLessonType(row.lesson_type) ??
           this.normalizeLessonType(parsed.lessonType) ??
           'tutor';
+        const source = this.pickString(parsed, ['source']) === 'webrtc_realtime'
+          ? 'voice'
+          : 'text';
         return {
           id: row.id,
           prompt: row.prompt,
           lessonType,
-          source: 'text',
+          source,
           answer: {
             ...(parsed as unknown as TutorAnswer),
             lessonType,

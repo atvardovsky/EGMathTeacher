@@ -464,6 +464,8 @@ export interface WebRtcBootstrapPayload {
   conversationId: string;
   iceServers: WebRtcIceServer[];
   openaiRealtimeModel: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
   voices: {
     default: string;
     available: string[];
@@ -477,6 +479,10 @@ export interface WebRtcOfferResponse {
 
 export interface WebRtcCloseResponse {
   status: 'closed' | 'already_closed';
+  conversationId?: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
   transcript?: string;
   transcriptFile?: string;
+  syncedTurn?: TutorTurn;
 }

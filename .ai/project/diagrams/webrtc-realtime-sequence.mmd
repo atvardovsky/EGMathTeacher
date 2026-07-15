@@ -8,6 +8,7 @@ sequenceDiagram
   participant Bridge as OpenAiRealtimeBridgeService
   participant Provider as OpenAI Realtime API
   participant Conv as ConversationService
+  participant Lesson as LessonService
   participant Usage as UsageService
   participant Context as TeachingContextService
   participant Background as BackgroundAiService
@@ -43,8 +44,11 @@ sequenceDiagram
   API->>Sessions: closeSession
   Sessions->>Conv: finalizeConversation
   Conv->>Logs: Write transcript when available
+  API->>Lesson: ensure/reuse lesson and count realtime duration
+  Lesson->>DB: Update lesson_sessions
+  API->>DB: Insert compact voice-origin tutor_turns row
   API->>Usage: recordRealtimeSession when signed in
   Usage->>DB: Insert ai_usage_ledger session row
   API->>Background: enqueueRealtimeSessionReview when signed in and useful
   Background->>DB: Insert background_ai_jobs realtime_session_review
-  API-->>Client: close status and transcript metadata
+  API-->>Client: close status, transcript metadata, syncedTurn

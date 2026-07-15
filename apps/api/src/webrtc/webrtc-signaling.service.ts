@@ -48,7 +48,7 @@ const DEFAULT_ASSISTANT_PERSONALITY: PersonalityConfig = {
   tone: 'calm, concise, and supportive',
   locale: 'ru-RU',
   rules:
-    'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.',
+    'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim verifier-backed mastery or progress from realtime voice alone.',
 };
 
 @Injectable()

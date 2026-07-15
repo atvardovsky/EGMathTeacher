@@ -31,7 +31,9 @@ EGMathTeacher is a browser-based POC with:
   time-limit heuristics, backend policy decisions, effectiveness signals,
   verified learning outcomes, and user-visible cost estimates
 - OpenAI Realtime for inherited realtime voice, with compact current-lesson
-  and analytic teaching context injected into signed-in sessions
+  and analytic teaching context injected into signed-in sessions and one
+  compact voice-origin tutor turn saved on authenticated close when useful
+  transcript content exists
 - optional production reverse proxy references under `deploy/`
 
 No packaged desktop runtime was found.
@@ -118,12 +120,14 @@ Main UI areas in `apps/web/src/App.tsx`:
   speech-synthesis output for visible tutor answers with automatic mic
   restart only for non-terminal lesson lifecycles plus visible recognition
   stop reasons in voice-dialog mode. The workspace also has an explicit
-  WebRTC/OpenAI Realtime voice preview that negotiates through `/webrtc` after
-  a user click, sends active lesson attribution when present, receives
+  WebRTC/OpenAI Realtime live voice path that negotiates through `/webrtc`
+  after a user click, sends active lesson attribution when present, receives
   server-side current lesson and analytic teaching context, closes on
-  lesson-boundary/read-only state changes, refreshes usage after close, and
-  can trigger a cheap background review for teaching observations; it does not
-  yet replace the structured `/tutor/message` lesson pipeline.
+  lesson-boundary/read-only state changes, refreshes usage after close, saves
+  a compact voice-origin turn into lesson history when useful transcript
+  content exists, and can trigger a cheap background review for teaching
+  observations; it still does not create verifier attempts, mastery evidence,
+  structured task/example/image blocks, or generated images.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
@@ -192,7 +196,9 @@ window size, idle timeout, or quality trigger, then can run a combined
   session close can enqueue `realtime_session_review`, which uses background
   model policy to store sanitized teaching observations and an optional
   session summary; it must not write verifier attempts, mastery evidence,
-  `student_skill_progress`, or goal state. Legacy per-turn extraction remains
+  `student_skill_progress`, or goal state. The WebRTC close path itself may
+  write one compact voice-origin `tutor_turns` row for lesson continuity
+  before the background review runs. Legacy per-turn extraction remains
   available through configuration.
 
 ## Endpoint Map
@@ -216,7 +222,7 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, and post-close background review, but does not require auth. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, compact voice-turn persistence on close, and post-close background review, but does not require auth. The tutor UI can start this path as low-latency live voice; verified tasks, images, mastery, and structured tutor blocks still use `/tutor/message`. |
 
 Local operator command:
 

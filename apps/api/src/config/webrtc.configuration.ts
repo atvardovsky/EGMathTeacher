@@ -43,7 +43,10 @@ export default registerAs('webrtc', () => ({
   enableBargeIn: parseBoolean(process.env.WEBRTC_ENABLE_BARGE_IN, true),
   sessionIdleTimeoutMs: parseNumber(process.env.WEBRTC_SESSION_IDLE_TIMEOUT_MS, 5 * 60 * 1000),
   sessionIdleSweepIntervalMs: parseNumber(process.env.WEBRTC_IDLE_SWEEP_INTERVAL_MS, 60 * 1000),
-  openaiRequestTimeoutMs: parseNumber(process.env.OPENAI_REQUEST_TIMEOUT_MS, 10_000),
+  openaiRequestTimeoutMs: parseNumber(
+    process.env.OPENAI_REALTIME_REQUEST_TIMEOUT_MS ?? process.env.OPENAI_REQUEST_TIMEOUT_MS,
+    30_000,
+  ),
   openaiRequestRetries: parseNumber(process.env.OPENAI_REQUEST_RETRIES, 2),
   openaiClientSecretGraceMs: parseNumber(process.env.OPENAI_CLIENT_SECRET_GRACE_MS, 5_000),
   assistantPersonality: {
@@ -55,7 +58,7 @@ export default registerAs('webrtc', () => ({
     locale: process.env.ASSISTANT_PERSONALITY_LOCALE ?? 'ru-RU',
     rules:
       process.env.ASSISTANT_RULES ??
-      'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.',
+      'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim verifier-backed mastery or progress from realtime voice alone.',
   },
   fileSearch: {
     documentationIds: (process.env.FILE_SEARCH_DOCUMENTATION_IDS ?? '')

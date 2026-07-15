@@ -104,7 +104,10 @@ This file records runtime flows from current source evidence.
    caller abort, timeout, and provider/network failure. Operation calls with
    usage context write a zero-token `usage_unavailable:*` ledger row for
    failed or aborted attempts, while successful responses still write token or
-   image usage from provider output.
+   image usage from provider output. Normal Responses API calls use
+   `OPENAI_RESPONSES_REQUEST_TIMEOUT_MS`, while Realtime REST setup uses
+   `OPENAI_REALTIME_REQUEST_TIMEOUT_MS`; legacy `OPENAI_REQUEST_TIMEOUT_MS`
+   is only a fallback when the specific timeout is unset.
 11. `StudentProfileService` runs `onboardingConversationExtraction` to convert
    the stored meeting transcript into the existing onboarding answer shape.
    The extractor ignores technical starter prompts, does not invent missing
@@ -357,14 +360,15 @@ This file records runtime flows from current source evidence.
    speech synthesis separately.
 2. Speech recognition remains the student input path: the browser transcript
    is sent to `POST /tutor/message` with `source=voice`.
-3. The tutor workspace also exposes an explicit WebRTC/OpenAI Realtime voice
-   preview. This low-latency path starts only after a user click, captures
+3. The tutor workspace also exposes an explicit WebRTC/OpenAI Realtime live
+   voice path. This low-latency path starts only after a user click, captures
    microphone audio through `getUserMedia`, negotiates with `/webrtc`, and
    plays remote audio in the browser. It is closed when the user stops it,
    opens read-only history, changes lesson boundaries, starts a new lesson, or
-   leaves the tutor workspace. In the current POC, realtime turns are not yet
-   converted into `tutor_turns`; saved lessons, structured blocks, verifier
-   evidence, images, and progress still use `POST /tutor/message`.
+   leaves the tutor workspace. In the current POC, authenticated realtime
+   close saves one compact voice-origin `tutor_turns` row for lesson
+   continuity. Structured blocks, verifier evidence, images, and progress
+   still use `POST /tutor/message`.
    Authenticated realtime sessions receive compact current-lesson and analytic
    teaching context, write session-level usage ledger rows on close when the
    provider supplies token usage or at least session duration can be recorded,
@@ -391,10 +395,12 @@ This file records runtime flows from current source evidence.
    the assistant voice. Stopping speech is local browser state and does not
    affect lesson, usage, or tutor-turn persistence.
 9. Normal tutor voice output does not use OpenAI audio generation, does not
-   upload generated audio, and does not store spoken audio. The WebRTC preview
-   uses OpenAI Realtime through `/webrtc`, writes the inherited realtime
-   transcript log on close, records a safe usage-ledger row for signed-in
-   sessions, and may enqueue a sanitized teaching-observation review.
+   upload generated audio, and does not store spoken audio. The WebRTC live
+   voice path uses OpenAI Realtime through `/webrtc`, writes the inherited
+   realtime transcript log on close, records a safe usage-ledger row for
+   signed-in sessions, saves a compact voice-origin lesson turn when useful
+   transcript content exists, and may enqueue a sanitized teaching-observation
+   review.
 10. When a terminal tutor response arrives, the client clears the active
    `conversationId`, opens the turn as read-only history state, disables
    composer/voice/image actions, and shows the new-lesson action.
@@ -471,9 +477,10 @@ This file records runtime flows from current source evidence.
 16. Realtime session review jobs are optional through
    `AI_BACKGROUND_REALTIME_REVIEW_ENABLED`, use the cheap background operation
    policy, and can write `student_learning_signals` plus
-   `student_session_summaries`. They must not write `tutor_turns`,
-   `student_attempts`, `mastery_evidence`, `student_skill_progress`, or lesson
-   goal status.
+   `student_session_summaries`. They must not write `student_attempts`,
+   `mastery_evidence`, `student_skill_progress`, or lesson goal status. The
+   WebRTC close handler may separately write one compact voice-origin
+   `tutor_turns` row before the background job runs.
 17. Background work must not store non-teaching sensitive details and must not
    block the current tutor response.
 
@@ -652,14 +659,21 @@ High-level flow:
 7. Provider events update conversation transcript state.
 8. Session close finalizes transcript text and writes transcript file when
    available.
-9. For signed-in sessions with transcript content, close enqueues
+9. For signed-in sessions with transcript content, close creates or reuses a
+   lesson session if needed, increments the lesson turn count and realtime
+   duration, and saves one compact voice-origin `tutor_turns` row with
+   `request_id=webrtc:<sessionId>`. The close response includes `syncedTurn`,
+   `conversationId`, `lessonSessionId`, and `lessonType`; the web client
+   prepends the saved turn and keeps the conversation resumable unless the
+   lesson lifecycle is terminal.
+10. For signed-in sessions with transcript content, close enqueues
    `realtime_session_review` as delayed background work. The review stores
    sanitized teaching observations and an optional compact summary only; it
    does not write proof/progress state.
-10. The current tutor UI treats this as a fast audio preview. It does not yet
-   transform realtime transcript events into durable `tutor_turns`, lesson
-   decisions, verifier attempts, images, or verified progress.
-11. For signed-in sessions, close records one `ai_usage_ledger` row with
+11. Realtime still does not stream structured lesson-engine actions while the
+   call is open. It does not create lesson decisions, verifier attempts,
+   images, or verified progress.
+12. For signed-in sessions, close records one `ai_usage_ledger` row with
     operation `webrtc.realtime_session`, model, input/output token counts when
     Realtime provider events supplied usage, session duration, and safe session
     metadata. If provider token usage was not captured, the row uses

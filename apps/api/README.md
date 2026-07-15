@@ -47,6 +47,10 @@ This repository houses a NestJS orchestration service that now handles both sign
     the standard tier; empty background values fall back to
     `OPENAI_BACKGROUND_SERVICE_TIER`.
   - `OPENAI_API_KEY`, `OPENAI_REALTIME_MODEL` – credentials/aliases used for session token issuance.
+  - `OPENAI_RESPONSES_REQUEST_TIMEOUT_MS` – timeout for normal Responses API
+    calls such as tutor answers, onboarding, lesson decisions, and background
+    analysis. It defaults to `90000` because live tutor/RAG JSON responses can
+    exceed 30 seconds on larger models.
   - `OPENAI_INPUT_TRANSCRIPTION_MODEL` – model used to transcribe caller audio.
   - `AI_BACKGROUND_*`, `OPENAI_BACKGROUND_RESPONSES_MODEL`,
     `OPENAI_BACKGROUND_WINDOW_RESPONSES_MODEL`,
@@ -95,7 +99,11 @@ This repository houses a NestJS orchestration service that now handles both sign
     local project vector store recorded in SQLite.
   - `WEBRTC_ICE_SERVERS`, `WEBRTC_MAX_SESSIONS`, `TRANSCRIPT_LOG_DIR` – handshake + operational tuning.
   - `WEBRTC_ENABLE_BARGE_IN`, `WEBRTC_SESSION_IDLE_TIMEOUT_MS`, `WEBRTC_IDLE_SWEEP_INTERVAL_MS` – realtime turn-taking and idle-session behavior.
-  - `OPENAI_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`, `OPENAI_CLIENT_SECRET_GRACE_MS` – OpenAI request resiliency tuning.
+  - `OPENAI_REALTIME_REQUEST_TIMEOUT_MS`, `OPENAI_REQUEST_RETRIES`,
+    `OPENAI_CLIENT_SECRET_GRACE_MS` – Realtime OpenAI REST request resiliency
+    tuning. `OPENAI_REQUEST_TIMEOUT_MS` is still accepted as a legacy fallback
+    only when the more specific Responses/Realtime timeout variables are not
+    set.
   - `ASSISTANT_PERSONALITY_*`, `ASSISTANT_RULES` – persona instructions forwarded to the gateway/provider.
   - `ASSISTANT_DEFAULT_VOICE`, `ASSISTANT_AVAILABLE_VOICES` – voice catalogue exposed to clients.
   - `FILE_SEARCH_DOCUMENTATION_IDS`, `FILE_SEARCH_RULE_IDS` – stored for future Realtime file-search support (OpenAI currently ignores them).
@@ -164,12 +172,13 @@ POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 2. Client records mic audio, creates SDP offer, and posts it to `POST /webrtc/session/{id}/offer`.
 3. NestJS forwards the offer to the in-process realtime bridge, which appends the compact teaching context to provider instructions, negotiates with OpenAI Realtime, and returns an SDP answer.
 4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service.
-5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, records a session-level usage ledger row for authenticated sessions, and queues a cheap `realtime_session_review` background job when teaching-useful transcript data exists.
+5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, creates or reuses an authenticated lesson session when needed, saves one compact voice-origin `tutor_turns` row for continuity, records a session-level usage ledger row for authenticated sessions, and queues a cheap `realtime_session_review` background job when teaching-useful transcript data exists.
 
-Realtime is still a voice preview path in the current POC. It is accounted for
-in usage summaries and can create sanitized background teaching observations,
-but it does not yet create durable `tutor_turns`, verifier attempts, progress
-updates, or images.
+Realtime is a durable voice-continuity path in the current POC, not the full
+verified lesson engine. It is accounted for in usage summaries, can create a
+saved voice-origin tutor turn, and can create sanitized background teaching
+observations, but it does not create verifier attempts, mastery progress,
+structured task/example/image blocks, or generated images.
 
 ## Translation Module
 
@@ -252,11 +261,11 @@ Tutor/product API surfaces also include:
 - Live Realtime validation is manual: `npm run smoke:realtime` skips by
   default, and `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` performs a
   short WebRTC negotiation through the running app and OpenAI Realtime.
-- Lesson-decision, tutor/profile/image/file/vector-store operations go through the
-  OpenAI-first `AiModelService` facade. `AiOperationPolicyService` resolves
-  the assistant role, operation name, model, metadata, prompt-cache eligibility,
-  and optional service tier before the provider call. Only the realtime voice
-  provider uses `AI_PROVIDER`.
+- Lesson-decision, tutor/profile/image/file/vector-store operations go through
+  the OpenAI-first `AiModelService` facade. `AiOperationPolicyService`
+  resolves the assistant role, operation name, model, metadata, prompt-cache
+  eligibility, and optional service tier before the provider call. The
+  realtime voice bridge uses the provider selected by `AI_PROVIDER`.
 - Background profile/signal assistant jobs also go through the `AiModelService`
   facade. In batched mode, sanitized tutor observations are stored in SQLite
   first, then grouped into learning windows before model calls. Lesson finish
@@ -265,9 +274,10 @@ Tutor/product API surfaces also include:
   and profile/strategy refresh jobs; rejected terminal-conversation reuse does
   not create closure jobs. Realtime session close can enqueue
   `realtime_session_review`, which stores sanitized teaching observations and
-  a compact summary but does not write `student_skill_progress`, verifier
-  attempts, or mastery evidence. Legacy per-turn extraction remains available
-  through configuration.
+  a compact summary. Realtime close can also save one compact voice-origin
+  `tutor_turns` row for lesson continuity, but it does not write
+  `student_skill_progress`, verifier attempts, or mastery evidence. Legacy
+  per-turn extraction remains available through configuration.
 - Audio is forwarded as Opus RTP frames end-to-end. Data channel events are processed in-process and persisted into conversation transcripts/token usage through `WebRtcProviderEventService`.
 - In translator mode, the bridge waits for completed transcription events and requests translation against the transcribed text to reduce free-form assistant replies.
 
@@ -275,6 +285,7 @@ Tutor/product API surfaces also include:
 
 1. Add end-to-end tests that validate full browser ↔ bridge ↔ OpenAI SDP/ICE negotiation.
 2. Flesh out additional AI providers (Gemini Live, Hume EVI, Retell) behind the common provider interface.
-3. Map realtime transcript events into structured saved lesson turns only
-   after the lesson-engine contract for realtime actions is defined.
+3. Decide whether realtime should stream structured tutor blocks while the
+   call is still open; the current POC saves one compact turn only after
+   close.
 4. Harden translation QA with explicit post-generation language/format validation hooks.
