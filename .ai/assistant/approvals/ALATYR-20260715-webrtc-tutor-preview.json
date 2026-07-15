@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260715-webrtc-tutor-preview",
+  "operation": {
+    "id": "webrtc-tutor-preview-20260715",
+    "type": "product-ui-runtime-implementation"
+  },
+  "plan": {
+    "version": "2026-07-15-webrtc-tutor-preview-v1",
+    "sha256": "not available; approval was given as a direct implementation request",
+    "file": "not available; user requested implementation in active chat"
+  },
+  "diff": {
+    "base": "0f52b7fc9ce717d259e37bfcec1bdf39ed70e2ef",
+    "patch_sha256": "not available before final patch; local validation evidence recorded in markdown approval",
+    "repository_revision_at_approval": "0f52b7fc9ce717d259e37bfcec1bdf39ed70e2ef"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Expose the existing /webrtc OpenAI Realtime bridge from the tutor workspace as a user-started live voice preview.",
+      "Update WebRTC assistant defaults from inherited generic voice assistant wording to EGMathTeacher tutor persona wording.",
+      "Keep realtime preview separate from durable /tutor/message lesson records until transcript-to-lesson integration is explicitly designed.",
+      "Add local mocked E2E coverage for WebRTC session bootstrap, SDP offer, and close.",
+      "Synchronize human and AI assistant documentation, UI tree, diagrams, validation notes, and approval evidence."
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/web/src",
+      "apps/web/e2e",
+      "apps/api/src/config",
+      "apps/api/src/webrtc",
+      "apps/api/test",
+      "apps/api/.env.example",
+      "apps/api/Agent.md",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "README.md",
+      ".ai/project",
+      ".ai/assistant/approvals"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials"
+    ],
+    "excluded_actions": [
+      "No live OpenAI Realtime call during validation.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No auth guard weakening for /webrtc.",
+      "No durable tutor-turn persistence from realtime transcripts in this operation.",
+      "No destructive production database operation."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Live OpenAI validation, production deployment, new provider, new dependency, auth guard weakening, transcript persistence into tutor_turns, system web server changes, or destructive data operations require fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-15T14:35:54+02:00",
+    "source_or_message": "User asked why WebRTC was not used for the slow voice path, then requested \"do an implementation\" in the active chat.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "webrtc-tutor-preview-20260715",
+    "patch_changed_after_approval": "yes; build and E2E feedback removed unsupported HTMLAudioElement.playsInline usage and fixed idle-state message clobbering without expanding scope",
+    "implementation_within_scope": "yes",
+    "validation": "npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run build; npm run lint; npm test; npm run e2e; git diff --check; npm run smoke:dev; secret/local-path scan",
+    "result_evidence": "diagram render completed; diagram drift check passed for 10 diagrams; Alatyr consistency check passed; build passed with existing Vite chunk-size warning; API lint passed; Jest passed 17 suites / 120 tests with existing worker-teardown warning; Playwright E2E passed 9 tests; whitespace check passed; dev smoke passed for https://localhost:5137; secret/local-path scan found no secrets and only an approval-template placeholder",
+    "residual_risk": "Realtime preview is not yet a durable lesson path; no live OpenAI Realtime validation or remote CI status was checked; local usage accounting does not capture realtime provider cost in this operation; browser and network WebRTC behavior remain covered only by mocked E2E"
+  }
+}

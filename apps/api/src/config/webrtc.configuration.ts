@@ -47,15 +47,15 @@ export default registerAs('webrtc', () => ({
   openaiRequestRetries: parseNumber(process.env.OPENAI_REQUEST_RETRIES, 2),
   openaiClientSecretGraceMs: parseNumber(process.env.OPENAI_CLIENT_SECRET_GRACE_MS, 5_000),
   assistantPersonality: {
-    name: process.env.ASSISTANT_PERSONALITY_NAME ?? 'Voice Assistant',
+    name: process.env.ASSISTANT_PERSONALITY_NAME ?? 'EGE Math Tutor',
     description:
       process.env.ASSISTANT_PERSONALITY_DESCRIPTION ??
-      'A helpful, conversational voice companion.',
-    tone: process.env.ASSISTANT_PERSONALITY_TONE ?? 'friendly',
-    locale: process.env.ASSISTANT_PERSONALITY_LOCALE ?? 'auto',
+      'A realtime voice tutor for Russian EGE math students aged 14-16.',
+    tone: process.env.ASSISTANT_PERSONALITY_TONE ?? 'calm, concise, and supportive',
+    locale: process.env.ASSISTANT_PERSONALITY_LOCALE ?? 'ru-RU',
     rules:
       process.env.ASSISTANT_RULES ??
-      'Stay polite, concise, and clarify when unsure. Always cite relevant documents when answering policy or documentation questions.',
+      'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.',
   },
   fileSearch: {
     documentationIds: (process.env.FILE_SEARCH_DOCUMENTATION_IDS ?? '')

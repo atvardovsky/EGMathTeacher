@@ -69,12 +69,17 @@ Rules from current implementation:
   network errors, or browser policy. The tutor UI shows a short voice-status
   reason, retries once after an automatic silence stop in voice-dialog mode,
   and leaves the mic button as the manual fallback.
-- Short low-confidence voice transcripts without math or lesson intent are
-  copied back into the composer for confirmation instead of being sent as a
-  tutor request.
+- When browser speech recognition ends, the web client sends the best
+  available final or interim transcript directly as a voice-origin tutor
+  request.
 - Browser speech synthesis quality, Russian stress, and emotional prosody are
   browser-voice limitations in the POC. Better voice quality requires a future
   OpenAI audio integration.
+- The tutor composer also exposes an explicit WebRTC/OpenAI Realtime voice
+  preview for low-latency live audio. It is user-started, can be stopped from
+  the composer, and is closed when the UI moves to a different lesson boundary
+  or read-only history. It does not yet write realtime turns into
+  `tutor_turns`, usage, progress, images, or background jobs.
 - The request may include `lessonType`; older clients can omit it and the API
   infers a conservative type from the prompt.
 - Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
@@ -428,7 +433,7 @@ Rules from current implementation:
   archive guardrails bound local pack processing.
 - Non-dry-run `--sync-rag` is a protected live OpenAI side effect.
 
-### Use WebRTC Voice Assistant
+### Use WebRTC Realtime Tutor Preview
 
 The inherited voice service exposes WebRTC endpoints under `/webrtc`.
 
@@ -437,6 +442,9 @@ Rules from current implementation:
 - Sessions are in memory.
 - Conversation transcripts can be written to the transcript log directory on
   close.
+- The tutor workspace can start this flow as a realtime voice preview, but
+  saved tutor lessons still use `/tutor/message` until transcript-to-lesson
+  integration is implemented.
 - OpenAI Realtime is implemented; Gemini Live, Hume EVI, and Retell are
   configured as stubs.
 - Translation mode is supported by passing two languages during session

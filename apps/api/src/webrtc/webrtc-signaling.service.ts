@@ -42,6 +42,15 @@ export interface WebRtcBootstrapPayload {
   maxTurnMillis?: number;
 }
 
+const DEFAULT_ASSISTANT_PERSONALITY: PersonalityConfig = {
+  name: 'EGE Math Tutor',
+  description: 'A realtime voice tutor for Russian EGE math students aged 14-16.',
+  tone: 'calm, concise, and supportive',
+  locale: 'ru-RU',
+  rules:
+    'Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.',
+};
+
 @Injectable()
 export class WebRtcSignalingService {
   constructor(private readonly configService: ConfigService) {}
@@ -86,15 +95,21 @@ export class WebRtcSignalingService {
 
   getPersonalityConfig(): PersonalityConfig {
     return {
-      name: this.configService.get<string>('webrtc.assistantPersonality.name') ?? 'Voice Assistant',
+      name:
+        this.configService.get<string>('webrtc.assistantPersonality.name') ??
+        DEFAULT_ASSISTANT_PERSONALITY.name,
       description:
         this.configService.get<string>('webrtc.assistantPersonality.description') ??
-        'A helpful, conversational voice companion.',
-      tone: this.configService.get<string>('webrtc.assistantPersonality.tone') ?? 'friendly',
-      locale: this.configService.get<string>('webrtc.assistantPersonality.locale') ?? 'auto',
+        DEFAULT_ASSISTANT_PERSONALITY.description,
+      tone:
+        this.configService.get<string>('webrtc.assistantPersonality.tone') ??
+        DEFAULT_ASSISTANT_PERSONALITY.tone,
+      locale:
+        this.configService.get<string>('webrtc.assistantPersonality.locale') ??
+        DEFAULT_ASSISTANT_PERSONALITY.locale,
       rules:
         this.configService.get<string>('webrtc.assistantPersonality.rules') ??
-        'Stay polite, concise, and clarify when unsure.',
+        DEFAULT_ASSISTANT_PERSONALITY.rules,
     };
   }
 

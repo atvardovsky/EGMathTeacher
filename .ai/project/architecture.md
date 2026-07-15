@@ -114,7 +114,10 @@ Main UI areas in `apps/web/src/App.tsx`:
   saved lesson continuity panel, speech recognition input, and browser
   speech-synthesis output for visible tutor answers with automatic mic
   restart only for non-terminal lesson lifecycles plus visible recognition
-  stop reasons in voice-dialog mode
+  stop reasons in voice-dialog mode. The workspace also has an explicit
+  WebRTC/OpenAI Realtime voice preview that negotiates through `/webrtc` after
+  a user click and closes on lesson-boundary/read-only state changes; it does
+  not yet replace the structured `/tutor/message` lesson pipeline.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
@@ -197,7 +200,7 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
 
 Local operator command:
 

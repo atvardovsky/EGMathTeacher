@@ -166,6 +166,20 @@ Remaining frontend validation gaps:
 - accessibility checks
 - visual regression checks
 
+### Realtime Voice Lesson Integration
+
+Current POC now exposes the inherited WebRTC/OpenAI Realtime bridge from the
+tutor composer as a live voice preview. Remaining product/runtime integration:
+
+- map realtime transcript events into authenticated `tutor_turns`
+- bind realtime sessions to `lesson_sessions`, lesson type, and terminal
+  lesson policy
+- route realtime usage into `ai_usage_ledger`
+- feed realtime turns into background learning observations and profile
+  refresh jobs
+- render realtime tutor outputs as structured text/task/example/image blocks
+  when the conversation needs saved lesson continuity
+
 ### Production Deployment And Operations
 
 Requires deployment decisions and system-level approval:

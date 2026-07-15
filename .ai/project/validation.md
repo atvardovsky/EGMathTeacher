@@ -108,6 +108,7 @@ visibility/start, explicit empty saved-lesson state, saved lesson list/resume
 with previous discussion hydration, browser speech-synthesis handoff for tutor replies,
 automatic speech-recognition restart after spoken non-terminal tutor replies,
 interim-only speech-recognition submission for first-meeting and tutor turns,
+mocked WebRTC realtime voice session start/offer/close from the tutor composer,
 blocked speech-recognition restart after terminal tutor replies, tutor answer
 rendering, terminal first-meeting read-only input behavior, citation display,
 terminal first-meeting reload recovery before profile creation, usage refresh

@@ -357,31 +357,43 @@ This file records runtime flows from current source evidence.
    speech synthesis separately.
 2. Speech recognition remains the student input path: the browser transcript
    is sent to `POST /tutor/message` with `source=voice`.
-3. Speech synthesis is the assistant output path: when a tutor answer arrives
+3. The tutor workspace also exposes an explicit WebRTC/OpenAI Realtime voice
+   preview. This low-latency path starts only after a user click, captures
+   microphone audio through `getUserMedia`, negotiates with `/webrtc`, and
+   plays remote audio in the browser. It is closed when the user stops it,
+   opens read-only history, changes lesson boundaries, starts a new lesson, or
+   leaves the tutor workspace. In the current POC, realtime turns are not yet
+   converted into `tutor_turns`; saved lessons, structured blocks, verifier
+   evidence, images, usage ledger, and background analysis still use
+   `POST /tutor/message`.
+4. Speech synthesis is the assistant output path for normal tutor answers:
+   when a tutor answer arrives
    after a user-triggered message or launcher action, the browser reads the
    visible ordered answer blocks aloud if voice dialog is enabled.
-4. The voice-dialog switch is visible in the tutor composer, persisted in
+5. The voice-dialog switch is visible in the tutor composer, persisted in
    local storage, and disabled when browser speech synthesis is unavailable.
-5. When assistant speech ends and voice dialog is still enabled, the web client
+6. When assistant speech ends and voice dialog is still enabled, the web client
    automatically starts speech recognition to capture the next student turn
    only when `lessonLifecycle.shouldStop=false` and the lesson status is not
    `finished`, `goal_reached`, or `hard_limit_reached`. If the browser blocks
    automatic mic start or speech recognition is unsupported, the visible mic
    button remains the manual fallback.
-6. If browser speech recognition ends without a transcript because of silence,
+7. If browser speech recognition ends without a transcript because of silence,
    `no-speech`, `aborted`, permission, device, language, or network errors,
    the UI clears listening state and shows a short reason. In voice-dialog
    auto-listen mode, a silence/no-speech stop retries once before leaving the
    mic button as the manual fallback.
-7. Each tutor turn has a speak/stop action so the student can replay or stop
+8. Each tutor turn has a speak/stop action so the student can replay or stop
    the assistant voice. Stopping speech is local browser state and does not
    affect lesson, usage, or tutor-turn persistence.
-8. The POC voice output does not use OpenAI audio generation, does not upload
-   generated audio, and does not store spoken audio.
-9. When a terminal tutor response arrives, the client clears the active
+9. Normal tutor voice output does not use OpenAI audio generation, does not
+   upload generated audio, and does not store spoken audio. The WebRTC preview
+   uses OpenAI Realtime through `/webrtc`, but writes only the inherited
+   realtime transcript log on close.
+10. When a terminal tutor response arrives, the client clears the active
    `conversationId`, opens the turn as read-only history state, disables
    composer/voice/image actions, and shows the new-lesson action.
-9. Russian pronunciation improvements are limited to browser voice selection,
+11. Russian pronunciation improvements are limited to browser voice selection,
    slower speech rate, and light math-text normalization; stress and emotional
    prosody remain browser-voice limitations.
 
@@ -604,7 +616,12 @@ The inherited WebRTC service lives under `/webrtc`.
 
 High-level flow:
 
-1. Client creates session with `POST /webrtc/session`.
+1. In the tutor workspace, the student clicks the live voice action. The web
+   client stops local browser speech recognition/synthesis, requests
+   microphone access, and creates a WebRTC session with `POST /webrtc/session`.
+   If an active tutor `conversationId` exists, it is sent as
+   `conversationSeed`; otherwise `/webrtc` creates its own realtime
+   conversation id.
 2. API creates in-memory WebRTC session and conversation state.
 3. Client can request a realtime token with
    `POST /webrtc/session/:sessionId/token`.
@@ -614,6 +631,10 @@ High-level flow:
 7. Provider events update conversation transcript state.
 8. Session close finalizes transcript text and writes transcript file when
    available.
+9. The current tutor UI treats this as a fast audio preview. It does not yet
+   transform realtime transcript events into durable `tutor_turns`, lesson
+   decisions, usage ledger rows, verifier attempts, images, or background
+   learning observations.
 
 Detailed WebRTC endpoint behavior is owned by `apps/api/docs/webrtc-module.md`
 and `apps/api/src/webrtc`.

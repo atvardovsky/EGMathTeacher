@@ -64,6 +64,10 @@ App
       │  │  ├─ Retry-one action for visible failed background jobs
       │  │  └─ Expandable safe operation/model/token/image/decision/background-job details
       │  ├─ Textarea composer
+      │  ├─ WebRTC/OpenAI Realtime live voice preview
+      │  │  ├─ Start/stop live voice action
+      │  │  ├─ Connection state and model badge
+      │  │  └─ Disabled state for read-only history records
       │  ├─ Voice dialog switch
       │  ├─ Voice action
       │  ├─ Send action
@@ -155,6 +159,12 @@ App
   recognition stops from silence, permission, device, language, network, or
   automatic-start limits, a voice-status message explains the reason near the
   mic control.
+- The tutor composer exposes a separate WebRTC/OpenAI Realtime live voice
+  preview for faster audio. It starts only from a user click, shows idle,
+  connecting, live, closing, and error states, is disabled for read-only
+  history, and closes on lesson-boundary changes. The normal message composer
+  remains visible because realtime transcripts are not yet durable tutor
+  lesson turns.
 - Voice output reads only the visible tutor answer blocks locally in the
   browser; it does not call backend audio generation or store generated audio.
 - Settings is read-only for account/profile data in the current POC.

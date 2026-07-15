@@ -449,3 +449,31 @@ export interface TutorImageResult {
   mimeType?: string;
   usage?: TutorUsageSnapshot;
 }
+
+export interface WebRtcIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface WebRtcBootstrapPayload {
+  sessionId: string;
+  conversationId: string;
+  iceServers: WebRtcIceServer[];
+  openaiRealtimeModel: string;
+  voices: {
+    default: string;
+    available: string[];
+  };
+  maxTurnMillis?: number;
+}
+
+export interface WebRtcOfferResponse {
+  sdp: string;
+}
+
+export interface WebRtcCloseResponse {
+  status: 'closed' | 'already_closed';
+  transcript?: string;
+  transcriptFile?: string;
+}

@@ -1,4 +1,4 @@
-# Voice Assistant Service (Work in Progress)
+# EGMathTeacher API and Realtime Voice Service
 
 This repository houses a NestJS orchestration service that now handles both signaling and the realtime WebRTC bridge to OpenAI’s Realtime API. The Node layer manages configuration, conversation metadata, transcripts, and the media bridge (via `wrtc`), so no external Go gateway is required.
 

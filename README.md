@@ -206,11 +206,14 @@ Production domain:
   store generated audio, so Russian stress/emotion quality remains limited by
   the installed browser voices. Browser speech recognition
   can still stop after silence, permission/device issues, or network/browser
-  policy; the web UI shows the stop reason and retries once after an automatic
-  silence stop in voice-dialog mode. Short uncertain voice fragments without
-  math or lesson intent are placed back into the composer for confirmation
-  instead of being sent as a lesson request.
-- Imported WebRTC/Realtime voice service remains available under `/webrtc`.
+  policy; the web UI shows the stop reason, retries once after an automatic
+  silence stop in voice-dialog mode, and submits the best final/interim
+  transcript directly when recognition ends.
+- WebRTC/OpenAI Realtime voice preview in the tutor workspace. The student can
+  start a low-latency live audio session from the composer; current structured
+  lesson records, tasks, images, usage, and progress still use the normal
+  `/tutor/message` path until realtime transcripts are wired into the lesson
+  pipeline.
 
 ## Checks
 

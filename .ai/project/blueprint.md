@@ -94,9 +94,15 @@ visible next actions.
   voices. Browser speech-recognition timeouts, no-speech stops, permission
   blocks, device errors, and network errors are surfaced near the mic control;
   voice-dialog auto-listen retries once after silence before falling back to
-  manual mic start. Short low-confidence voice fragments without math or lesson
-  intent are copied into the composer for confirmation instead of being sent as
-  a tutor request.
+  manual mic start. When speech recognition ends, the web client sends the
+  best final or interim transcript directly as a voice-origin tutor request.
+- Tutor workspace has an explicit WebRTC/OpenAI Realtime voice preview for
+  low-latency live audio. It starts only after a user click, uses the inherited
+  `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
+  and does not replace the saved `/tutor/message` lesson pipeline yet. Until
+  realtime transcript-to-lesson integration is built, structured lesson
+  records, tasks, images, usage ledger rows, progress updates, and background
+  analysis remain owned by the normal tutor message flow.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI

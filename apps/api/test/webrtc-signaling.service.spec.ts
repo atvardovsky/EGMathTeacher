@@ -62,11 +62,11 @@ describe('WebRtcSignalingService', () => {
   it('applies translation config when languages are provided', () => {
     const service = new WebRtcSignalingService(createConfigService({}));
     const base = {
-      name: 'Voice Assistant',
-      description: 'Helpful',
-      tone: 'friendly',
-      locale: 'auto',
-      rules: 'Stay helpful.',
+      name: 'EGE Math Tutor',
+      description: 'A realtime voice tutor for Russian EGE math students aged 14-16.',
+      tone: 'calm',
+      locale: 'ru-RU',
+      rules: 'Ask one short question at a time.',
     };
 
     const translated = service.applyTranslationConfig(base, {
@@ -85,11 +85,11 @@ describe('WebRtcSignalingService', () => {
   it('keeps base persona when translation config is missing languages', () => {
     const service = new WebRtcSignalingService(createConfigService({}));
     const base = {
-      name: 'Voice Assistant',
-      description: 'Helpful',
-      tone: 'friendly',
-      locale: 'auto',
-      rules: 'Stay helpful.',
+      name: 'EGE Math Tutor',
+      description: 'A realtime voice tutor for Russian EGE math students aged 14-16.',
+      tone: 'calm',
+      locale: 'ru-RU',
+      rules: 'Ask one short question at a time.',
     };
 
     expect(service.applyTranslationConfig(base, { languageA: 'English', languageB: '' })).toEqual(

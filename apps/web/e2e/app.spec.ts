@@ -456,6 +456,55 @@ test.beforeEach(async ({ page }) => {
       value: MockSpeechRecognition,
       configurable: true,
     });
+    class MockRTCPeerConnection extends EventTarget {
+      localDescription: RTCSessionDescriptionInit | null = null;
+      remoteDescription: RTCSessionDescriptionInit | null = null;
+      iceGatheringState: RTCIceGatheringState = 'complete';
+      connectionState: RTCPeerConnectionState = 'new';
+      onconnectionstatechange: ((this: RTCPeerConnection, ev: Event) => unknown) | null = null;
+      onicegatheringstatechange: ((this: RTCPeerConnection, ev: Event) => unknown) | null =
+        null;
+      ontrack: ((this: RTCPeerConnection, ev: RTCTrackEvent) => unknown) | null = null;
+
+      addTrack() {
+        return {} as RTCRtpSender;
+      }
+
+      async createOffer() {
+        return { type: 'offer', sdp: 'mock-sdp-offer' } as RTCSessionDescriptionInit;
+      }
+
+      async setLocalDescription(description: RTCSessionDescriptionInit) {
+        this.localDescription = description;
+      }
+
+      async setRemoteDescription(description: RTCSessionDescriptionInit) {
+        this.remoteDescription = description;
+        this.connectionState = 'connected';
+        this.onconnectionstatechange?.call(this as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+      }
+
+      close() {
+        this.connectionState = 'closed';
+      }
+    }
+    Object.defineProperty(window, 'RTCPeerConnection', {
+      value: MockRTCPeerConnection,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        async getUserMedia() {
+          const track = { stop() {} };
+          return {
+            getTracks() {
+              return [track];
+            },
+          };
+        },
+      },
+      configurable: true,
+    });
   });
 });
 
@@ -947,6 +996,65 @@ test('tutor submits interim-only voice answer when recognition ends', async ({ p
     message: 'средний уровень',
   });
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+});
+
+test('student can start and stop realtime WebRTC voice preview', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
+  const webrtcRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+
+  await page.route('**/webrtc/session', async (route) => {
+    webrtcRequests.push({
+      path: new URL(route.request().url()).pathname,
+      body: route.request().postDataJSON() as Record<string, unknown>,
+    });
+    return fulfillJson(route, {
+      sessionId: 'rtc-session-1',
+      conversationId: 'rtc-conversation-1',
+      iceServers: [{ urls: 'stun:example.test:19302' }],
+      openaiRealtimeModel: 'gpt-realtime-test',
+      voices: { default: 'alloy', available: ['alloy'] },
+      maxTurnMillis: 120000,
+    });
+  });
+  await page.route('**/webrtc/session/rtc-session-1/offer', async (route) => {
+    webrtcRequests.push({
+      path: new URL(route.request().url()).pathname,
+      body: route.request().postDataJSON() as Record<string, unknown>,
+    });
+    return fulfillJson(route, { sdp: 'mock-sdp-answer' });
+  });
+  await page.route('**/webrtc/session/rtc-session-1/close', async (route) => {
+    webrtcRequests.push({ path: new URL(route.request().url()).pathname });
+    return fulfillJson(route, {
+      status: 'closed',
+      transcript: 'student: привет\nassistant: привет',
+    });
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await expect(page.getByText('Живой голос')).toBeVisible();
+  await page.getByRole('button', { name: 'Говорить вживую' }).click();
+
+  await expect(page.getByText('в эфире')).toBeVisible();
+  await expect(page.getByText('gpt-realtime-test')).toBeVisible();
+  await expect.poll(() => webrtcRequests.length).toBe(2);
+  expect(webrtcRequests[0]).toMatchObject({
+    path: '/webrtc/session',
+    body: {},
+  });
+  expect(webrtcRequests[1]).toMatchObject({
+    path: '/webrtc/session/rtc-session-1/offer',
+    body: { sdp: 'mock-sdp-offer' },
+  });
+  expect(tutorRequests).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Завершить' }).click();
+
+  await expect(page.getByText('Голосовая сессия завершена, стенограмма сохранена отдельно.')).toBeVisible();
+  await expect.poll(() => webrtcRequests.length).toBe(3);
+  expect(webrtcRequests[2]).toMatchObject({ path: '/webrtc/session/rtc-session-1/close' });
 });
 
 test('student sees saved lessons and continues the previous discussion', async ({ page }) => {

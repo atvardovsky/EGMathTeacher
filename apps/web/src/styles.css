@@ -366,6 +366,23 @@ textarea {
   row-gap: 10px;
 }
 
+.realtime-voice-strip {
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  background: #f0fdfa;
+  padding: 10px 12px;
+}
+
+.realtime-voice-strip[data-active='true'] {
+  border-color: #8ce99a;
+  background: #f0fff4;
+}
+
+.realtime-voice-copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .voice-status {
   width: fit-content;
   max-width: 100%;

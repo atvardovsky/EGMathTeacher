@@ -50,11 +50,11 @@ Client ──POST /webrtc/session──────▶ WebRtcController
     ],
     "openaiRealtimeModel": "gpt-4o-realtime-preview",
     "personality": {
-      "name": "Voice Assistant",
-      "description": "A helpful, conversational voice companion.",
-      "tone": "friendly",
-      "locale": "auto",
-      "rules": "Stay polite, concise, and clarify when unsure."
+      "name": "EGE Math Tutor",
+      "description": "A realtime voice tutor for Russian EGE math students aged 14-16.",
+      "tone": "calm, concise, and supportive",
+      "locale": "ru-RU",
+      "rules": "Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview."
     },
     "fileSearch": {
       "documentationIds": ["file_doc1", "file_doc2"],
@@ -207,11 +207,11 @@ Environment variables used by the module:
 | `OPENAI_REQUEST_RETRIES` | Retry count for OpenAI REST calls made by the bridge. | `2` |
 | `OPENAI_CLIENT_SECRET_GRACE_MS` | Refresh threshold before OpenAI client-secret expiry. | `5000` |
 | `TRANSCRIPT_LOG_DIR` | Directory where final transcript `.txt` files are written. | `./logs` |
-| `ASSISTANT_PERSONALITY_NAME` | Display name for the assistant persona. | `Voice Assistant` |
-| `ASSISTANT_PERSONALITY_DESCRIPTION` | Short description exposed to OpenAI Realtime. | `A helpful, conversational voice companion.` |
-| `ASSISTANT_PERSONALITY_TONE` | Qualifier for the assistant tone (e.g., `friendly`, `calm`). | `friendly` |
-| `ASSISTANT_PERSONALITY_LOCALE` | Locale/voice hint for synthetic speech (`auto` defers to detection). | `auto` |
-| `ASSISTANT_RULES` | Plain-text behavioral rules the assistant must follow. | `Stay polite, concise, and clarify when unsure.` |
+| `ASSISTANT_PERSONALITY_NAME` | Display name for the assistant persona. | `EGE Math Tutor` |
+| `ASSISTANT_PERSONALITY_DESCRIPTION` | Short description exposed to OpenAI Realtime. | `A realtime voice tutor for Russian EGE math students aged 14-16.` |
+| `ASSISTANT_PERSONALITY_TONE` | Qualifier for the assistant tone (e.g., `friendly`, `calm`). | `calm, concise, and supportive` |
+| `ASSISTANT_PERSONALITY_LOCALE` | Locale/voice hint for synthetic speech. | `ru-RU` |
+| `ASSISTANT_RULES` | Plain-text behavioral rules the assistant must follow. | `Speak Russian by default. Ask one short question at a time. Explain EGE math with simple steps, short examples, and a calm tone. Do not claim that progress was saved in the lesson record during realtime preview.` |
 | `FILE_SEARCH_DOCUMENTATION_IDS` | Comma-separated list of OpenAI File IDs to load as documentation context. | _(empty)_ |
 | `FILE_SEARCH_RULE_IDS` | Comma-separated list of OpenAI File IDs for rules/policies. | _(empty)_ |
 | `ASSISTANT_DEFAULT_VOICE` | Default OpenAI voice to use when none is specified by the client. | `alloy` |
