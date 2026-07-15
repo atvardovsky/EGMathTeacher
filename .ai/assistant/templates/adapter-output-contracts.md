@@ -3,6 +3,11 @@
 Use this file to define minimum evidence after installation, framework update,
 or adapter recheck work.
 
+When protected-change scope needs deterministic path containment, pair the
+human approval record with
+`.ai/assistant/approvals/approval-record-template.json` and report the
+explicit JSON record plus Git diff base used for the check.
+
 ## Contract: `installation-output`
 
 Use after the initial Alatyr Core installation or a scoped adapter expansion.
@@ -18,6 +23,7 @@ Use after the initial Alatyr Core installation or a scoped adapter expansion.
 - Manifest path: `.ai/alatyr.yaml`
 - Installation plan path or summary
 - Approval records used or why not required
+- Approval scope enforcement or why not required
 - Surfaces created
 - Surfaces updated
 - Surfaces skipped and reason
@@ -28,6 +34,8 @@ Use after the initial Alatyr Core installation or a scoped adapter expansion.
 - Context router result
 - Context profiles result
 - Source-of-truth registry result
+- Re-derived invariant result
+- Review-item reconciliation result
 - Task-specific maturity result
 - Bridge capability matrix result
 - Root entry points checked
@@ -68,11 +76,14 @@ Core baseline.
 - Surfaces skipped and reason
 - Existing files preserved
 - Approval records used or why not required
+- Approval scope enforcement
 - Required core profile result
 - Optional module profile result
 - Context router result
 - Context profiles result
 - Source-of-truth registry result
+- Re-derived invariant result
+- Review-item reconciliation result
 - Task-specific maturity result
 - Operation help and routing result
 - AI infrastructure router result
@@ -103,6 +114,7 @@ adapter.
 - Adapter schema version
 - Template version
 - Approval records used or why not required
+- Approval scope enforcement or why not required
 - Surfaces created or none
 - Surfaces updated or none
 - Surfaces skipped and reason
@@ -112,6 +124,8 @@ adapter.
 - Context router result
 - Context profiles result
 - Source-of-truth registry result
+- Re-derived invariant result
+- Review-item reconciliation result
 - Task-specific maturity result
 - Bridge capability matrix result
 - Operation help and routing result

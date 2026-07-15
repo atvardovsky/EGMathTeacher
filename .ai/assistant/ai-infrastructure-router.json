@@ -257,7 +257,9 @@
         "npm run alatyr:check when adapter files change"
       ],
       "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
-      "conflicts_with": [],
+      "conflicts_with": [
+        "not applicable; no conflicting target item is known"
+      ],
       "adaptation_record": "not applicable; target-owned adapter item"
     },
     {
@@ -282,7 +284,9 @@
         "agents",
         "codex"
       ],
-      "wrappers": [],
+      "wrappers": [
+        "not applicable; checker is run through package scripts"
+      ],
       "allowed_actions": [
         "read-only",
         "adapter-only",
@@ -301,7 +305,9 @@
         "npm run alatyr:check"
       ],
       "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
-      "conflicts_with": [],
+      "conflicts_with": [
+        "not applicable; no conflicting target item is known"
+      ],
       "adaptation_record": "not applicable; target-owned checker"
     },
     {
@@ -326,7 +332,9 @@
         "agents",
         "codex"
       ],
-      "wrappers": [],
+      "wrappers": [
+        "not applicable; skill is loaded through target adapter routing"
+      ],
       "allowed_actions": [
         "code-and-tests"
       ],
@@ -347,7 +355,9 @@
         "npm run e2e when browser workflow changes"
       ],
       "output_contract": ".ai/assistant/gates/final-evidence.md",
-      "conflicts_with": [],
+      "conflicts_with": [
+        "not applicable; no conflicting target item is known"
+      ],
       "adaptation_record": "not applicable; target-owned skill"
     },
     {
@@ -393,7 +403,9 @@
         "npm run alatyr:check"
       ],
       "output_contract": ".ai/assistant/templates/adapter-output-contracts.md",
-      "conflicts_with": [],
+      "conflicts_with": [
+        "not applicable; no conflicting target item is known"
+      ],
       "adaptation_record": "not applicable; target-owned bridge"
     }
   ]

@@ -41,9 +41,9 @@ runtime behavior; run `npm run diagrams:render` when diagram sources change.
 
 ## Profile: `code-local`
 
-Use when: implementation or tests change without changing accepted behavior,
-architecture, data model, external contract, security posture, or AI
-infrastructure.
+Use when: implementation, tests, review comments, or defect fixes change
+without changing accepted behavior, architecture, data model, external
+contract, security posture, or AI infrastructure.
 
 Required context:
 
@@ -60,7 +60,8 @@ Approval gates: only if the task crosses a protected category.
 
 Validation/evidence: run `npm run build`, `npm test`, and `npm run lint` when
 API/code behavior changes; for web UI changes run build and perform the
-requested smoke check when relevant.
+requested smoke check when relevant. Re-derive invariants, reconcile related
+review items, and explain doc sync or why none was needed.
 
 ## Profile: `business-change`
 
@@ -74,6 +75,7 @@ Required context:
 - `.ai/framework/source-of-truth-registry.md`
 - `.ai/framework/logical-integrity.md`
 - `.ai/framework/blueprint-driven-change.md`
+- `.ai/framework/approval-records.md`
 - `.ai/framework/testing-guidance.md`
 - `.ai/assistant/flows/blueprint-driven-change.flow.md`
 - `.ai/assistant/gates/checklist.md`
@@ -85,9 +87,10 @@ Required context:
 Approval gates: explicit programmer approval before changing accepted business
 behavior.
 
-Validation/evidence: changed fact, owning source of truth, implementation/test
-sync, docs and diagram sync if applicable, approvals, and final logical
-integrity result.
+Validation/evidence: changed fact, owning source of truth, re-derived
+invariants, review-item reconciliation, implementation/test sync, docs and
+diagram sync if applicable, approvals, machine-readable approval-scope result
+when approval scope applies, and final logical integrity result.
 
 ## Profile: `architecture-change`
 
@@ -101,6 +104,7 @@ Required context:
 - `.ai/framework/source-of-truth-registry.md`
 - `.ai/framework/logical-integrity.md`
 - `.ai/framework/blueprint-driven-change.md`
+- `.ai/framework/approval-records.md`
 - `.ai/framework/security-safety-guidance.md`
 - `.ai/framework/testing-guidance.md`
 - `.ai/framework/diagram-guidance.md`
@@ -115,8 +119,10 @@ Required context:
 Approval gates: explicit programmer approval for architecture changes and new
 production dependencies or services.
 
-Validation/evidence: architecture owner update, affected areas, validation,
-diagram sync or why none changed, and residual risk.
+Validation/evidence: architecture owner update, affected areas, re-derived
+invariants, review-item reconciliation, validation, diagram sync or why none
+changed, machine-readable approval-scope result when approval scope applies,
+and residual risk.
 
 ## Profile: `data-change`
 
@@ -140,8 +146,9 @@ Required context:
 Approval gates: explicit approval for destructive, data-loss, live-service,
 privacy, or migration-risk changes.
 
-Validation/evidence: canonical data owner, derived surfaces, migration or
-rollback notes where applicable, validation, and unresolved risk.
+Validation/evidence: canonical data owner, re-derived invariants, external
+failure distinctions, derived surfaces, migration or rollback notes where
+applicable, validation, and unresolved risk.
 
 ## Profile: `security-sensitive`
 
@@ -206,52 +213,26 @@ reviewing maturity, or repairing drift after framework changes.
 
 Required context:
 
-- `.ai/framework/README.md`
-- `.ai/framework/contour.md`
-- `.ai/framework/guarantees.md`
-- `.ai/framework/rule-ownership.md`
-- `.ai/framework/rule-registry.md`
-- `.ai/framework/rule-registry.json`
-- `.ai/framework/project-adapter-contract.md`
-- `.ai/framework/portability.md`
-- `.ai/framework/module-profile.md`
-- `.ai/framework/scaffolding.md`
-- `.ai/framework/ai-infrastructure-routing.md`
-- `.ai/framework/consistency-model.md`
-- `.ai/framework/large-task-orchestration.md`
-- `.ai/framework/context-router.md`
-- `.ai/framework/context-profiles.md`
-- `.ai/framework/context-discovery.md`
-- `.ai/framework/source-of-truth-registry.md`
-- `.ai/framework/change-risk-model.md`
-- `.ai/framework/logical-integrity.md`
-- `.ai/framework/blueprint-driven-change.md`
-- `.ai/framework/security-safety-guidance.md`
-- `.ai/framework/prompt-injection.md`
-- `.ai/framework/approval-records.md`
-- `.ai/framework/diagram-guidance.md`
-- `.ai/framework/testing-guidance.md`
-- `.ai/framework/skill-adaptation.md`
-- `.ai/framework/adapter-maturity.md`
-- `.ai/framework/bridge-capability-matrix.md`
-- `.ai/framework/migration-diff.md`
-- `.ai/framework/effectiveness-metrics.md`
 - `.ai/framework/lifecycle.md`
-- `.ai/framework/installed-operations.md`
-- `.ai/framework/operation-help.md`
-- `.ai/assistant/ai-infrastructure-router.json`
+- `.ai/framework/migration-diff.md`
+- `.ai/framework/rule-registry.json`
+- `.ai/framework/approval-records.md`
 - `.ai/assistant/flows/adapter-recheck.flow.md`
-- `.ai/assistant/flows/large-task-orchestration.flow.md`
-- `.ai/assistant/flows/operation-routing.flow.md`
 - `.ai/assistant/templates/installation-note.md`
-- `.ai/assistant/templates/large-task-operation-packet.md`
-- `.ai/assistant/templates/post-install-message.md`
-- `.ai/assistant/templates/post-update-message.md`
+- `.ai/assistant/templates/migration-note.md`
 - `.ai/assistant/gates/checklist.md`
+
+Run or review the migration assessment before loading more framework files.
+Then load only canonical framework sources and target adapter surfaces named
+by changed rule IDs, affected categories/profiles, template changes, bridge
+capability changes, approval-scope impact, or local-deviation conflicts.
+Candidate context is listed in `.ai/assistant/context-router.json`
+`migration_routing.candidate_context`; record intentionally omitted context in
+the context receipt.
 
 Approval gates: approval before overwriting existing instructions, changing
 protected adapter behavior, or adopting third-party assistant infrastructure.
 
 Validation/evidence: adapter version/schema state, changed framework baseline,
-affected target files, gaps, local deviations, validation, and migration
-actions.
+affected target files, gaps, local deviations, validation, migration actions,
+and approval-scope enforcement when a JSON approval record is selected.

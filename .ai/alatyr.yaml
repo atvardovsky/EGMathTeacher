@@ -1,19 +1,19 @@
-schema_version: 1
+schema_version: 2
 framework:
   name: "Alatyr Core"
-  version: "0.1.0-alpha.2"
-  source: "https://github.com/atvardovsky/AlatyrCore at 5547fca4f5cf7637463c525178f003d1ab65a4bc"
-  template_version: 2
+  version: "0.1.0-alpha.3"
+  source: "https://github.com/atvardovsky/AlatyrCore at b80b00a724bb5d009bf36a42c64a4098095e0e1a"
+  template_version: 3
   rule_registry: ".ai/framework/rule-registry.json"
 installation:
   id: "ALATYR-20260709-egmathteacher"
   date: "2026-07-09"
-  mode: "upgrade-applied-2026-07-14"
+  mode: "upgrade-applied-2026-07-15"
 owner:
   responsible_team: "project maintainer"
   technical_owner: "atvardovsky"
   backup_owner: "unassigned - known gap"
-  last_review_date: "2026-07-14"
+  last_review_date: "2026-07-15"
   review_cadence: "after framework updates or broad assistant-governance changes"
   codeowners: ".github/CODEOWNERS"
   review_triggers:
@@ -159,6 +159,7 @@ bridges:
 approvals:
   directory: ".ai/assistant/approvals"
   template: ".ai/assistant/approvals/approval-template.md"
+  machine_template: ".ai/assistant/approvals/approval-record-template.json"
 policies:
   source_access: ".ai/assistant/policies/ai-infrastructure-source-access.md"
   prompt_injection: ".ai/assistant/policies/prompt-injection.md"

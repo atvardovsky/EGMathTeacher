@@ -52,11 +52,16 @@ required_files=(
   ".ai/assistant/context-profiles.md"
   ".ai/assistant/module-profile.md"
   ".ai/assistant/contour.md"
+  ".ai/assistant/approvals/approval-template.md"
+  ".ai/assistant/approvals/approval-record-template.json"
   ".ai/assistant/flows/large-task-orchestration.flow.md"
   ".ai/assistant/gates/checklist.md"
   ".ai/assistant/infrastructure-index.md"
+  ".ai/assistant/templates/adapter-output-contracts.md"
   ".ai/assistant/templates/ai-infrastructure-adaptation-record.md"
   ".ai/assistant/templates/large-task-operation-packet.md"
+  ".ai/assistant/templates/installation-note.md"
+  ".ai/assistant/templates/post-update-message.md"
   "apps/web/e2e/app.spec.ts"
   ".ai/project/diagrams/rendered/source-hashes.sha256"
 )
@@ -100,6 +105,33 @@ if [ "$?" -ne 0 ]; then
   failures=$((failures + 1))
 fi
 
+node <<'NODE'
+const fs = require('fs');
+const manifest = fs.readFileSync('.ai/alatyr.yaml', 'utf8');
+const failures = [];
+const expect = (pattern, message) => {
+  if (!pattern.test(manifest)) {
+    failures.push(message);
+  }
+};
+
+expect(/^schema_version:\s*2\s*$/m, '.ai/alatyr.yaml schema_version must be 2');
+expect(/^\s+version:\s*"0\.1\.0-alpha\.3"\s*$/m, '.ai/alatyr.yaml framework.version must be 0.1.0-alpha.3');
+expect(/b80b00a724bb5d009bf36a42c64a4098095e0e1a/, '.ai/alatyr.yaml source must reference AlatyrCore commit b80b00a');
+expect(/^\s+template_version:\s*3\s*$/m, '.ai/alatyr.yaml framework.template_version must be 3');
+expect(/^\s+machine_template:\s*"\.ai\/assistant\/approvals\/approval-record-template\.json"\s*$/m, '.ai/alatyr.yaml approvals.machine_template must reference approval-record-template.json');
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`Alatyr check failed: ${failure}`);
+  }
+  process.exit(1);
+}
+NODE
+if [ "$?" -ne 0 ]; then
+  failures=$((failures + 1))
+fi
+
 if ! grep -q '@atvardovsky' .github/CODEOWNERS; then
   fail ".github/CODEOWNERS does not name @atvardovsky"
 fi
@@ -134,6 +166,23 @@ context_router_reference_files=(
 for path in "${context_router_reference_files[@]}"; do
   if ! grep -q 'context-router.json' "$path"; then
     fail "$path does not reference .ai/assistant/context-router.json"
+  fi
+done
+
+approval_record_reference_files=(
+  "AGENTS.md"
+  "AI_ASSISTANTS.md"
+  ".ai/alatyr.yaml"
+  ".ai/assistant/approvals/approval-template.md"
+  ".ai/assistant/gates/checklist.md"
+  ".ai/assistant/flows/adapter-recheck.flow.md"
+  ".ai/assistant/templates/adapter-output-contracts.md"
+  ".ai/assistant/templates/operation-request.md"
+)
+
+for path in "${approval_record_reference_files[@]}"; do
+  if ! grep -q 'approval-record-template.json' "$path"; then
+    fail "$path does not reference .ai/assistant/approvals/approval-record-template.json"
   fi
 done
 
@@ -277,6 +326,152 @@ fi
 
 node <<'NODE'
 const fs = require('fs');
+const path = require('path');
+const failures = [];
+const templatePath = '.ai/assistant/approvals/approval-record-template.json';
+const template = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+const requiredScalars = [
+  ['schema_version'],
+  ['record_kind'],
+  ['evidence_classification'],
+  ['approval_id'],
+  ['operation', 'id'],
+  ['operation', 'type'],
+  ['plan', 'version'],
+  ['plan', 'sha256'],
+  ['plan', 'file'],
+  ['diff', 'base'],
+  ['diff', 'patch_sha256'],
+  ['diff', 'repository_revision_at_approval'],
+  ['scope', 'allowed_actions_mode'],
+  ['scope', 'invalidation_rule'],
+  ['approval', 'approved_by'],
+  ['approval', 'approved_at'],
+  ['use_result', 'implementation_within_scope'],
+];
+const requiredLists = [
+  ['scope', 'allowed_protected_changes'],
+  ['scope', 'allowed_files_or_surfaces'],
+  ['scope', 'excluded_files_or_surfaces'],
+  ['scope', 'excluded_actions'],
+];
+const get = (object, keys) => keys.reduce((value, key) => value?.[key], object);
+for (const keys of requiredScalars) {
+  const value = get(template, keys);
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    failures.push(`${templatePath} missing ${keys.join('.')}`);
+  }
+}
+for (const keys of requiredLists) {
+  if (!Array.isArray(get(template, keys))) {
+    failures.push(`${templatePath} missing list ${keys.join('.')}`);
+  }
+}
+if (template.record_kind !== 'alatyr-approval-record') {
+  failures.push(`${templatePath} record_kind must be alatyr-approval-record`);
+}
+if (template.evidence_classification !== 'historical-record') {
+  failures.push(`${templatePath} evidence_classification must be historical-record`);
+}
+
+const approvalsDir = '.ai/assistant/approvals';
+const localPathPattern = /(^|[\s"`'])\/(?:home|Users|tmp|var\/folders|private\/tmp)\//;
+const placeholderPattern = /[<{][A-Z0-9_][A-Z0-9_ -]*[>}]/;
+const safeScopePattern = /^(\.ai\/|\.[A-Za-z0-9*?._/-]|[A-Za-z0-9*?._/-])/;
+for (const file of fs.readdirSync(approvalsDir)) {
+  if (!file.endsWith('.json') || file === 'approval-record-template.json') {
+    continue;
+  }
+  const relpath = path.posix.join(approvalsDir, file);
+  const record = JSON.parse(fs.readFileSync(relpath, 'utf8'));
+  if (record.record_kind !== 'alatyr-approval-record') {
+    failures.push(`${relpath} record_kind must be alatyr-approval-record`);
+  }
+  if (record.evidence_classification !== 'historical-record') {
+    failures.push(`${relpath} evidence_classification must be historical-record`);
+  }
+  for (const keys of requiredScalars) {
+    const value = get(record, keys);
+    if (value === undefined || value === null || String(value).trim() === '') {
+      failures.push(`${relpath} missing ${keys.join('.')}`);
+    }
+  }
+  for (const keys of requiredLists) {
+    const value = get(record, keys);
+    if (!Array.isArray(value)) {
+      failures.push(`${relpath} missing list ${keys.join('.')}`);
+      continue;
+    }
+    for (const entry of value) {
+      if (typeof entry !== 'string' || entry.trim() === '') {
+        failures.push(`${relpath} has an empty ${keys.join('.')} entry`);
+        continue;
+      }
+      if (keys.join('.') !== 'scope.allowed_protected_changes' && placeholderPattern.test(entry)) {
+        failures.push(`${relpath} has unresolved placeholder scope entry ${entry}`);
+      }
+      if (keys.join('.').includes('files_or_surfaces') && !safeScopePattern.test(entry)) {
+        failures.push(`${relpath} has unsafe target scope entry ${entry}`);
+      }
+      if (localPathPattern.test(entry)) {
+        failures.push(`${relpath} has local machine path scope entry ${entry}`);
+      }
+    }
+  }
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`Alatyr check failed: ${failure}`);
+  }
+  process.exit(1);
+}
+NODE
+if [ "$?" -ne 0 ]; then
+  failures=$((failures + 1))
+fi
+
+node <<'NODE'
+const fs = require('fs');
+const failures = [];
+const registryPath = '.ai/project/source-of-truth-registry.md';
+const registry = fs.readFileSync(registryPath, 'utf8');
+const factCount = (registry.match(/^## Fact Type: `/gm) ?? []).length;
+const invariantCount = (registry.match(/^Invariant and dependency constraints:/gm) ?? []).length;
+if (factCount === 0) {
+  failures.push(`${registryPath} has no fact type entries`);
+}
+if (invariantCount < factCount) {
+  failures.push(`${registryPath} must define invariant and dependency constraints for every fact type (${invariantCount}/${factCount})`);
+}
+
+const docsToCheck = [
+  '.ai/assistant/context-router.json',
+  '.ai/assistant/context-profiles.md',
+  '.ai/assistant/gates/checklist.md',
+  '.ai/assistant/flows/logical-integrity-review.flow.md',
+  '.ai/assistant/templates/adapter-output-contracts.md',
+];
+for (const doc of docsToCheck) {
+  const text = fs.readFileSync(doc, 'utf8').toLowerCase();
+  if (!text.includes('invariant')) {
+    failures.push(`${doc} must mention invariant review after alpha.3 migration`);
+  }
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`Alatyr check failed: ${failure}`);
+  }
+  process.exit(1);
+}
+NODE
+if [ "$?" -ne 0 ]; then
+  failures=$((failures + 1))
+fi
+
+node <<'NODE'
+const fs = require('fs');
 const path = '.ai/assistant/ai-infrastructure-router.json';
 const router = JSON.parse(fs.readFileSync(path, 'utf8'));
 const failures = [];
@@ -341,7 +536,7 @@ for (const item of router.items ?? []) {
     failures.push(`AI infrastructure router duplicate item id ${item.id}`);
   }
   ids.add(item.id);
-  for (const field of ['activation_triggers', 'required_context', 'assistant_surfaces', 'allowed_actions', 'required_permissions', 'approval_triggers', 'gates', 'validation']) {
+  for (const field of ['activation_triggers', 'required_context', 'assistant_surfaces', 'wrappers', 'allowed_actions', 'required_permissions', 'approval_triggers', 'gates', 'validation', 'conflicts_with']) {
     checkArray(`AI infrastructure router item ${item.id}.${field}`, item[field]);
   }
   for (const field of ['type', 'purpose', 'status', 'canonical_source', 'output_contract', 'adaptation_record']) {
@@ -483,8 +678,8 @@ for pattern in "${stale_patterns[@]}"; do
   fi
 done
 
-if rg -n '/home/' .ai -g '!*.svg' >/dev/null; then
-  fail "hardcoded /home path found under .ai"
+if rg -n '(^|[^A-Za-z0-9_])/(home|Users|tmp|var/folders|private/tmp)/' .ai -g '!*.svg' >/dev/null; then
+  fail "hardcoded local machine path found under .ai"
 fi
 
 if [ "$failures" -gt 0 ]; then

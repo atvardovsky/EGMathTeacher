@@ -23,6 +23,10 @@ Before making changes:
    `.ai/assistant/flows/operation-routing.flow.md`; use
    `.ai/assistant/ai-infrastructure-router.json` before loading detailed AI
    infrastructure item context.
+7. For protected changes with reusable approval scope, use
+   `.ai/assistant/approvals/approval-template.md` for human evidence and
+   `.ai/assistant/approvals/approval-record-template.json` for explicit
+   machine-readable changed-path scope checks.
 
 Assistant-specific bridge files must stay short and point back to canonical
 target files.

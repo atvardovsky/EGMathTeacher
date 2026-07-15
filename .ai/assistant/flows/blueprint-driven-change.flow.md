@@ -15,6 +15,9 @@ governance.
 - Diagram policy: `.ai/project/diagrams.md`
 - Security/live-service policy: `.ai/project/security-safety.md`
 - Source-of-truth registry: `.ai/project/source-of-truth-registry.md`
+- Approval records and scope policy: `.ai/framework/approval-records.md`,
+  `.ai/assistant/approvals/approval-template.md`, and
+  `.ai/assistant/approvals/approval-record-template.json`
 
 ## Steps
 
@@ -22,7 +25,8 @@ governance.
 2. Load bootstrap context, select a profile from
    `.ai/assistant/context-profiles.md`, and read the required target sources.
 3. Apply `.ai/assistant/flows/logical-integrity-review.flow.md`.
-4. List changed facts and affected project areas.
+4. List changed facts, affected project areas, re-derived invariants, and
+   related review items or defect reports that share the same contract.
 5. Update target blueprint or equivalent source-of-truth docs when accepted
    facts change.
 6. Update project flow, use-case, data, runtime, architecture, public docs, or
@@ -32,8 +36,11 @@ governance.
 8. Change code, tests, diagrams, prompts, skills, bridge files, gates, or
    checker rules as required by the accepted fact change.
 9. Run target validation that exists. Do not invent commands.
-10. Perform a final consistency check across changed surfaces.
-11. Report final evidence, skipped checks, approvals, and residual risk.
+10. Perform a final consistency check across changed surfaces, including
+    invariant preservation and review-item reconciliation.
+11. When approval scope is recorded, compare the full changed path set against
+    the explicitly selected machine-readable JSON approval records.
+12. Report final evidence, skipped checks, approvals, and residual risk.
 
 ## Approval Gate
 
@@ -53,8 +60,10 @@ Report:
 
 - changed facts
 - source-of-truth or blueprint updates
+- re-derived invariant result and review-item reconciliation
 - implementation, test, diagram, prompt, skill, gate, bridge, or checker
   updates
+- machine-readable approval-scope result when approval scope applies
 - validation run or unresolved
 - approvals used
 - skipped checks and residual risk

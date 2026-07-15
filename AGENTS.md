@@ -109,8 +109,10 @@ Canonical rule references: `ALATYR-CONTEXT-001`, `ALATYR-SOURCE-001`,
   before importing or normalizing the source into canonical target files.
 - Use target validation only when it exists. Report unresolved checks.
 - Record protected-change approvals with
-  `.ai/assistant/approvals/approval-template.md` when approval scope affects
-  files, plan versions, imported infrastructure, or protected actions.
+  `.ai/assistant/approvals/approval-template.md` and
+  `.ai/assistant/approvals/approval-record-template.json` when approval scope
+  affects files, plan versions, imported infrastructure, or protected actions.
+  Use explicit JSON records for deterministic changed-path scope enforcement.
 
 ## Approval Gates
 

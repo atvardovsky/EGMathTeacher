@@ -5,9 +5,9 @@ This file reports adapter readiness by task type.
 ## Overall Summary
 
 Overall adapter state: usable
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-15
 Reviewed by: Codex using user-requested Alatyr update scope for source commit
-`5547fca4f5cf7637463c525178f003d1ab65a4bc`
+`b80b00a724bb5d009bf36a42c64a4098095e0e1a`
 Blocking gaps:
 
 - backup owner remains unassigned in the adapter manifest
@@ -23,7 +23,8 @@ Mature enough for routine use:
 - `docs-local`: mature for ordinary documentation and diagram text changes.
 - `code-local`: mature for focused local implementation and test changes.
 - `framework-upgrade`: mature for adapter-only Alatyr rechecks and drift
-  repair with explicit approval.
+  repair with explicit approval, machine-readable approval-scope records, and
+  migration evidence.
 - `ai-infrastructure`: mature for target-owned item routing, inventory,
   adapter-only repairs, and approval-gated imports.
 
@@ -91,7 +92,8 @@ Approval needs: required for protected behavior, architecture, data,
 security, dependency, live-service, destructive, or assistant-governance
 changes.
 Blocking criteria: tasks needing production validation are not fully covered.
-Residual risks: limited frontend automated tests beyond mocked E2E.
+Residual risks: limited frontend automated tests beyond mocked E2E; local
+review fixes still require invariant/review-item reconciliation.
 Final evidence: changed facts, code/tests/docs sync, commands run, skipped
 checks, residual risk.
 
@@ -219,17 +221,21 @@ Required context:
 - `.ai/assistant/templates/migration-note.md`
 - `.ai/assistant/ai-infrastructure-router.json`
 - `.ai/assistant/flows/large-task-orchestration.flow.md`
+- `.ai/assistant/approvals/approval-record-template.json`
 
 Required owners present: yes.
-Validation or manual review: manual file existence/reference review; source
-AlatyrCore tools may provide evidence but are not target requirements.
+Validation or manual review: `npm run alatyr:check`, manual file
+existence/reference review, and optional portable validator with explicit JSON
+approval record and Git diff base when strict approval-scope evidence is
+needed.
 Approval needs: required before overwriting existing assistant instructions.
 Blocking criteria: none after explicit approval for the approved adapter-only
 scope.
 Residual risks: local checker covers router presence, required profiles,
 manifest owner fields, stale local-machine leakage, stale checker wording,
 duplicate context-profile/router references, CI wiring, AI-infrastructure
-routing presence, large-task packet references, and diagram hashes; it does
+routing presence, large-task packet references, machine-readable approval
+template wiring, source-of-truth invariant fields, and diagram hashes; it does
 not prove semantic correctness of every adapter fact. The optional
 consistency-map module remains deferred.
 Final evidence: baseline/version, surfaces changed, validation/review,

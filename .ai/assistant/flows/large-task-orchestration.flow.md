@@ -38,8 +38,8 @@ create a packet.
    `.ai/assistant/templates/large-task-operation-packet.md` at the
    target-approved path.
 4. Record operation scope, allowed actions, changed facts, canonical owners,
-   relationship impact closure when enabled, approvals, and the initial
-   context receipt.
+   re-derived invariants, related review-item clusters, relationship impact
+   closure when enabled, approvals, and the initial context receipt.
 5. Split work into coherent workstreams with explicit dependencies, allowed
    surfaces, outputs, validation, and completion evidence.
 6. Load only the active workstream's context and its owner/dependency context.
@@ -49,8 +49,9 @@ create a packet.
    invalidate stale assumptions before continuing.
 9. After local workstreams finish, reconcile cross-workstream contracts and
    run one global logical integrity review over the combined repair set.
-10. Confirm approval coverage, run target validation, and report final
-    convergence, skipped checks, and residual risk.
+10. Confirm approval coverage with explicitly selected machine-readable JSON
+    approval records when scoped approval applies, run target validation, and
+    report final convergence, skipped checks, and residual risk.
 
 ## Final Evidence
 
@@ -59,6 +60,7 @@ Report:
 - packet path or target-approved non-persistent disposition
 - activation reason, selected profile, scale overlay, and project areas
 - changed facts and canonical owners
+- re-derived invariants and review-item reconciliation
 - relationship closure, selected or skipped edges, and missing coverage
 - workstream status and dependency result
 - context receipts and budget expansions

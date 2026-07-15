@@ -76,6 +76,16 @@ Create or update a durable approval record under `.ai/assistant/approvals`
 when protected-change scope, files, plan version, or imported infrastructure
 needs reusable evidence.
 
+When scoped approval applies, use the Markdown approval record for human
+review and the JSON approval record template
+`.ai/assistant/approvals/approval-record-template.json` for deterministic
+path-scope enforcement. Compare the complete changed path set, including
+docs, tests, diagrams, adapter files, generated artifacts, deleted files, and
+untracked files, with the explicitly selected JSON records. Fail or stop for
+approval when a changed path is outside the allowed scope or inside an
+excluded scope. Historical records in the approval directory are not selected
+implicitly.
+
 ## Security And Safety
 
 - Do not expose, print, commit, or invent secrets.
@@ -100,6 +110,10 @@ invariant, or adapter operation changed.
 
 If a semantic/logical fact changed, update the owning code, docs, tests,
 diagrams, prompts, skills, bridge files, or checker rules in the same change.
+Re-derive the invariant and dependency constraints from
+`.ai/project/source-of-truth-registry.md` before choosing the repair set. When
+multiple review items or defects touch the same fact, reconcile them as one
+contract cluster instead of treating each local fix as independent evidence.
 
 If no semantic/logical fact changed, final evidence must explain why no
 companion update was needed.
@@ -110,8 +124,9 @@ claims, no duplicate context-profile or context-router references, context
 router references are present where bootstrap routing is described, AI
 infrastructure router references are present where item routing is described,
 large-task overlay files exist when enabled, unresolved owner placeholders
-remain known gaps, and any target-local adapter checker evidence matches the
-repository.
+remain known gaps, approval-record machine templates and manifest references
+exist, strict approval scope can be checked with an explicit JSON record when
+needed, and any target-local adapter checker evidence matches the repository.
 
 ## Validation
 
@@ -140,7 +155,10 @@ Report:
 - Changed facts.
 - Files changed.
 - Logical integrity result.
+- Re-derived invariant result and review-item reconciliation when a semantic
+  fact or review cluster changed.
 - Documentation updated or why none was needed.
+- Approval scope enforcement result when an approval record was used.
 - Validation run and results.
 - Skipped checks and residual risk.
 - Approvals used or why approval was not required.

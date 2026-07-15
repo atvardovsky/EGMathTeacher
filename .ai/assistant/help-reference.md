@@ -203,6 +203,9 @@ Integration mode: canonical integration
   bridge, tool, or adaptation review.
 - Approval constraints: `.ai/assistant/gates/checklist.md` and focused gate
   files under `.ai/assistant/gates`.
+- Machine-readable approval scope:
+  `.ai/assistant/approvals/approval-record-template.json`; use only explicit
+  JSON records selected for the operation, not every historical approval note.
 - AI infrastructure source access policy:
   `.ai/assistant/policies/ai-infrastructure-source-access.md`.
 - Prompt-injection policy: `.ai/assistant/policies/prompt-injection.md`.

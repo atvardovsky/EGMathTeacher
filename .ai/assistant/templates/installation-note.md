@@ -10,12 +10,13 @@ Framework source:
 - Previous baseline commit: `6a6bef1 Add machine-readable context routing`
 - Previous baseline commit: `4654732 Add installed adapter validator`
 - Previous baseline commit: `8dab3d1 Add controlled effectiveness cost benchmarks`
-- Current baseline commit: `5547fca Release cross-platform fixes as 0.1.0-alpha.2`
-- Framework version: `0.1.0-alpha.2`
-- Adapter schema version: `1`
-- Template version: `2`
+- Previous baseline commit: `5547fca Release cross-platform fixes as 0.1.0-alpha.2`
+- Current baseline commit: `b80b00a Release approval enforcement as 0.1.0-alpha.3`
+- Framework version: `0.1.0-alpha.3`
+- Adapter schema version: `2`
+- Template version: `3`
 - Installed date: 2026-07-09
-- Updated date: 2026-07-14
+- Updated date: 2026-07-15
 
 ## Installed Surfaces
 
@@ -37,7 +38,8 @@ Framework source:
 - Maturity profile: `.ai/assistant/maturity-profile.md`
 - Bridge capability matrix: `.ai/assistant/bridge-capability-matrix.md`
 - Prompt-injection policy: `.ai/assistant/policies/prompt-injection.md`
-- Approval record template: `.ai/assistant/approvals/approval-template.md`
+- Approval record templates: `.ai/assistant/approvals/approval-template.md`
+  and `.ai/assistant/approvals/approval-record-template.json`
 - Migration, output-contract, inventory, and effectiveness templates under
   `.ai/assistant/templates`
 - AI infrastructure adaptation record template:
@@ -83,6 +85,11 @@ The 2026-07-14 follow-up update refreshed the recorded baseline to
 from portable framework core, and left adapter schema, template version, rule
 registry, target templates, product behavior, runtime code, and supported
 assistant bridge surfaces unchanged.
+The 2026-07-15 framework update refreshed the baseline to `b80b00a` /
+`v0.1.0-alpha.3`, migrated the adapter to schema version `2` and template
+version `3`, added the machine-readable approval record template, updated
+approval-scope and invariant-review guidance, and strengthened
+`npm run alatyr:check` for alpha.3 adapter invariants.
 These updates did not change
 runtime code, runtime config, system web server config, live services, or
 accepted product behavior.
@@ -94,6 +101,9 @@ accepted product behavior.
 - CI exists under `.github/workflows/ci.yml`, but a remote run may still need
   to be observed after changes are pushed.
 - Local Alatyr consistency is checked with `npm run alatyr:check`.
+- Strict approval-scope enforcement is available when an operation selects a
+  JSON approval record and Git diff base; path containment does not prove
+  semantic correctness.
 - Source diagrams, rendered SVG artifacts, render command, and drift check
   exist under `.ai/project`.
 - Baseline project security/safety boundaries exist under `.ai/project`; a

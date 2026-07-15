@@ -123,7 +123,7 @@ Removed framework files:
 
 ## Target Template Surface Changes
 
-From template directory: `/tmp/tmp.6HDLhl1zV9/templates/target`
+From template directory: `<TEMPORARY_TEMPLATE_DIR>/templates/target`
 To template directory: `https://github.com/atvardovsky/AlatyrCore templates/target`
 
 Added target template surfaces:

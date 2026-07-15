@@ -26,8 +26,8 @@ Also use this flow when the programmer uses a target alias such as
 
 ## Steps
 
-1. Treat `AGENTS.md` as host-preloaded when available, then load compact
-   bootstrap only: `.ai/alatyr.yaml`, `.ai/README.md`,
+1. Treat `AGENTS.md` as host-preloaded when available. Load bootstrap context only:
+   `.ai/alatyr.yaml`, `.ai/README.md`,
    `.ai/assistant/context-router.json`, and `.ai/assistant/help.md`.
 2. Select the smallest matching context profile from
    `.ai/assistant/context-router.json`; use

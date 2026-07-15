@@ -18,9 +18,10 @@ Use:
 Current adapter maturity: usable for focused work, with explicit project
 guards, focused assistant gates, a schema-v2 context router, context profiles,
 module profile, source of truth registry, compact AI infrastructure router,
-prompt-injection policy, Mermaid diagram sources, and a diagram render command.
-Current validation includes CI, mocked browser E2E, diagram drift checks, and a
-local Alatyr consistency check.
+prompt-injection policy, machine-readable approval record template, Mermaid
+diagram sources, and a diagram render command. Current validation includes CI,
+mocked browser E2E, diagram drift checks, and a local Alatyr consistency
+check.
 Remaining gaps: formal production security/privacy policy, frontend
 component/accessibility/visual regression commands, POC-only auth hardening,
 production backup/restore/rollback runbooks, and deferred machine-readable

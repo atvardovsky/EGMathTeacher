@@ -6,9 +6,9 @@ blocked, or not applicable for EGMathTeacher.
 ## Required Core Profile
 
 Core profile state: complete with documented gaps
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-15
 Reviewed by: Codex using user-requested Alatyr update to source commit
-`5547fca4f5cf7637463c525178f003d1ab65a4bc`
+`b80b00a724bb5d009bf36a42c64a4098095e0e1a`
 
 Core item: `contours`
 State: enabled
@@ -24,7 +24,8 @@ Evidence: framework, project, and assistant ownership boundaries are present.
 Validation or review: manual source-doc review.
 Approval needs: required before architecture, business, or assistant-instruction
 overwrites.
-Residual risk: broad future changes still need profile-specific context.
+Residual risk: broad future changes still need profile-specific context,
+re-derived invariants, and approval-scope checks when approval scope applies.
 
 Core item: `manifest-and-versioning`
 State: enabled
@@ -41,11 +42,12 @@ Validation or review: `npm run alatyr:check` and manual manifest/source
 review.
 Approval needs: required before overwriting existing assistant instructions.
 Residual risk: the local checker covers required files, script wiring,
-context-router references, manifest owner fields, local path leakage, stale
-checker wording, duplicate context-profile and router references, current gap
-text, CODEOWNERS, CI wiring, AI-infrastructure routing presence, large-task
-packet references, and diagram source hashes; it does not prove semantic
-correctness of every project fact.
+context-router references, manifest owner fields, machine-readable approval
+template references, local path leakage, stale checker wording, duplicate
+context-profile and router references, current gap text, CODEOWNERS, CI
+wiring, AI-infrastructure routing presence, large-task packet references,
+source-of-truth invariant fields, and diagram source hashes; it does not
+prove semantic correctness of every project fact.
 
 Core item: `adapter-ownership`
 State: enabled with gap
@@ -281,14 +283,17 @@ Owner or file: `.ai/assistant/approvals/approval-template.md`
 Required files:
 
 - `.ai/assistant/approvals/approval-template.md`
+- `.ai/assistant/approvals/approval-record-template.json`
 
 Reason: protected adapter and AI infrastructure updates may need reusable
-approval evidence.
-Validation or review: manual approval record review.
+approval evidence and deterministic path-scope checks.
+Validation or review: manual approval record review and explicit JSON
+approval-scope validation when scope enforcement applies.
 Approval needs: approval must be explicit in the user message.
-Residual risk: approval records are manually created when needed.
-Next action: create records for broad protected changes when final evidence
-needs durable scope.
+Residual risk: approval records are manually created when needed; path-scope
+enforcement proves containment, not semantic correctness or approver identity.
+Next action: create Markdown and JSON records for broad protected changes when
+final evidence needs durable scope.
 
 Module: `local-alatyr-consistency-checker`
 State: enabled

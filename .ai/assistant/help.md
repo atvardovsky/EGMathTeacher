@@ -16,6 +16,9 @@ Default routing:
 - Use `.ai/assistant/context-router.json` to choose task context before
   expanding the reading set, and use `.ai/assistant/context-profiles.md` when
   human rationale or conflict resolution is needed.
+- Use `.ai/assistant/approvals/approval-record-template.json` with an
+  explicitly selected approval record when protected-change scope needs
+  deterministic changed-path enforcement.
 - Use `.ai/assistant/module-profile.md` to avoid routing to blocked or
   disabled optional modules.
 

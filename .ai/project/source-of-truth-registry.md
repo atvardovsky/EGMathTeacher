@@ -8,6 +8,10 @@ which mirrors must stay synchronized.
 Fact type: `product behavior`
 Canonical owner: `README.md`, `.ai/project/blueprint.md`, and
 `.ai/project/use-cases.md`.
+Invariant and dependency constraints: accepted product behavior must have a
+named source-of-truth owner, matching runtime implementation when implemented,
+test or manual validation evidence, and synchronized public/assistant docs.
+Do not claim runtime behavior from roadmap prose alone.
 Derived surfaces:
 
 - `.ai/project/context-map.md`
@@ -35,6 +39,10 @@ Fact type: `business rule`
 Canonical owner: `.ai/project/use-cases.md`, `.ai/project/blueprint.md`,
 `.ai/project/lesson-agent-tools.md`, and the implementing service/controller
 tests.
+Invariant and dependency constraints: business rules must preserve the same
+lesson/user state contract across blueprint, use cases, runtime flows,
+implementing code, prompts where applicable, and tests. New accepted policy
+requires explicit programmer approval before becoming canonical.
 Derived surfaces:
 
 - `README.md`
@@ -61,6 +69,10 @@ approval.
 Fact type: `lesson agent tool contract`
 Canonical owner: `.ai/project/lesson-agent-tools.md` and
 `apps/api/src/lesson`.
+Invariant and dependency constraints: tool name, purpose, arguments, allowed
+state changes, required evidence, backend rejection behavior, verifier use,
+and observability fields must agree across docs, policy code, tutor prompts,
+task/verifier services, persistence, tests, and diagrams.
 Derived surfaces:
 
 - `.ai/project/blueprint.md`
@@ -98,6 +110,10 @@ Fact type: `UI behavior and design system`
 Canonical owner: `apps/web/src/App.tsx`, `apps/web/src/i18n.ts`,
 `apps/web/src/styles.css`, `.ai/project/ui-guidelines.md`, and
 `.ai/project/ui-tree.md`.
+Invariant and dependency constraints: visible UI flow, localized copy, voice
+interaction state, lesson navigation, responsive layout, and design-system
+rules must stay consistent between React source, i18n strings, CSS,
+UI guidelines/tree docs, and browser validation evidence.
 Derived surfaces:
 
 - `.ai/project/blueprint.md`
@@ -128,6 +144,10 @@ sync, validation, skipped browser/accessibility/visual checks, approval.
 Fact type: `architecture decision`
 Canonical owner: `.ai/project/architecture.md`, `.ai/project/runtime-flows.md`,
 package files, and source module boundaries.
+Invariant and dependency constraints: module boundaries, dependency direction,
+external-provider boundaries, runtime topology, deployment notes, and diagrams
+must match current source structure or an explicitly approved target
+architecture.
 Derived surfaces:
 
 - `.ai/project/diagrams/*.mmd`
@@ -153,6 +173,10 @@ Canonical owner: `apps/api/src/database/database.service.ts`,
 `apps/api/src/student-profile`, `apps/api/src/tutor`,
 `apps/api/src/background-ai`, `apps/api/src/lesson`, `apps/api/src/usage`,
 `apps/api/src/knowledge`, and `.ai/project/data-model.md`.
+Invariant and dependency constraints: schema columns, DTOs, frontend types,
+migrations, retention/privacy rules, lesson/profile/usage ownership, and
+tests must preserve the same identity, lifecycle, and persistence semantics.
+Destructive, live, retention, or privacy changes require approval.
 Derived surfaces:
 
 - `.ai/project/runtime-flows.md`
@@ -179,6 +203,10 @@ validation, residual risk.
 Fact type: `validation command`
 Canonical owner: `package.json`, workspace package files, and
 `.ai/project/validation.md`.
+Invariant and dependency constraints: package scripts own executable command
+truth; adapter and project docs may mirror only commands that exist. Required
+validation for a task must match the changed surface and may not be weakened
+without approval.
 Derived surfaces:
 
 - `.ai/assistant/gates/checklist.md`
@@ -201,6 +229,10 @@ Final evidence: commands run, skipped checks, unresolved missing checks.
 Fact type: `project gap register`
 Canonical owner: `.ai/project/gaps.md` and the owning source file for each
 specific gap category.
+Invariant and dependency constraints: a gap may be closed only by evidence
+from its owning source, implementation or policy update when required,
+validation, and explicit approval when the closing action crosses a protected
+category.
 Derived surfaces:
 
 - `.ai/alatyr.yaml` known gaps
@@ -229,6 +261,10 @@ approval, and remaining blocker.
 Fact type: `security policy`
 Canonical owner: `.ai/project/security-safety.md`, `.ai/project/guards.md`,
 env examples, and auth/security source files.
+Invariant and dependency constraints: secret handling, auth/authorization,
+prompt-injection boundaries, live-service access, destructive actions, and
+production-safety claims must stay consistent between policy docs, env
+examples, source guards, deployment notes, and final evidence.
 Derived surfaces:
 
 - `.ai/assistant/gates/security-safety-gates.md`
@@ -255,6 +291,10 @@ Fact type: `assistant operation`
 Canonical owner: `.ai/assistant/help.md`,
 `.ai/assistant/help-reference.md`, `.ai/assistant/flows`, and
 `.ai/assistant/templates`.
+Invariant and dependency constraints: operation aliases, routing flow,
+approval rules, output contracts, bridge pointers, local checker claims, and
+enabled module state must stay consistent. Protected adapter behavior changes
+require explicit approval and durable evidence when scope matters.
 Derived surfaces:
 
 - `AGENTS.md`
@@ -283,6 +323,10 @@ Canonical owner: `.ai/assistant/infrastructure-index.md`,
 `.ai/assistant/flows/skill-adaptation.flow.md`,
 `.ai/assistant/policies/ai-infrastructure-source-access.md`, and
 `.ai/assistant/policies/prompt-injection.md`.
+Invariant and dependency constraints: AI infrastructure changes must preserve
+inventory, route/item identity, provenance, source-access decision,
+prompt-injection review, permissions, approval triggers, validation, and
+adapter output evidence before imported material becomes canonical.
 Derived surfaces:
 
 - `AGENTS.md`
@@ -311,6 +355,10 @@ When sources disagree:
 
 1. Identify the fact type.
 2. Use this registry to find the canonical owner and derived surfaces.
-3. If ownership is missing, report the missing adapter fact.
-4. Repair only the smallest coherent set of derived surfaces.
-5. Report validation, skipped checks, approvals, and residual risk.
+3. Re-derive the invariant and dependency constraints for the changed fact.
+   If the optional consistency map is disabled, use those constraints for a
+   compact manual closure.
+4. If ownership is missing, report the missing adapter fact.
+5. Repair only the smallest coherent set of derived surfaces.
+6. Report invariant results, selected/skipped surfaces, validation, skipped
+   checks, approvals, and residual risk.

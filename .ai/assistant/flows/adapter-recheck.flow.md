@@ -33,6 +33,8 @@ when the programmer asks whether the installed adapter is still coherent.
 - Migration note template: `.ai/assistant/templates/migration-note.md`
 - Effectiveness report template:
   `.ai/assistant/templates/effectiveness-report.md`
+- Approval templates: `.ai/assistant/approvals/approval-template.md` and
+  `.ai/assistant/approvals/approval-record-template.json`
 
 ## Steps
 
@@ -57,10 +59,11 @@ when the programmer asks whether the installed adapter is still coherent.
    required-context references inside context profiles or router entries;
    missing `.ai/assistant/context-router.json` references where bootstrap
    routing is described; unresolved owner placeholders that are not recorded as
-   known gaps; and target-local adapter checker evidence that no longer matches
-   repository files.
+   known gaps; missing approval-record machine template or manifest reference;
+   and target-local adapter checker evidence that no longer matches repository
+   files.
 8. Check project blueprint/source-of-truth ownership, registry entries,
-   missing facts, and drift.
+   invariant/dependency constraints, missing facts, and drift.
 9. Check security, live-service, destructive-operation, dependency, credential,
    diagram, generated-artifact, validation, and lifecycle policies.
 10. Check task-specific maturity using `.ai/assistant/maturity-profile.md`.
@@ -89,6 +92,7 @@ Report:
   statements, duplicate profile references, context-router references, owner
   placeholders, and target-local checker evidence
 - blueprint/source-of-truth registry status
+- invariant/dependency constraint status
 - context router and context profile status
 - module profile status
 - help, routing, AI infrastructure router/inventory, large-task orchestration,
@@ -96,6 +100,7 @@ Report:
   chat-message, and lifecycle status
 - bridge capability matrix status
 - target validation run or unresolved
+- approval scope enforcement result when a JSON approval record is selected
 - approvals needed
 - task-specific maturity level and gaps
 - migration note created or not needed

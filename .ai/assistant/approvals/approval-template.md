@@ -1,18 +1,27 @@
 # Approval Record
 
 Copy this template when a protected change needs durable approval evidence.
+Use `.ai/assistant/approvals/approval-record-template.json` for deterministic
+scope enforcement. This Markdown record remains the human review and evidence
+surface; narrative path mentions do not expand the machine-readable scope.
 
 Approval ID: `<approval-id>`
 Operation ID: `<operation-id>`
 Operation type: `<operation-type>`
+Evidence classification: `historical-record`
 Plan version: `<plan-version>`
-Plan hash: `<plan-hash-or-not-available-with-reason>`
+Plan hash: `<plan-sha256-or-not-available-with-reason>`
+Approved plan file: `<target-relative-plan-file-or-not-available-with-reason>`
+Approved diff base: `<approved-git-diff-base>`
+Patch hash: `<patch-sha256-or-not-available-with-reason>`
 Requested by: `<requester>`
 Approved by: `<approver>`
 Approved at: `<timestamp>`
+Repository revision at approval: `<repository-revision-at-approval>`
 Approval source/message: `<approval-message-reference>`
 Expires at or reuse policy: `<expiration-or-reuse-policy>`
 Scope invalidation rule: `<what-invalidates-this-approval>`
+Machine-readable record: `<target-relative-approval-record-json>`
 
 ## Approved Scope
 
@@ -27,6 +36,10 @@ Allowed files or surfaces:
 Excluded actions:
 
 - `<excluded-action>`
+
+Excluded files or surfaces:
+
+- `<excluded-file-or-surface-or-none>`
 
 Allowed actions mode:
 `<read-only|docs-only|adapter-only|code-and-tests|full-with-approval>`

@@ -49,9 +49,10 @@ Current assistant infrastructure includes:
   `.ai/assistant/policies/*.md`, `.ai/assistant/templates/*.md`, and
   `.ai/assistant/reports/*.md`
 
-No `.claude`, `.cursor`, `.github` prompt/rule files, `.agents/skills`,
-Devin, Cascade, Windsurf, MCP/tool server config, or local Alatyr checker was
-found.
+This historical 2026-07-10 snapshot predated the target-owned
+`npm run alatyr:check` adapter checker. Later adapter updates superseded the
+checker portion of this inventory; use `.ai/assistant/infrastructure-index.md`
+and `.ai/assistant/ai-infrastructure-router.json` for current state.
 
 ## Logical Integrity Review
 

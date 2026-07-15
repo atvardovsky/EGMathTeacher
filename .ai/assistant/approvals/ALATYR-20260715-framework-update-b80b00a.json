@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260715-framework-update-b80b00a",
+  "operation": {
+    "id": "update-alatyr-20260715",
+    "type": "framework-upgrade"
+  },
+  "plan": {
+    "version": "1",
+    "sha256": "not available - plan was described in chat and implemented in one operation",
+    "file": "not available - no standalone plan file was created"
+  },
+  "diff": {
+    "base": "origin/main",
+    "patch_sha256": "not available - content hash not preapproved",
+    "repository_revision_at_approval": "aaf63749e6823641023341d13b82e9d0a7457473"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Update installed Alatyr adapter from v0.1.0-alpha.2 to v0.1.0-alpha.3",
+      "Overwrite existing assistant adapter instructions within .ai only",
+      "Strengthen local Alatyr consistency checker for alpha.3 governance"
+    ],
+    "allowed_files_or_surfaces": [
+      ".ai/**",
+      "AGENTS.md",
+      "AI_ASSISTANTS.md",
+      "scripts/check-alatyr.sh"
+    ],
+    "excluded_files_or_surfaces": [
+      "apps/**",
+      "deploy/**",
+      ".env*",
+      ".cert/**",
+      "data/**"
+    ],
+    "excluded_actions": [
+      "runtime code changes",
+      "live external service calls",
+      "database or local data mutation",
+      "system web server configuration changes",
+      "new production dependencies"
+    ],
+    "allowed_actions_mode": "adapter-only",
+    "invalidation_rule": "Any change outside .ai/** or scripts/check-alatyr.sh, any runtime behavior change, or any live/destructive action requires a new approval."
+  },
+  "approval": {
+    "requested_by": "user",
+    "approved_by": "user",
+    "approved_at": "2026-07-15",
+    "source_or_message": "User message: update alatyr",
+    "expires_at_or_reuse_policy": "single use for the 2026-07-15 framework update"
+  },
+  "use_result": {
+    "used_by": "Alatyr alpha.3 adapter migration for EGMathTeacher",
+    "patch_changed_after_approval": "no - approval covered the adapter-only migration scope",
+    "implementation_within_scope": "yes - upstream validator enforced changed-path scope against this JSON record",
+    "validation": "npm run alatyr:check passed; portable validate_target_adapter.py passed with --enforce-approval-scope against origin/main",
+    "result_evidence": ".ai/assistant/reports/ALATYR-20260715-framework-update-b80b00a.md and final assistant evidence",
+    "residual_risk": "patch and plan hashes are not cryptographically preapproved; path-scope validation does not prove semantic correctness"
+  }
+}

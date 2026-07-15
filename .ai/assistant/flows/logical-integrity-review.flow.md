@@ -23,12 +23,19 @@ Use this flow before claiming a semantic or logical change is consistent.
    - Project fact: `.ai/project`, `README.md`, API docs, code, tests.
    - Adapter fact: `.ai/assistant`, root bridge files.
    - Generated artifact: source file must be named.
-7. Compare affected code, tests, docs, env examples, deployment references,
+7. Re-derive invariant and dependency constraints from
+   `.ai/project/source-of-truth-registry.md`. When the optional consistency
+   map is disabled or incomplete, state the invariant in testable language
+   before choosing a repair.
+8. Cluster related review comments, defect reports, or drift findings by the
+   changed fact and shared contract. A fix that satisfies one item but leaves
+   the shared invariant false is incomplete.
+9. Compare affected code, tests, docs, env examples, deployment references,
    prompts, bridge files, gates, generated artifacts, and assistant rules.
-8. Name conflicts and missing facts explicitly.
-9. Choose the smallest coherent repair set.
-10. Run relevant target validation or record unresolved checks.
-11. Report final evidence.
+10. Name conflicts and missing facts explicitly.
+11. Choose the smallest coherent repair set.
+12. Run relevant target validation or record unresolved checks.
+13. Report final evidence.
 
 ## Evidence Template
 
@@ -37,6 +44,8 @@ Change intent:
 Changed facts:
 Risk class:
 Source of truth:
+Re-derived invariants:
+Review-item reconciliation:
 Conflicts found:
 Repair set:
 Validation:
