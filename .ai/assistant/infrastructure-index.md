@@ -1,6 +1,6 @@
 # EGMathTeacher Assistant Infrastructure Index
 
-Current as of: 2026-07-14
+Current as of: 2026-07-15
 
 This file is the current index for repository-owned assistant infrastructure,
 including the installed Alatyr adapter. Historical inventory reports remain
@@ -54,7 +54,7 @@ Supported bridge behavior is recorded in
 ## Alatyr Framework Files
 
 Portable framework rules copied from AlatyrCore baseline
-`5547fca4f5cf7637463c525178f003d1ab65a4bc`.
+`b80b00a724bb5d009bf36a42c64a4098095e0e1a`.
 
 - `.ai/framework/README.md`
 - `.ai/framework/adapter-maturity.md`
@@ -218,8 +218,12 @@ Approvals and checklists:
 - `.ai/assistant/approvals/ALATYR-20260714-onboarding-idempotency-terminal-meeting.md`
 - `.ai/assistant/approvals/ALATYR-20260714-onboarding-recovery-repair.md`
 - `.ai/assistant/approvals/ALATYR-20260714-profile-creation-lock-repair.md`
+- `.ai/assistant/approvals/ALATYR-20260714-profile-generation-user-lock-provider-errors.md`
 - `.ai/assistant/approvals/ALATYR-20260714-framework-update-8dab3d1.md`
 - `.ai/assistant/approvals/ALATYR-20260714-framework-update-5547fca.md`
+- `.ai/assistant/approvals/ALATYR-20260715-framework-update-b80b00a.md`
+- `.ai/assistant/approvals/ALATYR-20260715-framework-update-b80b00a.json`
+- `.ai/assistant/approvals/approval-record-template.json`
 - `.ai/assistant/approvals/approval-template.md`
 - `.ai/assistant/checklists/change-impact.md`
 
@@ -285,6 +289,7 @@ Reports:
 - `.ai/assistant/reports/ALATYR-20260712-framework-update-4654732.md`
 - `.ai/assistant/reports/ALATYR-20260714-framework-update-8dab3d1.md`
 - `.ai/assistant/reports/ALATYR-20260714-framework-update-5547fca.md`
+- `.ai/assistant/reports/ALATYR-20260715-framework-update-b80b00a.md`
 
 Action: keep adapter files aligned with current project commands, gates, and
 operation routing. Reports are historical evidence unless a newer report says
