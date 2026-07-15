@@ -659,13 +659,6 @@ function FirstMeetingScreen({
       setSubmitError(t.onboarding.meetingFinished);
       return;
     }
-    if (source === 'voice' && shouldConfirmVoiceTranscript(prompt)) {
-      setDraft(prompt);
-      setVoiceInterim('');
-      setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.confirmTranscript });
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
-      return;
-    }
     setSending(true);
     setSubmitError(null);
     setDraft('');
@@ -764,9 +757,10 @@ function FirstMeetingScreen({
     manualVoiceStopRef.current = false;
     const recognition = new Recognition();
     recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.continuous = voiceOutputEnabledRef.current;
+    recognition.continuous = false;
     recognition.interimResults = true;
     let finalText = '';
+    let latestTranscript = '';
     let latestError: string | undefined;
     let completed = false;
     const finishRecognition = () => {
@@ -777,7 +771,7 @@ function FirstMeetingScreen({
       setListening(false);
       setVoiceInterim('');
       recognitionRef.current = null;
-      const spoken = finalText.trim();
+      const spoken = getBestRecognizedSpeechText(finalText, latestTranscript);
       if (spoken) {
         autoVoiceRestartCountRef.current = 0;
         setVoiceStatus(null);
@@ -816,7 +810,8 @@ function FirstMeetingScreen({
           interim += transcript;
         }
       }
-      setVoiceInterim(interim.trim());
+      latestTranscript = normalizeRecognizedSpeech(`${finalText} ${interim}`);
+      setVoiceInterim(normalizeRecognizedSpeech(interim));
       setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
     };
     recognition.onerror = (event) => {
@@ -1519,13 +1514,6 @@ function TutorWorkspace({
       setContinuityNotice(t.tutor.continuity.historyReadOnlyNotice);
       return;
     }
-    if (source === 'voice' && shouldConfirmVoiceTranscript(prompt)) {
-      setDraft(prompt);
-      setVoiceInterim('');
-      setVoiceStatus({ tone: 'warning', text: t.tutor.voiceStatus.confirmTranscript });
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
-      return;
-    }
     setSending(true);
     setError(null);
     setContinuityNotice(null);
@@ -1627,9 +1615,10 @@ function TutorWorkspace({
     manualVoiceStopRef.current = false;
     const recognition = new Recognition();
     recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.continuous = voiceOutputEnabledRef.current;
+    recognition.continuous = false;
     recognition.interimResults = true;
     let finalText = '';
+    let latestTranscript = '';
     let latestError: string | undefined;
     let completed = false;
     const finishRecognition = () => {
@@ -1640,7 +1629,7 @@ function TutorWorkspace({
       setListening(false);
       setVoiceInterim('');
       recognitionRef.current = null;
-      const spoken = finalText.trim();
+      const spoken = getBestRecognizedSpeechText(finalText, latestTranscript);
       if (spoken) {
         autoVoiceRestartCountRef.current = 0;
         setVoiceStatus(null);
@@ -1682,7 +1671,8 @@ function TutorWorkspace({
           interim += transcript;
         }
       }
-      setVoiceInterim(interim.trim());
+      latestTranscript = normalizeRecognizedSpeech(`${finalText} ${interim}`);
+      setVoiceInterim(normalizeRecognizedSpeech(interim));
       setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
     };
     recognition.onerror = (event) => {
@@ -3205,24 +3195,20 @@ function shouldRetryVoiceInput(error: string | undefined): boolean {
   return !error || error === 'no-speech' || error === 'aborted';
 }
 
-function shouldConfirmVoiceTranscript(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return true;
+function normalizeRecognizedSpeech(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function getBestRecognizedSpeechText(finalText: string, latestTranscript: string): string {
+  const finalSpeech = normalizeRecognizedSpeech(finalText);
+  const latestSpeech = normalizeRecognizedSpeech(latestTranscript);
+  if (!finalSpeech) {
+    return latestSpeech;
   }
-  const words = normalized.split(' ').filter(Boolean);
-  const hasMathIntent =
-    /[0-9=+\-*/^()]|задач|реш|уравнен|график|координат|функц|производн|вероятност|объясн|покаж|нарис|схем|пример|практик|не понял|непонят|ошиб|ответ|сколько|чему|найди|math|solve|graph|equation|explain|show|draw|task|answer/.test(
-      normalized,
-    );
-  if (hasMathIntent) {
-    return false;
+  if (!latestSpeech) {
+    return finalSpeech;
   }
-  const looksPoliteFragment =
-    /(если|можно|пожалуйста|неудобств|извин|спасибо|could you|please|if you)/.test(
-      normalized,
-    );
-  return words.length <= 6 || (looksPoliteFragment && words.length <= 9);
+  return latestSpeech.length > finalSpeech.length ? latestSpeech : finalSpeech;
 }
 
 function isExpectedSpeechSilence(error: string | undefined): boolean {

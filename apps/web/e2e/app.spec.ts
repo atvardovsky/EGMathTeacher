@@ -680,7 +680,7 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
       results: [
         {
           0: { transcript: 'Хочу закрыть пробелы перед ЕГЭ, лучше через примеры' },
-          isFinal: true,
+          isFinal: false,
           length: 1,
         },
       ],
@@ -904,6 +904,49 @@ test('terminal first meeting becomes read-only and keeps profile creation availa
     lessonType: 'meeting',
     source: 'voice',
   });
+});
+
+test('tutor submits interim-only voice answer when recognition ends', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await page.getByLabel('Голосовой диалог').uncheck();
+  await page.getByRole('button', { name: 'Голосовой ввод' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: 'средний уровень' },
+          isFinal: false,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  expect(tutorRequests[0]).toMatchObject({
+    lessonType: 'tutor',
+    source: 'voice',
+    message: 'средний уровень',
+  });
+  await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
 });
 
 test('student sees saved lessons and continues the previous discussion', async ({ page }) => {

@@ -208,10 +208,10 @@ This file records runtime flows from current source evidence.
 
 ## Tutor Message Flow
 
-1. Authenticated user submits text or browser speech-recognition text. If a
-   voice transcript is a short low-confidence fragment without math or lesson
-   intent, the web client copies it into the composer and asks the student to
-   confirm/edit it instead of sending it to the tutor API.
+1. Authenticated user submits text or browser speech-recognition text. Browser
+   speech-recognition turns use the best available final or interim transcript
+   when recognition ends, so short spoken answers remain hands-free and are
+   sent directly to the tutor API.
 2. Web client calls `POST /tutor/message` with:
    - `message`
    - optional `conversationId`
