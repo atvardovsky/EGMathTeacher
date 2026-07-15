@@ -14,6 +14,7 @@
     "diagrams:render": "bash scripts/render-diagrams.sh",
     "diagrams:check": "bash scripts/check-diagrams.sh",
     "smoke:dev": "bash scripts/smoke-dev.sh",
+    "smoke:realtime": "bash scripts/smoke-realtime.sh",
     "alatyr:check": "bash scripts/check-alatyr.sh",
     "knowledge:sync": "npm run build --workspace @egmathteacher/api && node apps/api/dist/knowledge/knowledge-pack.cli.js",
     "e2e": "playwright test",

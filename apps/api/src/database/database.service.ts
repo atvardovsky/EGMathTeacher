@@ -1347,6 +1347,14 @@ export class DatabaseService implements OnModuleDestroy {
         ON student_profile_creation_runs(user_id)
         WHERE status = 'running';
     `);
+
+    this.applyMigration('016_realtime_usage_ledger_metadata', `
+      ALTER TABLE ai_usage_ledger
+        ADD COLUMN duration_seconds INTEGER;
+
+      ALTER TABLE ai_usage_ledger
+        ADD COLUMN metadata_json TEXT;
+    `);
   }
 
   private applyMigration(

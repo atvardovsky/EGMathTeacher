@@ -25,7 +25,8 @@ export type AiOperationKey =
   | 'backgroundProfileRefresh'
   | 'backgroundTeachingStrategyRefresh'
   | 'backgroundProfileStrategyRefresh'
-  | 'backgroundQualityReview';
+  | 'backgroundQualityReview'
+  | 'webrtcRealtimeSession';
 
 export type AiResponseFormat = 'json' | 'text' | 'image';
 

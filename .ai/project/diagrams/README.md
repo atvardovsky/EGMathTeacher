@@ -23,10 +23,10 @@ are generated into `rendered/`.
   curriculum routing, task-bank task selection, strict import, RAG
   reconciliation, sync recovery, and archive/concurrency guardrails.
 - `webrtc-realtime-sequence.mmd`: WebRTC session, token, SDP, media bridge,
-  provider events, and transcript close flow.
+  provider events, transcript close flow, and authenticated session usage row.
 - `data-model.mmd`: local SQLite tables, background AI jobs, observation
-  windows, learning signals, in-memory runtime state, file artifacts, and
-  remote OpenAI objects.
+  windows, learning signals, usage ledger metadata, in-memory runtime state,
+  file artifacts, and remote OpenAI objects.
 - `assistant-governance.mmd`: Alatyr framework/project/assistant contours,
   gates, operations, and evidence flow.
 - `ui-tree.mmd`: web UI state tree from auth through the voice-first meeting,

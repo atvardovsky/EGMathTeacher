@@ -1789,6 +1789,8 @@ function TutorWorkspace({
         method: 'POST',
         body: JSON.stringify({
           conversationSeed: conversationIdRef.current,
+          lessonSessionId: activeLessonSessionId,
+          lessonType,
         }),
       });
 
@@ -1902,6 +1904,7 @@ function TutorWorkspace({
           `/webrtc/session/${encodeURIComponent(sessionId)}/close`,
           { method: 'POST' },
         );
+        void refreshUsage(activeLessonSessionId);
       } catch {
         // Closing the local audio path is more important than blocking the UI on teardown.
       }
@@ -2654,7 +2657,8 @@ function UsageBar({
 }) {
   const today = summary?.today ?? emptyUsageTotals();
   const lesson = summary?.currentLesson?.total ?? emptyUsageTotals();
-  const details = summary?.currentLesson?.items ?? [];
+  const lessonDetails = summary?.currentLesson?.items ?? [];
+  const details = lessonDetails.length > 0 ? lessonDetails : summary?.todayItems ?? [];
   const decisions = summary?.currentLesson?.decisions ?? [];
   const backgroundJobs = summary?.backgroundJobs ?? [];
   const hasActiveBackgroundJobs = backgroundJobs.some((job) =>
@@ -2772,6 +2776,11 @@ function UsageBar({
                         <Text size="xs" c="dimmed">
                           {item.assistantRole}
                         </Text>
+                        {item.durationSeconds !== null && item.durationSeconds !== undefined && (
+                          <Text size="xs" c="dimmed">
+                            {t.tutor.usage.duration}: {formatDuration(item.durationSeconds)}
+                          </Text>
+                        )}
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm" className="break-anywhere">

@@ -211,6 +211,13 @@ const OPERATION_DEFINITIONS: Record<AiOperationKey, AiOperationDefinition> = {
     ],
     promptCacheKeyEnabled: true,
   },
+  webrtcRealtimeSession: {
+    operation: 'webrtc.realtime_session',
+    role: 'tutor',
+    responseFormat: 'text',
+    modelPaths: ['ai.openai.realtimeModel', 'webrtc.openaiRealtimeModel'],
+    fallbackModel: 'gpt-4o-realtime-preview',
+  },
 };
 
 @Injectable()

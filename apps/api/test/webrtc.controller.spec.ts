@@ -5,6 +5,9 @@ import { WebRtcSessionService, WebRtcSession } from '../src/webrtc/webrtc-sessio
 import { WebRtcSignalingService } from '../src/webrtc/webrtc-signaling.service';
 import { WebRtcAuthService, RealtimeEphemeralToken } from '../src/webrtc/webrtc-auth.service';
 import { WebRtcMediaService } from '../src/webrtc/webrtc-media.service';
+import { AuthService } from '../src/auth/auth.service';
+import { UsageService } from '../src/usage/usage.service';
+import { DatabaseService } from '../src/database/database.service';
 
 const createSession = (overrides: Partial<WebRtcSession> = {}): WebRtcSession => ({
   id: 'sess-123',
@@ -27,11 +30,15 @@ describe('WebRtcController', () => {
   let signalingService: jest.Mocked<WebRtcSignalingService>;
   let authService: jest.Mocked<WebRtcAuthService>;
   let mediaService: jest.Mocked<WebRtcMediaService>;
+  let appAuthService: jest.Mocked<AuthService>;
+  let usageService: jest.Mocked<UsageService>;
+  let db: jest.Mocked<DatabaseService>;
 
   beforeEach(() => {
     conversationService = {
       initializeConversation: jest.fn(),
       getHistory: jest.fn().mockReturnValue([]),
+      getConversationRecord: jest.fn(),
       getFinalTranscriptFile: jest.fn(),
       getFinalTranscript: jest.fn(),
       recordVoiceTurn: jest.fn(),
@@ -84,7 +91,7 @@ describe('WebRtcController', () => {
         ruleIds: [],
       }),
       getIceServers: jest.fn(),
-      getRealtimeModel: jest.fn(),
+      getRealtimeModel: jest.fn().mockReturnValue('gpt-4o-realtime-preview'),
       applyTranslationConfig: jest.fn((personality) => personality),
     } as unknown as jest.Mocked<WebRtcSignalingService>;
 
@@ -106,13 +113,62 @@ describe('WebRtcController', () => {
       ingestProviderEvents: jest.fn(),
     } as unknown as jest.Mocked<WebRtcMediaService>;
 
+    appAuthService = {
+      getSessionFromRequest: jest.fn().mockReturnValue(undefined),
+    } as unknown as jest.Mocked<AuthService>;
+
+    usageService = {
+      recordRealtimeSession: jest.fn(),
+    } as unknown as jest.Mocked<UsageService>;
+
+    db = {
+      get: jest.fn(),
+    } as unknown as jest.Mocked<DatabaseService>;
+
     controller = new WebRtcController(
       conversationService,
       sessionService,
       signalingService,
       authService,
       mediaService,
+      appAuthService,
+      usageService,
+      db,
     );
+  });
+
+  describe('startSession', () => {
+    it('attaches signed-in lesson metadata when the lesson belongs to the user', () => {
+      appAuthService.getSessionFromRequest.mockReturnValue({
+        id: 'student-1',
+        name: 'Маша',
+        role: 'student',
+        createdAt: '2026-07-15T10:00:00.000Z',
+        iat: 1,
+        exp: 2,
+      });
+      db.get.mockReturnValue({
+        id: 'lesson-1',
+        conversation_id: 'conv-abc',
+        lesson_type: 'practice',
+        status: 'active',
+      });
+
+      controller.startSession(
+        {
+          conversationSeed: 'conv-abc',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'practice',
+        },
+        { headers: { cookie: 'egmathteacher_session=test' } } as any,
+      );
+
+      expect(sessionService.createSession).toHaveBeenCalledWith('conv-abc', {
+        userId: 'student-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'practice',
+      });
+    });
   });
 
   describe('createEphemeralToken', () => {
@@ -161,6 +217,46 @@ describe('WebRtcController', () => {
       await controller.ingestProviderEvents('sess-123', { events: [] });
 
       expect(mediaService.ingestProviderEvents).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('closeSession', () => {
+    it('records realtime usage when a signed-in session closes', async () => {
+      const session = createSession({
+        userId: 'student-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'tutor',
+        createdAt: Date.now() - 10_000,
+        status: 'active',
+      });
+      sessionService.getSession.mockReturnValue(session);
+      mediaService.closeSession.mockImplementation(async () => {
+        session.status = 'closed';
+        session.updatedAt = Date.now();
+        session.finalizedAt = session.updatedAt;
+        return '1. Caller: привет\n2. Assistant: привет';
+      });
+      conversationService.getConversationRecord.mockReturnValue({
+        id: 'conv-abc',
+        tokenUsage: { incoming: 42, outgoing: 21 },
+        turns: [{ participant: 'user' }, { participant: 'assistant' }],
+      } as any);
+
+      await controller.closeSession('sess-123');
+
+      expect(usageService.recordRealtimeSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'student-1',
+          conversationId: 'conv-abc',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'tutor',
+          sessionId: 'sess-123',
+          model: 'gpt-4o-realtime-preview',
+          inputTokens: 42,
+          outputTokens: 21,
+          turnCount: 2,
+        }),
+      );
     });
   });
 });

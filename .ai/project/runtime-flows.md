@@ -364,8 +364,10 @@ This file records runtime flows from current source evidence.
    opens read-only history, changes lesson boundaries, starts a new lesson, or
    leaves the tutor workspace. In the current POC, realtime turns are not yet
    converted into `tutor_turns`; saved lessons, structured blocks, verifier
-   evidence, images, usage ledger, and background analysis still use
-   `POST /tutor/message`.
+   evidence, images, progress, and background analysis still use
+   `POST /tutor/message`. Authenticated realtime sessions do write
+   session-level usage ledger rows on close when the provider supplies token
+   usage or at least session duration can be recorded.
 4. Speech synthesis is the assistant output path for normal tutor answers:
    when a tutor answer arrives
    after a user-triggered message or launcher action, the browser reads the
@@ -388,8 +390,9 @@ This file records runtime flows from current source evidence.
    affect lesson, usage, or tutor-turn persistence.
 9. Normal tutor voice output does not use OpenAI audio generation, does not
    upload generated audio, and does not store spoken audio. The WebRTC preview
-   uses OpenAI Realtime through `/webrtc`, but writes only the inherited
-   realtime transcript log on close.
+   uses OpenAI Realtime through `/webrtc`, writes the inherited realtime
+   transcript log on close, and records a safe usage-ledger row for signed-in
+   sessions.
 10. When a terminal tutor response arrives, the client clears the active
    `conversationId`, opens the turn as read-only history state, disables
    composer/voice/image actions, and shows the new-lesson action.
@@ -504,6 +507,7 @@ This file records runtime flows from current source evidence.
    - today's total usage
    - current lesson total when a lesson session exists
    - recent lesson summaries
+   - recent day-level operation details
    - per-operation details for the selected/current lesson
    - recent Lesson Decision Agent actions and policy outcomes
    - verified learning outcome count and cost per verified outcome when
@@ -512,9 +516,9 @@ This file records runtime flows from current source evidence.
      and stored error message for the signed-in user
 5. The web tutor workspace renders a compact user-visible usage/debug bar and
    an expanded table with operation, assistant role, model, service tier,
-   token counts, image counts, local estimated cost, decision tool, evidence,
-   verifier result, acceptance/rejection, fallback marker, latency, and recent
-   background job results or failures.
+   token counts, image counts, optional session duration, local estimated
+   cost, decision tool, evidence, verifier result, acceptance/rejection,
+   fallback marker, latency, and recent background job results or failures.
 6. The web client refreshes the summary after tutor/image actions, through a
    visible manual refresh button, and through lightweight polling while the
    usage details panel is open or any visible background job is `pending` or
@@ -621,8 +625,11 @@ High-level flow:
    microphone access, and creates a WebRTC session with `POST /webrtc/session`.
    If an active tutor `conversationId` exists, it is sent as
    `conversationSeed`; otherwise `/webrtc` creates its own realtime
-   conversation id.
-2. API creates in-memory WebRTC session and conversation state.
+   conversation id. If a signed-in lesson is active, the client also sends the
+   lesson session id and lesson type for usage attribution.
+2. API creates in-memory WebRTC session and conversation state. The endpoint
+   remains usable without auth, but signed-in sessions keep optional user and
+   lesson attribution metadata in memory.
 3. Client can request a realtime token with
    `POST /webrtc/session/:sessionId/token`.
 4. Client submits SDP offer to `POST /webrtc/session/:sessionId/offer`.
@@ -633,8 +640,12 @@ High-level flow:
    available.
 9. The current tutor UI treats this as a fast audio preview. It does not yet
    transform realtime transcript events into durable `tutor_turns`, lesson
-   decisions, usage ledger rows, verifier attempts, images, or background
-   learning observations.
+   decisions, verifier attempts, images, or background learning observations.
+10. For signed-in sessions, close records one `ai_usage_ledger` row with
+    operation `webrtc.realtime_session`, model, input/output token counts when
+    Realtime provider events supplied usage, session duration, and safe session
+    metadata. If provider token usage was not captured, the row uses
+    `usage_unavailable:realtime_tokens` and cost remains zero.
 
 Detailed WebRTC endpoint behavior is owned by `apps/api/docs/webrtc-module.md`
 and `apps/api/src/webrtc`.

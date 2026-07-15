@@ -62,11 +62,12 @@ App
       │  │  ├─ Verified outcome and cost-per-outcome estimates
       │  │  ├─ Manual refresh action
       │  │  ├─ Retry-one action for visible failed background jobs
-      │  │  └─ Expandable safe operation/model/token/image/decision/background-job details
+      │  │  └─ Expandable safe operation/model/token/image/duration/decision/background-job details
       │  ├─ Textarea composer
       │  ├─ WebRTC/OpenAI Realtime live voice preview
       │  │  ├─ Start/stop live voice action
       │  │  ├─ Connection state and model badge
+      │  │  ├─ Usage refresh after close
       │  │  └─ Disabled state for read-only history records
       │  ├─ Voice dialog switch
       │  ├─ Voice action

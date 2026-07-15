@@ -10,9 +10,15 @@ import {
   Post,
   BadRequestException,
   HttpException,
+  Req,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import type { Request } from 'express';
+import { AuthService } from '../auth/auth.service';
 import { ConversationService } from '../conversation/conversation.service';
+import { DatabaseService } from '../database/database.service';
+import type { LessonType } from '../tutor/tutor.types';
+import { UsageService } from '../usage/usage.service';
 import { WebRtcSession, WebRtcSessionService } from './webrtc-session.service';
 import {
   WebRtcSignalingService,
@@ -25,6 +31,8 @@ import { ProviderEventPayload } from './webrtc-provider-event.service';
 
 interface StartSessionRequest {
   conversationSeed?: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
   translation?: {
     languageA?: string;
     languageB?: string;
@@ -60,6 +68,24 @@ interface ProviderEventsRequest {
   events: ProviderEventPayload[];
 }
 
+const LESSON_TYPES = new Set<string>([
+  'meeting',
+  'tutor',
+  'concept',
+  'practice',
+  'diagnostic',
+  'exam_strategy',
+  'mistake_review',
+  'visual_explanation',
+  'reflection',
+]);
+
+const TERMINAL_LESSON_STATUSES = new Set<string>([
+  'hard_limit_reached',
+  'goal_reached',
+  'finished',
+]);
+
 @Controller('webrtc')
 export class WebRtcController {
   private readonly logger = new Logger(WebRtcController.name);
@@ -70,13 +96,27 @@ export class WebRtcController {
     private readonly signalingService: WebRtcSignalingService,
     private readonly authService: WebRtcAuthService,
     private readonly mediaService: WebRtcMediaService,
+    private readonly appAuthService: AuthService,
+    private readonly usageService: UsageService,
+    private readonly db: DatabaseService,
   ) {}
 
   @Post('session')
   @HttpCode(HttpStatus.CREATED)
-  startSession(@Body() body: StartSessionRequest): StartSessionResponse {
+  startSession(
+    @Body() body: StartSessionRequest,
+    @Req() request?: Request,
+  ): StartSessionResponse {
     const conversationId = this.resolveConversationId(body);
     const translation = this.normalizeTranslation(body.translation);
+    const authSession = request
+      ? this.appAuthService.getSessionFromRequest(request)
+      : undefined;
+    const metadata = this.resolveSessionMetadata(
+      authSession?.id,
+      conversationId,
+      body,
+    );
 
     try {
       this.sessionService.assertCapacity();
@@ -100,7 +140,7 @@ export class WebRtcController {
 
     let session: WebRtcSession;
     try {
-      session = this.sessionService.createSession(conversationId);
+      session = this.sessionService.createSession(conversationId, metadata);
     } catch (error) {
       throw new HttpException(
         error instanceof Error ? error.message : 'WebRTC session limit reached',
@@ -301,6 +341,8 @@ export class WebRtcController {
     }
 
     const transcript = await this.mediaService.closeSession(sessionId);
+    const record = this.conversationService.getConversationRecord(session.conversationId);
+    this.recordRealtimeUsage(session, record);
     const transcriptFile = transcript
       ? this.conversationService.getFinalTranscriptFile(session.conversationId)
       : undefined;
@@ -374,5 +416,109 @@ export class WebRtcController {
       return undefined;
     }
     return { languageA, languageB };
+  }
+
+  private resolveSessionMetadata(
+    userId: string | undefined,
+    conversationId: string,
+    body: StartSessionRequest,
+  ): { userId?: string; lessonSessionId?: string; lessonType?: LessonType } {
+    const requestedLessonType = this.normalizeLessonType(body.lessonType);
+    if (!userId) {
+      return {
+        lessonType: requestedLessonType,
+      };
+    }
+
+    const requestedLessonSessionId = body.lessonSessionId?.trim();
+    if (requestedLessonSessionId) {
+      const lesson = this.db.get<{
+        id: string;
+        conversation_id: string | null;
+        lesson_type: LessonType | null;
+        status: string;
+      }>(
+        `SELECT id, conversation_id, lesson_type, status
+         FROM lesson_sessions
+         WHERE id = ? AND user_id = ?`,
+        [requestedLessonSessionId, userId],
+      );
+      if (
+        lesson &&
+        !TERMINAL_LESSON_STATUSES.has(lesson.status) &&
+        (!lesson.conversation_id || lesson.conversation_id === conversationId)
+      ) {
+        return {
+          userId,
+          lessonSessionId: lesson.id,
+          lessonType: lesson.lesson_type ?? requestedLessonType,
+        };
+      }
+    }
+
+    const activeLesson = this.db.get<{
+      id: string;
+      lesson_type: LessonType | null;
+      status: string;
+    }>(
+      `SELECT id, lesson_type, status
+       FROM lesson_sessions
+       WHERE user_id = ?
+         AND conversation_id = ?
+         AND status NOT IN ('hard_limit_reached', 'goal_reached', 'finished')
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [userId, conversationId],
+    );
+
+    return {
+      userId,
+      lessonSessionId: activeLesson?.id,
+      lessonType: activeLesson?.lesson_type ?? requestedLessonType,
+    };
+  }
+
+  private normalizeLessonType(value: string | undefined): LessonType | undefined {
+    const normalized = value?.trim();
+    return normalized && LESSON_TYPES.has(normalized)
+      ? (normalized as LessonType)
+      : undefined;
+  }
+
+  private recordRealtimeUsage(
+    session: WebRtcSession,
+    record:
+      | {
+          tokenUsage: { incoming: number; outgoing: number };
+          turns: unknown[];
+        }
+      | undefined,
+  ): void {
+    if (!session.userId) {
+      return;
+    }
+
+    try {
+      this.usageService.recordRealtimeSession({
+        userId: session.userId,
+        conversationId: session.conversationId,
+        lessonSessionId: session.lessonSessionId,
+        lessonType: session.lessonType,
+        sessionId: session.id,
+        model: this.signalingService.getRealtimeModel(),
+        startedAtMs: session.createdAt,
+        closedAtMs: session.finalizedAt ?? session.updatedAt,
+        inputTokens: record?.tokenUsage.incoming,
+        outputTokens: record?.tokenUsage.outgoing,
+        status: 'closed',
+        turnCount: record?.turns.length,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record WebRTC usage for session ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

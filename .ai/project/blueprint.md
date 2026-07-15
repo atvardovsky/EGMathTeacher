@@ -101,8 +101,10 @@ visible next actions.
   `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
   and does not replace the saved `/tutor/message` lesson pipeline yet. Until
   realtime transcript-to-lesson integration is built, structured lesson
-  records, tasks, images, usage ledger rows, progress updates, and background
-  analysis remain owned by the normal tutor message flow.
+  records, tasks, images, progress updates, and background analysis remain
+  owned by the normal tutor message flow. Authenticated realtime sessions
+  record a session-level usage ledger row on close when provider usage events
+  or duration are available.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
@@ -346,8 +348,9 @@ SQLite tables are initialized in `apps/api/src/database/database.service.ts`:
 - `mastery_evidence`: proof rows for policy-accepted verified learning
   outcomes.
 - `ai_usage_ledger`: per-operation model usage records for signed-in users,
-  including operation, assistant role, model, token/image counts, local cost
-  estimate, pricing source, and local correlation id.
+  including operation, assistant role, model, token/image counts, optional
+  session duration, safe metadata, local cost estimate, pricing source, and
+  local correlation id.
 - `student_learning_signals`: sanitized teaching-useful learning signals,
   session summaries, profile-refresh evidence, strategy-refresh evidence, and
   quality-review records.
@@ -396,6 +399,8 @@ Discovered target commands:
 - `npm run diagrams:render`: render Mermaid diagram SVG artifacts.
 - `npm run diagrams:check`: check rendered diagram SVG drift.
 - `npm run smoke:dev`: smoke-check a running dev web/API route.
+- `npm run smoke:realtime`: guarded manual OpenAI Realtime smoke command;
+  skips without `REALTIME_SMOKE_LIVE=true`.
 - `npm run alatyr:check`: check adapter-required files, validation scripts,
   schema-v2 context routing, AI infrastructure routing, CODEOWNERS, CI wiring,
   stale wording/local path leakage, duplicate references, large-task overlay

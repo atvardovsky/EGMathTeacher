@@ -172,13 +172,15 @@ Current POC now exposes the inherited WebRTC/OpenAI Realtime bridge from the
 tutor composer as a live voice preview. Remaining product/runtime integration:
 
 - map realtime transcript events into authenticated `tutor_turns`
-- bind realtime sessions to `lesson_sessions`, lesson type, and terminal
-  lesson policy
-- route realtime usage into `ai_usage_ledger`
+- enforce realtime terminal lesson policy while the call is still open
 - feed realtime turns into background learning observations and profile
   refresh jobs
 - render realtime tutor outputs as structured text/task/example/image blocks
   when the conversation needs saved lesson continuity
+
+Realtime sessions now send optional active lesson attribution from the web UI
+and record one authenticated `ai_usage_ledger` row on close, but they remain a
+preview path rather than a durable pedagogical loop.
 
 ### Production Deployment And Operations
 

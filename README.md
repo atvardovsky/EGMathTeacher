@@ -210,10 +210,11 @@ Production domain:
   silence stop in voice-dialog mode, and submits the best final/interim
   transcript directly when recognition ends.
 - WebRTC/OpenAI Realtime voice preview in the tutor workspace. The student can
-  start a low-latency live audio session from the composer; current structured
-  lesson records, tasks, images, usage, and progress still use the normal
-  `/tutor/message` path until realtime transcripts are wired into the lesson
-  pipeline.
+  start a low-latency live audio session from the composer. Signed-in sessions
+  record a session-level usage row on close when Realtime token usage or
+  duration is available; current structured lesson records, tasks, images,
+  progress, and memory still use the normal `/tutor/message` path until
+  realtime transcripts are wired into the lesson pipeline.
 
 ## Checks
 
@@ -255,6 +256,13 @@ When the dev stack is already running, smoke-check the web/API route:
 
 ```bash
 npm run smoke:dev
+```
+
+Manual live OpenAI Realtime smoke is guarded and skipped by default:
+
+```bash
+npm run smoke:realtime
+REALTIME_SMOKE_LIVE=true npm run smoke:realtime
 ```
 
 ## Diagrams

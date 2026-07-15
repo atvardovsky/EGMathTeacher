@@ -83,12 +83,12 @@ flowchart LR
 | `AiModelModule` | `apps/api/src/ai-model` | Model-provider facade and role/operation policy for profile, lesson-decision, tutor, background, image, file, and vector-store operations; OpenAI implemented, other providers stubbed. |
 | `BackgroundAiModule` | `apps/api/src/background-ai` | SQLite-backed background AI queue for stored tutor observations, grouped learning-window analysis, lesson-closure conversation review, session summaries, skill progress/regression rows, profile/strategy refreshes, legacy per-turn background jobs, and authenticated recovery of safe failed jobs. |
 | `LessonModule` | `apps/api/src/lesson` | Lesson session lifecycle, terminal-conversation reopening guard, transition-confirmed closed-session reporting for closure jobs, Lesson Decision Agent orchestration, backend action policy, stricter DB-backed curriculum resolution, task-bank-backed supported task selection, deterministic verifier V1, source-task-deduplicated mastery policy, misconception-aware hint routing, goal status, configurable learning-time heuristics, decision observability, verified mastery evidence, and effectiveness-signal storage. |
-| `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, decision observability, verified outcome counts, and safe background job status/result/error projections. |
+| `UsageModule` | `apps/api/src/usage` | Authenticated user usage summaries backed by the local AI usage ledger, including model operations, image estimates, WebRTC Realtime session rows, decision observability, verified outcome counts, and safe background job status/result/error projections. |
 | `AiProviderModule` | `apps/api/src/providers` | Runtime voice provider abstraction; OpenAI Realtime implemented, other providers stubbed. |
 | `StudentProfileModule` | `apps/api/src/student-profile` | First-login meeting profile generation, stored student memory, and explanation strategy retrieval. |
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling, saved lesson history, and image generation. |
 | `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, strict authoritative deleted-path reconciliation, sync-job recovery for failed and attached timeout jobs, optional vector-store wait-ready with pending-index state, archive guardrails, vector store status, and local project vector-store id persistence. |
-| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events. |
+| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events, optional signed-in lesson attribution, and Realtime close-session usage accounting. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
 
@@ -116,8 +116,9 @@ Main UI areas in `apps/web/src/App.tsx`:
   restart only for non-terminal lesson lifecycles plus visible recognition
   stop reasons in voice-dialog mode. The workspace also has an explicit
   WebRTC/OpenAI Realtime voice preview that negotiates through `/webrtc` after
-  a user click and closes on lesson-boundary/read-only state changes; it does
-  not yet replace the structured `/tutor/message` lesson pipeline.
+  a user click, sends active lesson attribution when present, closes on
+  lesson-boundary/read-only state changes, and refreshes usage after close; it
+  does not yet replace the structured `/tutor/message` lesson pipeline.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
@@ -195,18 +196,19 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session, enqueue closure review only on the first actual transition, and move it to read-only history. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. Terminal lesson `conversationId` values are rejected instead of reopened. |
 | `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context and optionally persist the generated POC data URL into the matching tutor-turn image block. |
-| `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
+| `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, recent day-level details, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
 | `POST /usage/me/background/recover` | authenticated | Requeue one or a few recoverable failed background jobs scoped to the signed-in user, without exposing raw job payloads or running provider calls synchronously. |
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution but does not require auth. The tutor UI can start this path as a low-latency voice preview; durable lesson records still use `/tutor/message`. |
 
 Local operator command:
 
 | Command | Responsibility |
 | --- | --- |
 | `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run] [--partial] [--wait-ready] [--no-reconcile-rag]` | Import validated structured knowledge-pack files into SQLite and optionally sync selected Markdown files to the active OpenAI vector store. Dry-run RAG mode performs no live OpenAI writes. Removed-path reconciliation is for strict authoritative RAG sync. Non-dry-run sync remains a trusted local operator workflow and live OpenAI side effect. |
+| `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` | Manually negotiate a short live WebRTC session through the running app and OpenAI Realtime. Without `REALTIME_SMOKE_LIVE=true`, the command skips without live provider calls. |
 
 ## Deployment Shape
 

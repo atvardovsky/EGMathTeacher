@@ -175,12 +175,19 @@ If OpenAI extends the schema, update this sequence and the `OpenAiRealtimeProvid
 - `system` role items are ignored when persisting transcript turns.
 
 Any transcript fragments still buffered when the session closes are flushed before teardown, guaranteeing that the conversation log written to `TRANSCRIPT_LOG_DIR` contains every completed turn.
+For signed-in app sessions, close also writes one `ai_usage_ledger` row with
+operation `webrtc.realtime_session`, the Realtime model, session duration, and
+the accumulated incoming/outgoing token counts when provider usage events were
+captured. If token usage was not captured, the ledger row uses
+`usage_unavailable:realtime_tokens` and keeps the local cost estimate at zero.
+The ledger row intentionally stores safe session metadata only, not raw
+transcripts or provider payloads.
 
 ## Session Lifecycle
 
-1. **Create** – `WebRtcSessionService.createSession()` reserves a session id and associates it with the conversation.
+1. **Create** – `WebRtcSessionService.createSession()` reserves a session id and associates it with the conversation plus optional signed-in user, lesson session id, and lesson type metadata for usage attribution.
 2. **Activate** – When the media bridge is ready (future implementation), call `activateSession()` so status becomes `active`.
-3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, and writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`.
+3. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, and records authenticated Realtime usage.
 4. **Retrieve Transcript & Token Stats** – Use `getTranscriptForSession()` or the conversation service helpers to access the saved text or file path. Finalization logs include total “incoming” (caller) and “outgoing” (assistant) token counts once the media bridge begins recording usage.
 5. **Teardown Bridge** – Clients (or future automation) should hit `POST /webrtc/session/{sessionId}/close` to invoke `WebRtcMediaService.closeSession`, which finalizes transcripts and clears in-memory bridge state.
 
@@ -224,6 +231,20 @@ Environment variables used by the module:
 
 The bootstrap server sets `Referrer-Policy: strict-origin-when-cross-origin` on responses.
 
+## Live Smoke Check
+
+The repository provides a guarded manual smoke command for real OpenAI
+Realtime negotiation through the running app:
+
+```bash
+npm run smoke:realtime
+REALTIME_SMOKE_LIVE=true npm run smoke:realtime
+```
+
+Without `REALTIME_SMOKE_LIVE=true`, the command exits without live provider
+calls. With the flag set, the dev stack must already be running and the API
+process must have valid OpenAI credentials.
+
 ### Session Limits & Cleanup
 
 - `WebRtcSessionService` enforces `WEBRTC_MAX_SESSIONS` for sessions whose status is not `closed`. Clients attempting to create additional sessions will receive HTTP `429 Too Many Requests`.
@@ -237,6 +258,6 @@ The scaffold omits several critical pieces that need to be built:
 2. **Signaling Channel** – ✅ REST endpoints available for SDP/ICE exchange; the bridge consumes them directly.
 3. **Media Bridge** – ✅ Browser audio is forwarded to OpenAI Realtime and synthetic speech is relayed back to the client. Persona metadata is collapsed into the `instructions` field (file search ids are currently ignored until tooling is added). Gemini/Hume/Retell support still TODO.
 4. **Session Limits & Cleanup** – ✅ Limit enforcement in place; wire up periodic calls to `cleanupClosedSessions()` and add retry policies.
-5. **Observability** – Add metrics and structured logs for session state, transcription success, and call quality.
+5. **Observability** – Usage-ledger accounting exists for authenticated session close. Add metrics and structured logs for session state, transcription success, call quality, and provider-side billing reconciliation before production.
 
 With these additions the module will provide a production-ready entry point for any WebRTC-capable voice client.

@@ -36,6 +36,8 @@ export interface AiUsageLedgerItem {
   outputTokens: number;
   totalTokens: number;
   imageCount: number;
+  durationSeconds: number | null;
+  metadata?: Record<string, unknown>;
   pricingSource: string;
   createdAt: string;
 }
@@ -83,6 +85,7 @@ export interface BackgroundJobUsageItem {
 export interface UserUsageSummary {
   currency: 'USD';
   today: AiUsageTotals;
+  todayItems: AiUsageLedgerItem[];
   currentLesson: LessonUsageSummary | null;
   recentLessons: LessonUsageSummary[];
   backgroundJobs: BackgroundJobUsageItem[];
@@ -107,6 +110,8 @@ export interface AiUsageRecord {
   output_tokens: number;
   total_tokens: number;
   image_count: number;
+  duration_seconds: number | null;
+  metadata_json: string | null;
   estimated_cost_usd: number;
   pricing_source: string;
   created_at: string;

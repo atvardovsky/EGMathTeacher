@@ -7,6 +7,9 @@ import { TranslationConfig } from './webrtc-signaling.service';
 export interface WebRtcSession {
   id: string;
   conversationId: string;
+  userId?: string;
+  lessonSessionId?: string;
+  lessonType?: string;
   createdAt: number;
   updatedAt: number;
   status: 'pending' | 'active' | 'closed';
@@ -19,6 +22,12 @@ export interface WebRtcSession {
     clientIceCandidates: string[];
     serverIceCandidates: string[];
   };
+}
+
+export interface WebRtcSessionMetadata {
+  userId?: string;
+  lessonSessionId?: string;
+  lessonType?: string;
 }
 
 @Injectable()
@@ -43,12 +52,18 @@ export class WebRtcSessionService implements OnModuleDestroy {
     this.cleanupInterval.unref?.();
   }
 
-  createSession(conversationId: string): WebRtcSession {
+  createSession(
+    conversationId: string,
+    metadata: WebRtcSessionMetadata = {},
+  ): WebRtcSession {
     this.assertCapacity();
 
     const session: WebRtcSession = {
       id: randomUUID(),
       conversationId,
+      userId: metadata.userId,
+      lessonSessionId: metadata.lessonSessionId,
+      lessonType: metadata.lessonType,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       status: 'pending',

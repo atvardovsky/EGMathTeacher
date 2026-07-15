@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260715-webrtc-usage-smoke",
+  "operation": {
+    "id": "webrtc-usage-smoke-20260715",
+    "type": "runtime-data-ui-validation-repair"
+  },
+  "plan": {
+    "version": "2026-07-15-webrtc-usage-smoke-v1",
+    "sha256": "not available; approval was given as a direct implementation request",
+    "file": "not available; user requested implementation in active chat"
+  },
+  "diff": {
+    "base": "e38b34fd98d8e6a5ceda8438bd9699b0cc8c4ff1",
+    "patch_sha256": "not available before final patch; local validation evidence recorded in markdown approval",
+    "repository_revision_at_approval": "e38b34fd98d8e6a5ceda8438bd9699b0cc8c4ff1"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Keep WebRTC Realtime documented as a preview path, not a durable lesson pipeline.",
+      "Add authenticated session-level Realtime usage accounting to the local ai_usage_ledger.",
+      "Add safe metadata/duration fields for session-level usage observability.",
+      "Add a guarded manual live OpenAI Realtime smoke command that skips without explicit opt-in.",
+      "Update mocked tests, E2E request expectations, public docs, Alatyr project docs, diagrams, and validation notes."
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/api/src/ai-model",
+      "apps/api/src/config",
+      "apps/api/src/conversation",
+      "apps/api/src/database",
+      "apps/api/src/usage",
+      "apps/api/src/webrtc",
+      "apps/api/test",
+      "apps/api/.env.example",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "apps/web/src",
+      "apps/web/e2e",
+      "scripts",
+      "package.json",
+      "README.md",
+      ".ai/project",
+      ".ai/assistant/approvals"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials"
+    ],
+    "excluded_actions": [
+      "No live OpenAI Realtime call during validation unless separately approved.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No auth guard weakening for /webrtc.",
+      "No durable tutor-turn persistence from realtime transcripts in this operation.",
+      "No destructive production database operation."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Live OpenAI validation, production deployment, new provider, new dependency, auth guard weakening, transcript persistence into tutor_turns, system web server changes, or destructive data operations require fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-15T15:06:00+02:00",
+    "source_or_message": "User provided review findings for the WebRTC preview and requested \"implement all\" in the active chat.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "webrtc-usage-smoke-20260715",
+    "patch_changed_after_approval": "yes; final focused review wrapped usage-ledger storage so WebRTC close remains successful if accounting fails",
+    "implementation_within_scope": "yes",
+    "validation": "npm run test --workspace @egmathteacher/api -- usage.service.spec.ts webrtc.controller.spec.ts; npm run build; npm run lint; npm test; npm run e2e; npx playwright test apps/web/e2e/app.spec.ts -g \"student can start and stop realtime WebRTC voice preview\"; npm run e2e; npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run smoke:realtime; git diff --check; npm run smoke:dev; local-path/secret-pattern scan",
+    "result_evidence": "targeted usage/WebRTC tests passed 2 suites / 16 tests before final close-path hardening; full build passed with existing Vite chunk-size warning; lint passed; full Jest passed 17 suites / 124 tests with existing worker-teardown warning; first two full E2E runs each had one initial-loading flake in different tests, isolated Realtime E2E passed 1 test, warmed full E2E then passed 9 tests; diagrams rendered 10 SVGs and drift check passed; Alatyr consistency passed; realtime smoke command skipped safely without REALTIME_SMOKE_LIVE=true; whitespace check passed; dev smoke passed for https://localhost:5137; stricter local-path/secret scan found no matches; final controller-focused test passed 1 suite / 7 tests and final build/lint passed after close-path hardening",
+    "residual_risk": "Realtime preview is still not a durable lesson path; live OpenAI Realtime behavior and provider billing reconciliation remain manual/explicit checks; local Playwright parallel startup showed intermittent loading-screen flakes before a warmed full pass."
+  }
+}

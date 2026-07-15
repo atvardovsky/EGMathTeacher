@@ -872,6 +872,8 @@ type. Usage summaries use it to compute cost per verified learning outcome.
 | `image_count` | `INTEGER` | required, defaults to 0 |
 | `estimated_cost_usd` | `REAL` | required local cost estimate, defaults to 0 |
 | `pricing_source` | `TEXT` | required; local pricing source label or `not_configured` |
+| `duration_seconds` | `INTEGER` | optional session duration for session-level operations such as WebRTC Realtime |
+| `metadata_json` | `TEXT` | optional safe structured metadata; must not contain prompts, transcripts, secrets, raw provider payloads, or PII beyond row identifiers |
 | `created_at` | `TEXT` | required ISO timestamp |
 
 Source owner: `apps/api/src/usage`, `apps/api/src/ai-model`, and
@@ -887,6 +889,11 @@ rather than presenting it as a provider bill. For image operations, provider
 token usage is used when present; when GPT-Image-2 image output usage is
 absent, the POC estimates output tokens from requested size and quality before
 applying the configured token price.
+For WebRTC Realtime sessions, the row is written on close for authenticated
+sessions. It can include provider token counts when Realtime usage events were
+received, duration, and safe session metadata. If token usage is unavailable,
+`pricing_source` is `usage_unavailable:realtime_tokens` and cost remains zero
+rather than inventing a bill.
 
 ### `tutor_turns`
 
@@ -928,6 +935,8 @@ prompts.
 
 - session id
 - conversation id
+- optional signed-in user id for usage attribution
+- optional lesson session id and lesson type for usage attribution
 - timestamps
 - status: `pending`, `active`, or `closed`
 - preferred voice

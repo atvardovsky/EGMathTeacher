@@ -23,6 +23,26 @@ interface UsageCounts {
   imageCount: number;
 }
 
+interface LedgerDetails {
+  durationSeconds?: number | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface RealtimeSessionUsageInput {
+  userId?: string;
+  conversationId: string;
+  lessonSessionId?: string;
+  lessonType?: string;
+  sessionId: string;
+  model: string;
+  startedAtMs: number;
+  closedAtMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  status?: 'closed' | 'failed';
+  turnCount?: number;
+}
+
 interface Pricing {
   inputUsdPer1M: number;
   cachedInputUsdPer1M: number;
@@ -89,15 +109,74 @@ export class UsageService {
     );
   }
 
+  recordRealtimeSession(input: RealtimeSessionUsageInput): AiUsageLedgerItem | null {
+    if (!this.trackingEnabled || !input.userId) {
+      return null;
+    }
+
+    const inputTokens = this.normalizeCount(input.inputTokens);
+    const outputTokens = this.normalizeCount(input.outputTokens);
+    const counts: UsageCounts = {
+      inputTokens,
+      cachedInputTokens: 0,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      imageCount: 0,
+    };
+    const pricing = this.resolvePricing(input.model);
+    const hasProviderUsage = counts.totalTokens > 0;
+    const durationSeconds = this.normalizeDurationSeconds(
+      input.startedAtMs,
+      input.closedAtMs ?? Date.now(),
+    );
+
+    return this.insertLedgerItem(
+      {
+        operationKey: 'webrtcRealtimeSession',
+        operation: 'webrtc.realtime_session',
+        role: 'tutor',
+        provider: 'openai-realtime',
+        model: input.model,
+        responseFormat: 'text',
+        promptCacheKeyEnabled: false,
+      },
+      {
+        userId: input.userId,
+        conversationId: input.conversationId,
+        lessonSessionId: input.lessonSessionId,
+        lessonType: input.lessonType,
+        correlationId: input.sessionId,
+      },
+      counts,
+      hasProviderUsage ? this.estimateCost(counts, pricing) : 0,
+      hasProviderUsage ? pricing.source : 'usage_unavailable:realtime_tokens',
+      {
+        durationSeconds,
+        metadata: {
+          webrtcSessionId: input.sessionId,
+          durationSeconds,
+          status: input.status ?? 'closed',
+          turnCount: this.normalizeCount(input.turnCount),
+        },
+      },
+    );
+  }
+
   private insertLedgerItem(
     policy: ResolvedAiOperationPolicy,
     context: AiUsageContext,
     counts: UsageCounts,
     estimatedCostUsd: number,
     pricingSource: string,
+    details: LedgerDetails = {},
   ): AiUsageLedgerItem {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const metadataJson = details.metadata ? JSON.stringify(details.metadata) : null;
+    const durationSeconds =
+      typeof details.durationSeconds === 'number' && details.durationSeconds >= 0
+        ? Math.floor(details.durationSeconds)
+        : null;
 
     this.db.run(
       `INSERT INTO ai_usage_ledger (
@@ -105,9 +184,9 @@ export class UsageService {
          operation_key, operation, assistant_role, provider, model,
          response_format, service_tier, input_tokens, cached_input_tokens,
          output_tokens, total_tokens, image_count, estimated_cost_usd,
-         pricing_source, created_at
+         pricing_source, duration_seconds, metadata_json, created_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         context.correlationId ?? null,
@@ -129,6 +208,8 @@ export class UsageService {
         counts.imageCount,
         estimatedCostUsd,
         pricingSource,
+        durationSeconds,
+        metadataJson,
         now,
       ],
     );
@@ -152,6 +233,8 @@ export class UsageService {
       outputTokens: counts.outputTokens,
       totalTokens: counts.totalTokens,
       imageCount: counts.imageCount,
+      durationSeconds,
+      metadata: details.metadata ?? undefined,
       pricingSource,
       createdAt: now,
     };
@@ -168,6 +251,7 @@ export class UsageService {
         `WHERE user_id = ? AND created_at >= ?`,
         [userId, todayStart.toISOString()],
       ),
+      todayItems: this.getLedgerItemsSince(userId, todayStart.toISOString(), 12),
       currentLesson: currentLessonId
         ? this.getLessonSummary(userId, currentLessonId, 25)
         : null,
@@ -262,14 +346,38 @@ export class UsageService {
               operation_key, operation, assistant_role, provider, model,
               response_format, service_tier, input_tokens, cached_input_tokens,
               output_tokens, total_tokens, image_count, estimated_cost_usd,
-              pricing_source, created_at
+              pricing_source, duration_seconds, metadata_json, created_at
        FROM ai_usage_ledger
        WHERE user_id = ? AND lesson_session_id = ?
        ORDER BY created_at DESC
        LIMIT ?`,
       [userId, lessonSessionId, limit],
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.mapLedgerItem(row));
+  }
+
+  private getLedgerItemsSince(
+    userId: string,
+    sinceIso: string,
+    limit: number,
+  ): AiUsageLedgerItem[] {
+    const rows = this.db.all<AiUsageRecord>(
+      `SELECT id, correlation_id, user_id, conversation_id, lesson_session_id, lesson_type,
+              operation_key, operation, assistant_role, provider, model,
+              response_format, service_tier, input_tokens, cached_input_tokens,
+              output_tokens, total_tokens, image_count, estimated_cost_usd,
+              pricing_source, duration_seconds, metadata_json, created_at
+       FROM ai_usage_ledger
+       WHERE user_id = ? AND created_at >= ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, sinceIso, limit],
+    );
+    return rows.map((row) => this.mapLedgerItem(row));
+  }
+
+  private mapLedgerItem(row: AiUsageRecord): AiUsageLedgerItem {
+    return {
       id: row.id,
       correlationId: row.correlation_id,
       lessonSessionId: row.lesson_session_id,
@@ -288,9 +396,11 @@ export class UsageService {
       outputTokens: row.output_tokens,
       totalTokens: row.total_tokens,
       imageCount: row.image_count,
+      durationSeconds: row.duration_seconds ?? null,
+      metadata: this.parseJsonObject(row.metadata_json),
       pricingSource: row.pricing_source,
       createdAt: row.created_at,
-    }));
+    };
   }
 
   private getDecisionItems(
@@ -747,6 +857,19 @@ export class UsageService {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? Number(value.toFixed(8))
       : 0;
+  }
+
+  private normalizeDurationSeconds(startedAtMs: unknown, closedAtMs: unknown): number {
+    if (
+      typeof startedAtMs !== 'number' ||
+      typeof closedAtMs !== 'number' ||
+      !Number.isFinite(startedAtMs) ||
+      !Number.isFinite(closedAtMs) ||
+      closedAtMs <= startedAtMs
+    ) {
+      return 0;
+    }
+    return Math.floor((closedAtMs - startedAtMs) / 1000);
   }
 
   private get trackingEnabled(): boolean {

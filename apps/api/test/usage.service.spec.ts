@@ -140,6 +140,73 @@ describe('UsageService', () => {
     );
   });
 
+  it('records realtime session usage and exposes it in lesson and day details', () => {
+    const startedAtMs = Date.now() - 65_000;
+
+    service.recordRealtimeSession({
+      userId: 'student-1',
+      conversationId: 'conv-1',
+      lessonSessionId: 'lesson-1',
+      lessonType: 'tutor',
+      sessionId: 'rtc-session-1',
+      model: 'gpt-realtime-test',
+      startedAtMs,
+      closedAtMs: startedAtMs + 65_000,
+      inputTokens: 100,
+      outputTokens: 50,
+      turnCount: 4,
+    });
+
+    const summary = service.getUserSummary('student-1', 'lesson-1');
+
+    expect(summary.today.estimatedCostUsd).toBe(0.0007);
+    expect(summary.todayItems[0]).toEqual(
+      expect.objectContaining({
+        operationKey: 'webrtcRealtimeSession',
+        operation: 'webrtc.realtime_session',
+        provider: 'openai-realtime',
+        model: 'gpt-realtime-test',
+        durationSeconds: 65,
+        totalTokens: 150,
+        correlationId: 'rtc-session-1',
+      }),
+    );
+    expect(summary.currentLesson?.items[0]).toEqual(
+      expect.objectContaining({
+        operation: 'webrtc.realtime_session',
+        durationSeconds: 65,
+        metadata: expect.objectContaining({
+          webrtcSessionId: 'rtc-session-1',
+          turnCount: 4,
+        }),
+      }),
+    );
+  });
+
+  it('records realtime session duration when provider token usage is unavailable', () => {
+    const startedAtMs = Date.now() - 4_000;
+
+    service.recordRealtimeSession({
+      userId: 'student-1',
+      conversationId: 'conv-voice-only',
+      sessionId: 'rtc-session-no-usage',
+      model: 'gpt-realtime-test',
+      startedAtMs,
+      closedAtMs: startedAtMs + 4_000,
+    });
+
+    const summary = service.getUserSummary('student-1');
+
+    expect(summary.todayItems[0]).toEqual(
+      expect.objectContaining({
+        operation: 'webrtc.realtime_session',
+        durationSeconds: 4,
+        totalTokens: 0,
+        pricingSource: 'usage_unavailable:realtime_tokens',
+      }),
+    );
+  });
+
   it('uses service-tier model pricing overrides when they are configured', () => {
     db.onModuleDestroy();
     const sqlitePath = join(tmpdir(), `egmathteacher-usage-${randomUUID()}.sqlite`);

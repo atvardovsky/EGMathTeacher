@@ -19,6 +19,7 @@ Run from repository root unless noted.
 | Render Alatyr diagrams | `npm run diagrams:render` | `package.json` |
 | Check Alatyr diagram drift | `npm run diagrams:check` | `package.json`, `scripts/check-diagrams.sh`, `.ai/project/diagrams/rendered/source-hashes.sha256` |
 | Smoke-check running dev stack | `npm run smoke:dev` | `package.json`, `scripts/smoke-dev.sh` |
+| Manual live Realtime smoke | `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` | `package.json`, `scripts/smoke-realtime.sh`, `scripts/smoke-realtime-client.cjs` |
 | Check Alatyr adapter consistency | `npm run alatyr:check` | `package.json`, `scripts/check-alatyr.sh` |
 | Knowledge-pack import/RAG sync CLI | `npm run knowledge:sync -- --pack <zip> --import-db [--sync-rag] [--dry-run]` | `package.json`, `apps/api/src/knowledge/knowledge-pack.cli.ts` |
 | API test watch | `npm run test:watch --workspace @egmathteacher/api` | `apps/api/package.json` |
@@ -140,7 +141,9 @@ and explicit image rendering.
 - No accessibility test command was found.
 - No visual regression test command was found.
 - No production migration rollback/backfill validation exists.
-- No live OpenAI smoke-test policy exists.
+- Live OpenAI smoke tests are manual and explicit. `npm run smoke:realtime`
+  skips by default; `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` is the
+  opt-in live WebRTC/OpenAI Realtime check against a running dev stack.
 - Focused API tests cover strict/partial knowledge-pack import behavior,
   failed import ledger rows, RAG deleted-path reconciliation, migration ledger
   presence, imported `task_bank_tasks` driving lesson task selection, imported
@@ -150,8 +153,8 @@ and explicit image rendering.
   reconciliation, and wait-ready timeout leaving jobs attached rather than
   indexed.
 - Remaining validation gaps: no live OpenAI non-dry-run RAG sync smoke test,
-  no dedicated archive-guardrail fixture suite, and no parallel-process
-  concurrency stress test.
+  no automated live Realtime CI check, no dedicated archive-guardrail fixture
+  suite, and no parallel-process concurrency stress test.
 
 ## When To Run
 
@@ -171,6 +174,10 @@ and explicit image rendering.
 - OpenAI integration changes: use mocked/unit validation by default; only call
   live OpenAI when the user explicitly requests or approves live validation
   with credentials and spend risk understood.
+- WebRTC/OpenAI Realtime changes: run unit and mocked browser validation by
+  default. Use `npm run smoke:realtime` to verify the live-check guard without
+  spend; use `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` only after the
+  dev stack is running and live OpenAI spend is approved.
 - Knowledge-pack RAG sync changes: validate with mocked unit tests by default.
   `--dry-run` may be used for local planning; do not run non-dry-run
   `--sync-rag` without explicit live OpenAI credential/spend approval.

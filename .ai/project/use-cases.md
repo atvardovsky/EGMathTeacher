@@ -445,6 +445,9 @@ Rules from current implementation:
 - The tutor workspace can start this flow as a realtime voice preview, but
   saved tutor lessons still use `/tutor/message` until transcript-to-lesson
   integration is implemented.
+- Signed-in realtime sessions can be attributed to the active lesson for
+  usage accounting and write one `ai_usage_ledger` row on close. This is not
+  evidence of learning progress by itself.
 - OpenAI Realtime is implemented; Gemini Live, Hume EVI, and Retell are
   configured as stubs.
 - Translation mode is supported by passing two languages during session

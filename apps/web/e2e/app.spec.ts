@@ -123,6 +123,7 @@ const usageSummary = {
     imageCount: 0,
     pricingConfigured: true,
   },
+  todayItems: [],
   currentLesson: {
     lessonSessionId: 'lesson-e2e',
     conversationId: 'conv-e2e',
@@ -157,6 +158,7 @@ const usageSummary = {
         outputTokens: 400,
         totalTokens: 1600,
         imageCount: 0,
+        durationSeconds: null,
         pricingSource: 'env_default',
         createdAt: '2026-07-11T10:20:00.000Z',
       },
@@ -1042,7 +1044,7 @@ test('student can start and stop realtime WebRTC voice preview', async ({ page }
   await expect.poll(() => webrtcRequests.length).toBe(2);
   expect(webrtcRequests[0]).toMatchObject({
     path: '/webrtc/session',
-    body: {},
+    body: { lessonType: 'tutor' },
   });
   expect(webrtcRequests[1]).toMatchObject({
     path: '/webrtc/session/rtc-session-1/offer',

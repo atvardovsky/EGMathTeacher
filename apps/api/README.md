@@ -156,11 +156,15 @@ POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 
 ## WebRTC Flow (Browser ↔ NestJS ↔ OpenAI)
 
-1. Client hits `POST /webrtc/session` to reserve a session; response includes conversation id, ICE servers, persona + voice options.
+1. Client hits `POST /webrtc/session` to reserve a session; response includes conversation id, ICE servers, persona + voice options. The tutor UI sends optional lesson session id/type when a signed-in lesson is active.
 2. Client records mic audio, creates SDP offer, and posts it to `POST /webrtc/session/{id}/offer`.
 3. NestJS forwards the offer to the in-process realtime bridge, which negotiates with OpenAI Realtime and returns an SDP answer.
 4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service.
-5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript and tears the session down.
+5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, and records a session-level usage ledger row for authenticated sessions.
+
+Realtime is still a voice preview path in the current POC. It is accounted for
+in usage summaries, but it does not yet create durable `tutor_turns`, verifier
+attempts, progress updates, images, or background learning observations.
 
 ## Translation Module
 
@@ -240,6 +244,9 @@ Tutor/product API surfaces also include:
 
 - Persona instructions and voice are injected during `/webrtc` session setup; the Node bridge collapses them into a single `instructions` string and `voice` parameter when creating the OpenAI session.
 - File Search ids are accepted but currently ignored because the REST surface does not yet allow attaching them to Realtime sessions.
+- Live Realtime validation is manual: `npm run smoke:realtime` skips by
+  default, and `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` performs a
+  short WebRTC negotiation through the running app and OpenAI Realtime.
 - Lesson-decision, tutor/profile/image/file/vector-store operations go through the
   OpenAI-first `AiModelService` facade. `AiOperationPolicyService` resolves
   the assistant role, operation name, model, metadata, prompt-cache eligibility,

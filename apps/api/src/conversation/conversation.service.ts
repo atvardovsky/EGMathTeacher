@@ -112,6 +112,10 @@ export class ConversationService {
     return this.sessions.get(conversationId)?.turns ?? [];
   }
 
+  getConversationRecord(conversationId: string): ConversationRecord | undefined {
+    return this.sessions.get(conversationId);
+  }
+
   listConversations(): ConversationRecord[] {
     return Array.from(this.sessions.values());
   }

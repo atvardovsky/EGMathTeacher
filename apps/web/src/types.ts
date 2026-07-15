@@ -142,6 +142,8 @@ export interface UsageLedgerItem {
   outputTokens: number;
   totalTokens: number;
   imageCount: number;
+  durationSeconds: number | null;
+  metadata?: Record<string, unknown>;
   pricingSource: string;
   createdAt: string;
 }
@@ -189,6 +191,7 @@ export interface BackgroundJobUsageItem {
 export interface UserUsageSummary {
   currency: 'USD';
   today: UsageTotals;
+  todayItems: UsageLedgerItem[];
   currentLesson: LessonUsageSummary | null;
   recentLessons: LessonUsageSummary[];
   backgroundJobs: BackgroundJobUsageItem[];
