@@ -23,7 +23,8 @@ are generated into `rendered/`.
   curriculum routing, task-bank task selection, strict import, RAG
   reconciliation, sync recovery, and archive/concurrency guardrails.
 - `webrtc-realtime-sequence.mmd`: WebRTC session, token, SDP, media bridge,
-  provider events, transcript close flow, and authenticated session usage row.
+  browser `lesson-events` data-channel tutor routing, provider events,
+  transcript close flow, and authenticated session usage row.
 - `data-model.mmd`: local SQLite tables, background AI jobs, observation
   windows, learning signals, usage ledger metadata, in-memory runtime state,
   file artifacts, and remote OpenAI objects.

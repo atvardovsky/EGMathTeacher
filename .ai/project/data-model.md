@@ -940,6 +940,11 @@ text block summarizing the saved voice segment. This is deliberately not a
 structured verifier turn: it does not create lesson tasks, images, mastery
 evidence, or `student_skill_progress`.
 
+Typed `student_text` messages sent through an active WebRTC `lesson-events`
+data channel are different: they call the normal tutor engine and persist the
+same `tutor_turns` shape that `POST /tutor/message` would persist for the same
+request id, lesson type, and conversation id.
+
 The saved-lessons endpoint also uses `tutor_turns` directly for turn previews
 and backward-compatible legacy history. When a conversation has stored turns
 but no `lesson_sessions` row, the API exposes it through history as a
@@ -955,7 +960,8 @@ prompts.
 
 - session id
 - conversation id
-- optional signed-in user id for usage attribution
+- optional signed-in user id, display name, role, and created-at timestamp for
+  usage attribution and server-local data-channel tutor calls
 - optional lesson session id and lesson type for usage attribution
 - optional compact realtime teaching context for provider instructions and
   post-close background review
@@ -983,6 +989,12 @@ On authenticated close, WebRTC can save one compact voice-origin
 `tutor_turns` row for continuity, records one safe `ai_usage_ledger` row, and
 may enqueue a `realtime_session_review` background job that stores only
 sanitized teaching observations or summaries.
+
+During an active session, WebRTC can also carry a browser-to-server
+`lesson-events` data channel. Its in-memory state is not durable, but
+authenticated `student_text` events on that channel enter `TutorService` and
+therefore use the durable tutor/lesson/usage tables owned by the normal lesson
+runtime.
 
 ## File Artifacts
 
@@ -1017,7 +1029,9 @@ The web client defines DTO-like interfaces in `apps/web/src/types.ts`:
 - `TutorAnswer`
 - `LessonType`
 - `TutorResponseBlock`
-- `TutorImageBlock`
+- `TutorImageBlock` with optional `prompt`; image generation may derive its
+  provider instruction from the stored answer/task/example context when no
+  explicit prompt is present.
 - `TutorTask`
 - `TutorExample`
 - `TutorCitation`

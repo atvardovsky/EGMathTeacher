@@ -155,7 +155,8 @@ Derived surfaces:
 - `.ai/project/knowledge-pack-runtime-repair-plan.md` for knowledge-pack
   runtime/sync repair implementation facts and residual risks
 - `apps/api/docs/webrtc-module.md` and `apps/api/src/webrtc` for WebRTC
-  Realtime flow boundaries, signed-in teaching context injection, compact
+  Realtime flow boundaries, signed-in teaching context injection, browser
+  `lesson-events` data-channel routing into the tutor engine, compact
   post-close voice-turn persistence, and post-close realtime
   background-review enqueueing
 - `README.md`

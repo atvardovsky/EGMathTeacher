@@ -185,8 +185,8 @@ This file records runtime flows from current source evidence.
 4. The tutor workspace shows a saved-lessons panel even when history is empty.
    Empty history explicitly says no lessons have been saved yet; non-empty
    history shows recent lesson rows, last question previews, summaries or the
-   last answer, a continue-latest action for active lessons, open-record actions
-   for historical records, and a new-lesson action.
+   last answer, visible `Продолжить`/`Continue` actions for active lessons,
+   open-record actions for historical records, and a new-lesson action.
 5. If the latest active saved lesson has stored turns and the local tutor view
    is empty, the web client hydrates those turns immediately so the student
    sees the previous discussion without clicking through a hidden history
@@ -214,7 +214,10 @@ This file records runtime flows from current source evidence.
 1. Authenticated user submits text or browser speech-recognition text. Browser
    speech-recognition turns use the best available final or interim transcript
    when recognition ends, so short spoken answers remain hands-free and are
-   sent directly to the tutor API.
+   sent directly to the tutor API or, when an authenticated realtime lesson
+   data channel is open, through that channel. If delivery fails, the web
+   client restores the recognized or typed text to the composer so the student
+   can resend without repeating the answer aloud.
 2. Web client calls `POST /tutor/message` with:
    - `message`
    - optional `conversationId`
@@ -342,10 +345,11 @@ This file records runtime flows from current source evidence.
 26. Web client refreshes `GET /usage/me/summary`, renders the usage/debug bar,
     then renders ordered response blocks, lesson-type badge, citations, and
     optional image actions inside the same tutor turn. If the freshly returned
-    answer contains a required image block from an explicit visual request, the
-    web client starts one `POST /tutor/image` call for that block after the text
-    response is visible. Historical saved turns with missing image URLs keep the
-    manual create-diagram action.
+    answer contains a required image block, the web client starts one
+    `POST /tutor/image` call for that block after the text response is visible.
+    The request includes block/turn identity and a compact answer/task/example
+    context, so a separate image prompt is not required. Historical saved turns
+    with missing image URLs keep the manual create-diagram action.
 27. If browser speech synthesis is supported and the student has voice dialog
     enabled, the web client speaks the visible tutor answer locally. The spoken
     text is derived from the ordered response blocks, capped for length, and is
@@ -362,13 +366,15 @@ This file records runtime flows from current source evidence.
    is sent to `POST /tutor/message` with `source=voice`.
 3. The tutor workspace also exposes an explicit WebRTC/OpenAI Realtime live
    voice path. This low-latency path starts only after a user click, captures
-   microphone audio through `getUserMedia`, negotiates with `/webrtc`, and
-   plays remote audio in the browser. It is closed when the user stops it,
-   opens read-only history, changes lesson boundaries, starts a new lesson, or
+   microphone audio through `getUserMedia`, creates a browser-to-server
+   `lesson-events` data channel, negotiates with `/webrtc`, and plays remote
+   audio in the browser. While that channel is open, typed tutor-composer
+   messages are sent as authenticated `student_text` events and routed through
+   the normal tutor engine. It is closed when the user stops it, opens
+   read-only history, changes lesson boundaries, starts a new lesson, or
    leaves the tutor workspace. In the current POC, authenticated realtime
-   close saves one compact voice-origin `tutor_turns` row for lesson
-   continuity. Structured blocks, verifier evidence, images, and progress
-   still use `POST /tutor/message`.
+   close also saves one compact voice-origin `tutor_turns` row for raw audio
+   transcript continuity.
    Authenticated realtime sessions receive compact current-lesson and analytic
    teaching context, write session-level usage ledger rows on close when the
    provider supplies token usage or at least session duration can be recorded,
@@ -388,9 +394,10 @@ This file records runtime flows from current source evidence.
    button remains the manual fallback.
 7. If browser speech recognition ends without a transcript because of silence,
    `no-speech`, `aborted`, permission, device, language, or network errors,
-   the UI clears listening state and shows a short reason. In voice-dialog
-   auto-listen mode, a silence/no-speech stop retries once before leaving the
-   mic button as the manual fallback.
+   the UI clears listening state and shows a short reason. Silence/no-speech
+   stops retry with a small bounded budget in both voice-dialog auto-listen
+   mode and manual mic mode before leaving the mic button as the manual
+   fallback.
 8. Each tutor turn has a speak/stop action so the student can replay or stop
    the assistant voice. Stopping speech is local browser state and does not
    affect lesson, usage, or tutor-turn persistence.
@@ -398,9 +405,10 @@ This file records runtime flows from current source evidence.
    upload generated audio, and does not store spoken audio. The WebRTC live
    voice path uses OpenAI Realtime through `/webrtc`, writes the inherited
    realtime transcript log on close, records a safe usage-ledger row for
-   signed-in sessions, saves a compact voice-origin lesson turn when useful
-   transcript content exists, and may enqueue a sanitized teaching-observation
-   review.
+   signed-in sessions, routes typed lesson messages over `lesson-events` into
+   the normal tutor engine, saves a compact voice-origin lesson turn when
+   useful raw audio transcript content exists, and may enqueue a sanitized
+   teaching-observation review.
 10. When a terminal tutor response arrives, the client clears the active
    `conversationId`, opens the turn as read-only history state, disables
    composer/voice/image actions, and shows the new-lesson action.
@@ -486,22 +494,28 @@ This file records runtime flows from current source evidence.
 
 ## Tutor Image Flow
 
-1. Tutor response includes an image block with prompt, caption, alt text,
-   status, and priority, or legacy `needsImage=true` plus `imagePrompt`.
-   Explicit student requests for a drawing, diagram, graph, image, or visual
-   explanation are normalized into an image block if the model omitted one.
+1. Tutor response includes an image block with caption, alt text, status,
+   priority, and optional prompt, or legacy `needsImage=true` plus optional
+   `imagePrompt`. Explicit student requests for a drawing, diagram, graph,
+   image, or visual explanation are normalized into an image block if the
+   model omitted one. Task answers can also receive a required image block so
+   the condition or solving idea can be visualized.
 2. For a fresh tutor answer whose image block has `priority=required`, the web
    client automatically starts one create-diagram request after the text answer
    is rendered. For active older saved turns, optional image blocks, or failed
    automatic generation, the student can still click the visible create-diagram
    action. Read-only history records do not trigger automatic image generation
    and their create-diagram action is disabled.
-3. Web client calls `POST /tutor/image` with prompt/context plus optional
-   conversation id, lesson session id, lesson type, tutor-turn id, and image
-   block id for usage attribution and same-turn persistence.
-4. API calls the `tutorImage` model-provider operation. The current
-   implementation resolves the image operation model policy, then delegates to
-   OpenAI image generation using configured size and quality.
+3. Web client calls `POST /tutor/image` with optional prompt, compact visible
+   answer/task/example context, conversation id, lesson session id, lesson
+   type, tutor-turn id, and image block id for usage attribution and same-turn
+   persistence.
+4. API builds the image instruction from the explicit prompt when present;
+   otherwise it reads the stored tutor turn and derives the instruction from
+   the student prompt, answer text, task blocks, example blocks, and image
+   caption/alt text. It then calls the `tutorImage` model-provider operation.
+   The current implementation resolves the image operation model policy, then
+   delegates to OpenAI image generation using configured size and quality.
 5. `AiModelService` writes image usage to `ai_usage_ledger` when user and
    lesson context are present. If the image provider response omits usage
    tokens, `UsageService` estimates GPT-Image-2 output tokens from the
@@ -652,28 +666,36 @@ High-level flow:
    `POST /webrtc/session/:sessionId/token`. Direct token creation receives the
    same server-only teaching context in persona rules, but the bootstrap
    payload does not expose that context to the browser.
-4. Client submits SDP offer to `POST /webrtc/session/:sessionId/offer`.
+4. Client creates an ordered WebRTC data channel named `lesson-events`, then
+   submits SDP offer to `POST /webrtc/session/:sessionId/offer`.
 5. API media bridge appends the compact teaching context to Realtime
    instructions, negotiates with OpenAI Realtime, and returns SDP answer.
 6. ICE candidates can be queued or drained through the documented endpoints.
 7. Provider events update conversation transcript state.
-8. Session close finalizes transcript text and writes transcript file when
+8. Browser `lesson-events` messages stay inside NestJS. `client_ready`
+   returns session/lesson metadata, `heartbeat` touches the in-memory session
+   and returns `heartbeat_ack`, and authenticated `student_text` calls
+   `TutorService.answerMessage` with the signed-in user metadata captured at
+   session bootstrap. The returned `tutor_answer` has the normal tutor answer,
+   persisted turn id, lesson lifecycle, usage snapshot, and terminal flag.
+9. Session close finalizes transcript text and writes transcript file when
    available.
-9. For signed-in sessions with transcript content, close creates or reuses a
+10. For signed-in sessions with transcript content, close creates or reuses a
    lesson session if needed, increments the lesson turn count and realtime
    duration, and saves one compact voice-origin `tutor_turns` row with
    `request_id=webrtc:<sessionId>`. The close response includes `syncedTurn`,
    `conversationId`, `lessonSessionId`, and `lessonType`; the web client
    prepends the saved turn and keeps the conversation resumable unless the
    lesson lifecycle is terminal.
-10. For signed-in sessions with transcript content, close enqueues
+11. For signed-in sessions with transcript content, close enqueues
    `realtime_session_review` as delayed background work. The review stores
    sanitized teaching observations and an optional compact summary only; it
    does not write proof/progress state.
-11. Realtime still does not stream structured lesson-engine actions while the
-   call is open. It does not create lesson decisions, verifier attempts,
-   images, or verified progress.
-12. For signed-in sessions, close records one `ai_usage_ledger` row with
+12. Raw Realtime audio transcript capture does not create lesson decisions,
+    verifier attempts, images, or verified progress by itself. Typed
+    `student_text` data-channel messages are the exception because they enter
+    the normal tutor engine.
+13. For signed-in sessions, close records one `ai_usage_ledger` row with
     operation `webrtc.realtime_session`, model, input/output token counts when
     Realtime provider events supplied usage, session duration, and safe session
     metadata. If provider token usage was not captured, the row uses

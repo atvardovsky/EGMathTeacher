@@ -176,7 +176,7 @@ sequenceDiagram
   opt Image block present
     Student->>Web: Request diagram from image block
     Web->>API: POST /tutor/image
-    API->>Tutor: generateImage(prompt, context, lessonSessionId)
+    API->>Tutor: generateImage(optional prompt, turn/block context, lessonSessionId)
     Tutor->>AIModel: Generate tutorImage operation PNG
     AIModel->>Policy: Resolve tutorImage policy
     Policy-->>AIModel: Image role and model

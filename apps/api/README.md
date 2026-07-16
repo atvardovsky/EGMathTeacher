@@ -5,7 +5,7 @@ This repository houses a NestJS orchestration service that now handles both sign
 ## Architecture Overview
 
 - **NestJS service (`src/`)** – Exposes REST endpoints for session bootstrap, conversation tracking, persona/voice configuration, and ephemeral token issuance. Stores conversation transcripts to disk when a session closes.
-- **Realtime bridge (Node, `OpenAiRealtimeBridgeService`)** – Accepts SDP offers from browsers, spins up peer connections via `wrtc`, and dials OpenAI Realtime over WebRTC (bidirectional Opus audio + data channel). Provider events stream directly into Nest for transcript enrichment.
+- **Realtime bridge (Node, `OpenAiRealtimeBridgeService`)** – Accepts SDP offers from browsers, spins up peer connections via `wrtc`, and dials OpenAI Realtime over WebRTC (bidirectional Opus audio + provider data channel). A separate browser-to-server `lesson-events` data channel can carry typed lesson messages into the governed tutor engine while the live audio session remains open. Provider events stream directly into Nest for transcript enrichment.
 - **Clients** – Obtain bootstrap metadata from `/webrtc/session`, post their SDP offer back to the NestJS proxy, and then speak/listen over the direct browser ↔ Node bridge connection.
 
 ## Getting Started
@@ -171,14 +171,17 @@ POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 1. Client hits `POST /webrtc/session` to reserve a session; response includes conversation id, ICE servers, persona + voice options. The tutor UI sends optional lesson session id/type when a signed-in lesson is active. For signed-in sessions, the API builds compact server-only teaching context from the current lesson, profile summary, recent summaries, learning signals, and skill trends.
 2. Client records mic audio, creates SDP offer, and posts it to `POST /webrtc/session/{id}/offer`.
 3. NestJS forwards the offer to the in-process realtime bridge, which appends the compact teaching context to provider instructions, negotiates with OpenAI Realtime, and returns an SDP answer.
-4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service.
+4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service. The browser also opens a `lesson-events` data channel to the NestJS bridge. Authenticated `student_text` events on that channel call the existing `TutorService.answerMessage` path and receive the normal structured tutor answer over the same WebRTC connection.
 5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, creates or reuses an authenticated lesson session when needed, saves one compact voice-origin `tutor_turns` row for continuity, records a session-level usage ledger row for authenticated sessions, and queues a cheap `realtime_session_review` background job when teaching-useful transcript data exists.
 
-Realtime is a durable voice-continuity path in the current POC, not the full
-verified lesson engine. It is accounted for in usage summaries, can create a
-saved voice-origin tutor turn, and can create sanitized background teaching
-observations, but it does not create verifier attempts, mastery progress,
-structured task/example/image blocks, or generated images.
+Realtime audio is a durable voice-continuity path in the current POC. Typed
+lesson messages sent through the `lesson-events` data channel are full tutor
+engine turns and can create the same structured task/example/image-plan blocks,
+verifier attempts, usage rows, terminal lesson transitions, and background
+jobs as `POST /tutor/message`. Raw audio transcript capture and post-close
+Realtime review remain continuity/observation features only; they do not create
+verifier attempts, mastery progress, structured blocks, or generated images by
+themselves.
 
 ## Translation Module
 
@@ -244,9 +247,10 @@ Tutor/product API surfaces also include:
 - `POST /tutor/message` for lesson-aware tutor answers with Lesson Decision
   Agent policy, request idempotency, lifecycle, verifier evidence, and usage
   snapshots.
-- `POST /tutor/image` for explanatory image generation with optional lesson
-  usage attribution and tutor-turn/block identity so generated POC data URLs
-  can be persisted back into the same answer block.
+- `POST /tutor/image` for explanatory image generation from an optional prompt
+  or stored answer/task context, with optional lesson usage attribution and
+  tutor-turn/block identity so generated POC data URLs can be persisted back
+  into the same answer block.
 - `GET /usage/me/summary` for the signed-in user's own usage estimates,
   per-operation, decision, verifier, verified-outcome details, and recent safe
   background job status/result/error previews.

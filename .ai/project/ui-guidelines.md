@@ -54,12 +54,12 @@ The web UI follows this tree:
    prominent green first-lesson button and scannable lesson cards. Do not leave
    the student in a blank waiting state after setup.
 7. Show a saved-lesson continuity panel in the tutor workspace. It should
-   display active lessons separately from historical records, show resume
-   actions only for non-terminal lessons, show open-record actions for
-   read-only history, and show an explicit empty-history message when no
-   lessons are saved yet. If active stored turns exist, the latest active
-   saved discussion should be visible without making the student discover a
-   hidden history control.
+   display active lessons separately from historical records, show explicit
+   `Продолжить`/`Continue` actions only for non-terminal lessons, show
+   open-record actions for read-only history, and show an explicit
+   empty-history message when no lessons are saved yet. If active stored turns
+   exist, the latest active saved discussion should be visible without making
+   the student discover a hidden history control.
 8. Tutor lesson modes expose the main POC choices in the UI: meeting, tutor,
    practice, diagnostic, and mistake review.
 9. Tutor workspace shows a compact lesson usage bar for all signed-in users.
@@ -158,8 +158,9 @@ landing page.
   lesson records must not restart the mic.
 - Voice input must not fail silently. If browser recognition stops because of
   silence, permission, device, network, language, or automatic-start limits,
-  show a short status reason near the mic control and keep the manual mic
-  action visible.
+  show a short status reason near the mic control, retry silence/no-speech
+  stops with a small bounded budget, preserve recognized text in the composer
+  when sending fails, and keep the manual mic action visible.
 - Browser speech synthesis reads only visible tutor answer blocks locally; do
   not add hidden prompt text, raw debug data, citations, secrets, or
   non-visible profile facts to spoken output.
@@ -171,10 +172,12 @@ landing page.
 - Tutor turn headers show the source and lesson type so the learner can see
   whether the system is answering, practicing, checking level, or reviewing a
   mistake.
-- Image generation remains explicit user action, but the create-image action
-  must be visually prominent when a turn includes an image block. Generated
-  images need alt text and a short caption connected to the current
-  explanation.
+- Image generation remains explicit user action for optional/saved blocks, but
+  fresh required image blocks may auto-generate once after the text answer is
+  visible. The UI must not require the learner to write an image prompt; image
+  generation can use the visible answer/task context and the image block's
+  caption/alt text. Generated images need alt text and a short caption
+  connected to the current explanation.
 - Recent session summaries and skill progress/regression are read-only
   learning memory. They should be compact and should not look like grades.
 - The usage bar is learner-facing transparency. Show only the signed-in user's

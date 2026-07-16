@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260716-voice-resume-ux-repair",
+  "operation": {
+    "id": "voice-resume-ux-repair-20260716",
+    "type": "web-ui-behavior-repair"
+  },
+  "plan": {
+    "version": "2026-07-16-voice-resume-ux-repair-v1",
+    "sha256": "not available; repair was requested directly in active chat",
+    "file": "not available; active-chat request approved by direct implementation request"
+  },
+  "diff": {
+    "base": "0097ada",
+    "patch_sha256": "not available before final validation",
+    "repository_revision_at_approval": "0097ada"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Add bounded browser speech-recognition retry for silence/no-speech stops in first-meeting and tutor flows.",
+      "Preserve recognized or typed prompt text in the composer when REST or WebRTC lesson-event delivery fails.",
+      "Show explicit Продолжить/Continue labels for unfinished lesson resume actions.",
+      "Update mocked browser E2E and source-of-truth docs for the repaired UI behavior."
+    ],
+    "allowed_files_or_surfaces": [
+      "README.md",
+      "apps/web/src/App.tsx",
+      "apps/web/src/i18n.ts",
+      "apps/web/e2e/app.spec.ts",
+      ".ai/project/blueprint.md",
+      ".ai/project/use-cases.md",
+      ".ai/project/runtime-flows.md",
+      ".ai/project/ui-guidelines.md",
+      ".ai/project/ui-tree.md",
+      ".ai/project/validation.md",
+      ".ai/project/diagrams/ui-tree.mmd",
+      ".ai/project/diagrams/rendered/ui-tree.svg",
+      ".ai/project/diagrams/rendered/source-hashes.sha256",
+      ".ai/assistant/approvals/ALATYR-20260716-voice-resume-ux-repair.md",
+      ".ai/assistant/approvals/ALATYR-20260716-voice-resume-ux-repair.json"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials",
+      "database migration files",
+      "package dependency manifests",
+      "API runtime files outside previously approved WebRTC scope"
+    ],
+    "excluded_actions": [
+      "No live OpenAI or external provider validation.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No backend lesson lifecycle or database schema changes.",
+      "No destructive database cleanup."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "New provider, new dependency, backend lesson lifecycle changes, live external validation, production deployment, data deletion, or authentication/security weakening requires fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-16T11:39:21Z",
+    "source_or_message": "User requested: Make sure the student will not be forced to repeat many times, that mic will work normally, and that a Продолжить button is present for unfinished sessions/lessons.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "voice-resume-ux-repair-20260716",
+    "patch_changed_after_approval": "yes; stale blueprint and UI diagram references were found during consistency scan and added to the repair scope",
+    "implementation_within_scope": "yes; changed UI, E2E, docs, diagram, rendered diagram, and approval files are within this record or the separate WebRTC data-channel approval record",
+    "validation": "npm run diagrams:render; npm run e2e; npm run build; npm run lint; npm test; npm run diagrams:check; npm run alatyr:check; git diff --check; changed-file secret/local-path scan; npm run smoke:dev",
+    "result_evidence": "rendered 10 diagrams; browser E2E passed 10 tests; build passed with existing Vite chunk-size warning; API lint passed; Jest passed 18 suites / 132 tests with existing worker-teardown warning; diagram drift check passed for 10 diagrams; Alatyr consistency check passed; whitespace check passed; tightened changed-file secret/local-path scan returned no matches; dev smoke passed for https://localhost:5137",
+    "residual_risk": "Browser speech recognition remains browser-dependent; no real microphone-device lab, accessibility suite, or visual regression suite exists. The local usage/statistics and Realtime billing limitations are unchanged."
+  }
+}

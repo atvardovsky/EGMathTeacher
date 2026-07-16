@@ -50,7 +50,7 @@ App
       │  ├─ Quick prompt pills
       │  ├─ Lesson continuity panel
       │  │  ├─ Explicit empty saved-lessons state
-      │  │  ├─ Resume latest active lesson action
+      │  │  ├─ "Continue" action for latest active lesson
       │  │  ├─ New lesson action
       │  │  └─ Recent saved lesson rows with goal, status, summary, last question
       │  │     ├─ Continue action for active rows
@@ -89,7 +89,7 @@ App
       │     │  ├─ Text block
       │     │  ├─ Task block
       │     │  ├─ Example block
-      │     │  └─ Image block prompt/action/auto-required-generation/display
+      │     │  └─ Image block context/action/auto-required-generation/display
       │     ├─ Citation badges
       │     └─ Optional generated image inside the related block
       ├─ SettingsView
@@ -132,8 +132,9 @@ App
   `GET /tutor/lessons?scope=active` and archived records from
   `GET /tutor/lessons?scope=history`. It shows a saved-lessons panel even
   when no history exists. When active stored turns exist, the latest active
-  saved discussion is opened into the tutor turn list, and continuing that
-  lesson reuses the saved `conversationId`.
+  saved discussion is opened into the tutor turn list, and the visible
+  `Продолжить`/`Continue` actions for unfinished lessons reuse the saved
+  `conversationId`.
 - Finished and legacy records open as read-only history. In that state the
   composer, voice action, and image-generation actions are disabled, and the
   visible next step is to start a new lesson. The backend also rejects terminal
@@ -160,7 +161,8 @@ App
   the active conversation boundary and open read-only history state. If browser
   recognition stops from silence, permission, device, language, network, or
   automatic-start limits, a voice-status message explains the reason near the
-  mic control.
+  mic control, silence/no-speech stops get a bounded retry, and failed sends
+  restore the recognized transcript to the composer.
 - The tutor composer exposes a separate WebRTC/OpenAI Realtime live voice
   path for faster audio. It starts only from a user click, shows idle,
   connecting, live, closing, and error states, is disabled for read-only

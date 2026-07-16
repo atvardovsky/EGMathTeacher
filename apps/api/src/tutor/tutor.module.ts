@@ -12,5 +12,6 @@ import { TutorService } from './tutor.service';
   imports: [AuthModule, KnowledgeModule, StudentProfileModule, BackgroundAiModule, LessonModule, UsageModule],
   controllers: [TutorController],
   providers: [TutorService],
+  exports: [TutorService],
 })
 export class TutorModule {}

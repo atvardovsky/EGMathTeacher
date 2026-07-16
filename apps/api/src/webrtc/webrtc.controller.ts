@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Request } from 'express';
+import type { AuthSession } from '../auth/auth.types';
 import { AuthService } from '../auth/auth.service';
 import { BackgroundAiService } from '../background-ai/background-ai.service';
 import {
@@ -133,7 +134,7 @@ export class WebRtcController {
       ? this.appAuthService.getSessionFromRequest(request)
       : undefined;
     const metadata = this.resolveSessionMetadata(
-      authSession?.id,
+      authSession,
       conversationId,
       body,
     );
@@ -459,21 +460,31 @@ export class WebRtcController {
   }
 
   private resolveSessionMetadata(
-    userId: string | undefined,
+    authSession: AuthSession | undefined,
     conversationId: string,
     body: StartSessionRequest,
   ): {
     userId?: string;
+    userName?: string;
+    userRole?: AuthSession['role'];
+    userCreatedAt?: string;
     lessonSessionId?: string;
     lessonType?: LessonType;
     teachingContext?: RealtimeTeachingContext;
   } {
     const requestedLessonType = this.normalizeLessonType(body.lessonType);
-    if (!userId) {
+    if (!authSession?.id) {
       return {
         lessonType: requestedLessonType,
       };
     }
+    const userId = authSession.id;
+    const baseMetadata = {
+      userId,
+      userName: authSession.name,
+      userRole: authSession.role,
+      userCreatedAt: authSession.createdAt,
+    };
 
     const requestedLessonSessionId = body.lessonSessionId?.trim();
     if (requestedLessonSessionId) {
@@ -494,7 +505,7 @@ export class WebRtcController {
         (!lesson.conversation_id || lesson.conversation_id === conversationId)
       ) {
         return {
-          userId,
+          ...baseMetadata,
           lessonSessionId: lesson.id,
           lessonType: lesson.lesson_type ?? requestedLessonType,
         };
@@ -517,7 +528,7 @@ export class WebRtcController {
     );
 
     return {
-      userId,
+      ...baseMetadata,
       lessonSessionId: activeLesson?.id,
       lessonType: activeLesson?.lesson_type ?? requestedLessonType,
     };

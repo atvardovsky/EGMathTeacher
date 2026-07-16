@@ -46,7 +46,7 @@ flowchart TB
   LessonHistory --> ActiveHistoryApi[GET /tutor/lessons scope active]
   LessonHistory --> ArchivedHistoryApi[GET /tutor/lessons scope history]
   LessonHistory --> EmptyHistory[Explicit empty saved-lessons state]
-  LessonHistory --> ResumeLatest[Continue latest active lesson]
+  LessonHistory --> ResumeLatest[Continue unfinished lesson]
   LessonHistory --> FinishLesson[Finish active lesson]
   FinishLesson --> FinishApi[POST /tutor/lessons/:id/finish]
   LessonHistory --> HistoryRows[Recent lesson rows: goal, summary, last question]

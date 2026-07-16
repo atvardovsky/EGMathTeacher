@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import type { UserRole } from '../auth/auth.types';
 import { ConversationService } from '../conversation/conversation.service';
 import { RealtimeTeachingContext } from '../teaching-context/teaching-context.types';
 import { TranslationConfig } from './webrtc-signaling.service';
@@ -9,6 +10,9 @@ export interface WebRtcSession {
   id: string;
   conversationId: string;
   userId?: string;
+  userName?: string;
+  userRole?: UserRole;
+  userCreatedAt?: string;
   lessonSessionId?: string;
   lessonType?: string;
   teachingContext?: RealtimeTeachingContext;
@@ -28,6 +32,9 @@ export interface WebRtcSession {
 
 export interface WebRtcSessionMetadata {
   userId?: string;
+  userName?: string;
+  userRole?: UserRole;
+  userCreatedAt?: string;
   lessonSessionId?: string;
   lessonType?: string;
   teachingContext?: RealtimeTeachingContext;
@@ -65,6 +72,9 @@ export class WebRtcSessionService implements OnModuleDestroy {
       id: randomUUID(),
       conversationId,
       userId: metadata.userId,
+      userName: metadata.userName,
+      userRole: metadata.userRole,
+      userCreatedAt: metadata.userCreatedAt,
       lessonSessionId: metadata.lessonSessionId,
       lessonType: metadata.lessonType,
       teachingContext: metadata.teachingContext,
@@ -121,6 +131,15 @@ export class WebRtcSessionService implements OnModuleDestroy {
 
   getSession(sessionId: string): WebRtcSession | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  touchSession(sessionId: string): WebRtcSession | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+    session.updatedAt = Date.now();
+    return session;
   }
 
   listSessions(): WebRtcSession[] {

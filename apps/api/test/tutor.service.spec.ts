@@ -418,10 +418,52 @@ describe('TutorService', () => {
     );
   });
 
+  it('adds a context-generated image block for task answers without requiring a prompt', async () => {
+    const { service } = createService({
+      response: {
+        output_text: JSON.stringify({
+          answer: 'Давай закрепим короткой задачей.',
+          blocks: [{ type: 'text', text: 'Давай закрепим короткой задачей.' }],
+          tasks: [
+            {
+              title: 'Линейное уравнение',
+              prompt: 'Реши 2x + 3 = 15',
+              difficulty: 'foundation',
+            },
+          ],
+          examples: [],
+          needsImage: false,
+        }),
+      },
+    });
+
+    const result = await service.answerMessage({
+      user,
+      message: 'Дай задачу по линейным уравнениям',
+      conversationId: 'conv-task-visual',
+      source: 'text',
+      lessonType: 'practice',
+    });
+
+    const imageBlock = result.blocks.find((block) => block.type === 'image');
+    expect(result.needsImage).toBe(true);
+    expect(result.imagePrompt).toBeUndefined();
+    expect(imageBlock).toEqual(
+      expect.objectContaining({
+        id: 'image-1',
+        type: 'image',
+        priority: 'required',
+        caption: 'Схема к задаче: Линейное уравнение',
+      }),
+    );
+    expect(imageBlock && 'prompt' in imageBlock ? imageBlock.prompt : undefined).toBeUndefined();
+  });
+
   it('persists generated image URLs into the stored tutor turn block', async () => {
     const { service, db } = createService();
-    db.get.mockReturnValueOnce({
+    db.get.mockReturnValue({
       id: 'turn-1',
+      prompt: 'Покажи схему пересечения графика с Ox',
       answer_json: JSON.stringify({
         conversationId: 'conv-image',
         lessonType: 'visual_explanation',
@@ -466,6 +508,67 @@ describe('TutorService', () => {
         status: 'ready',
         url: 'data:image/png;base64,abc123',
       }),
+    );
+  });
+
+  it('generates an image from stored answer and task context when prompt is omitted', async () => {
+    const { service, aiModel, db } = createService();
+    db.get.mockReturnValue({
+      id: 'turn-1',
+      prompt: 'Дай задачу по линейным уравнениям',
+      answer_json: JSON.stringify({
+        conversationId: 'conv-image-context',
+        lessonType: 'practice',
+        answer: 'Реши уравнение и проверь подстановкой.',
+        blocks: [
+          {
+            id: 'task-1',
+            type: 'task',
+            title: 'Линейное уравнение',
+            prompt: 'Реши 2x + 3 = 15',
+            difficulty: 'foundation',
+          },
+          {
+            id: 'image-1',
+            type: 'image',
+            status: 'suggested',
+            caption: 'Схема к задаче: Линейное уравнение',
+            altText: 'Визуальная схема для условия: Реши 2x + 3 = 15',
+            priority: 'required',
+          },
+        ],
+        tasks: [
+          {
+            title: 'Линейное уравнение',
+            prompt: 'Реши 2x + 3 = 15',
+            difficulty: 'foundation',
+          },
+        ],
+        examples: [],
+        needsImage: true,
+        citations: [],
+      }),
+    });
+
+    const result = await service.generateImage({
+      user,
+      context: 'Нужно показать перенос 3 и деление на 2.',
+      conversationId: 'conv-image-context',
+      lessonSessionId: 'lesson-1',
+      lessonType: 'practice',
+      turnId: 'turn-1',
+      blockId: 'image-1',
+    });
+
+    expect(result.dataUrl).toBe('data:image/png;base64,abc123');
+    expect(aiModel.generateOperationImage).toHaveBeenCalledWith(
+      'tutorImage',
+      expect.objectContaining({
+        prompt: expect.stringContaining('Реши 2x + 3 = 15'),
+      }),
+    );
+    expect(String((aiModel.generateOperationImage as jest.Mock).mock.calls[0][1].prompt)).toContain(
+      'Сгенерируй визуальную опору по контексту урока',
     );
   });
 

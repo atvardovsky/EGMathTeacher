@@ -93,21 +93,24 @@ visible next actions.
   Russian stress and emotional prosody are limited by the installed browser
   voices. Browser speech-recognition timeouts, no-speech stops, permission
   blocks, device errors, and network errors are surfaced near the mic control;
-  voice-dialog auto-listen retries once after silence before falling back to
-  manual mic start. When speech recognition ends, the web client sends the
-  best final or interim transcript directly as a voice-origin tutor request.
+  silence/no-speech stops retry with a small bounded budget before falling
+  back to manual mic start. When speech recognition ends, the web client sends
+  the best final or interim transcript directly as a voice-origin tutor
+  request and restores it to the composer if delivery fails.
 - Tutor workspace has an explicit WebRTC/OpenAI Realtime live voice path for
   low-latency audio. It starts only after a user click, uses the inherited
   `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
   and receives compact server-only teaching context from the current lesson
-  and recent analytic memory. On authenticated close, useful transcripts are
-  saved back into the lesson as one compact voice-origin `tutor_turns` row so
-  the next `/tutor/message` call can continue from the voice discussion.
-  Realtime still does not run the full lesson engine while audio is open:
-  structured tasks, images, verifier attempts, and mastery progress remain
-  owned by the normal tutor message flow. Authenticated realtime sessions
-  record a session-level usage ledger row on close when provider usage events
-  or duration are available and can enqueue a cheap
+  and recent analytic memory. While open, the browser creates a server-owned
+  `lesson-events` data channel for typed lesson messages; authenticated
+  `student_text` events use the normal tutor message engine, so structured
+  blocks, verifier attempts, mastery policy, usage, and terminal lesson guards
+  stay governed by backend policy. Raw spoken audio remains the low-latency
+  Realtime voice path. On authenticated close, useful transcripts are saved
+  back into the lesson as one compact voice-origin `tutor_turns` row so the
+  next tutor turn can continue from the voice discussion. Authenticated
+  realtime sessions record a session-level usage ledger row on close when
+  provider usage events or duration are available and can enqueue a cheap
   `realtime_session_review` background job that stores sanitized teaching
   observations and optional summaries for future context.
 - Tutor messages can be associated with a lesson type. The API supports
@@ -157,7 +160,9 @@ visible next actions.
   instead of falling back to linear equations.
 - Structured tutor answers with ordered response blocks for text, task cards,
   example cards, citations when RAG returns file references, and optional
-  image blocks carrying prompt, caption, alt text, status, and priority.
+  image blocks carrying optional prompt, caption, alt text, status, and
+  priority. When an image block has no prompt, the API derives the image
+  instruction from the stored tutor answer, task, example, and block context.
 - Explicit student visual requests are guaranteed to surface a required image
   block. For a freshly returned tutor answer, the web client starts the diagram
   generation once automatically for that required block; saved historical turns
@@ -261,8 +266,10 @@ visible next actions.
 - OpenAI image generation for explanatory math diagrams.
 - Image generation remains asynchronous and never blocks the text response.
   Required images requested in the current turn can be generated automatically
-  after the tutor answer appears; generated data URLs are persisted back into
-  the stored tutor-turn image block for continuity in the POC.
+  after the tutor answer appears. Image prompts are optional because the API can
+  build the generation instruction from the current task/answer context;
+  generated data URLs are persisted back into the stored tutor-turn image block
+  for continuity in the POC.
 - Imported WebRTC/Realtime voice assistant under `/webrtc`.
 
 ## Architecture

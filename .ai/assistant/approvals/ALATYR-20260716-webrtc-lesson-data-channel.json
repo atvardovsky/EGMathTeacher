@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260716-webrtc-lesson-data-channel",
+  "operation": {
+    "id": "webrtc-lesson-data-channel-20260716",
+    "type": "product-runtime-architecture-change"
+  },
+  "plan": {
+    "version": "2026-07-16-webrtc-lesson-data-channel-v1",
+    "sha256": "not available; plan was discussed in active chat",
+    "file": "not available; active-chat plan approved by direct implement request"
+  },
+  "diff": {
+    "base": "0097ada",
+    "patch_sha256": "not available before final validation",
+    "repository_revision_at_approval": "0097ada"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Add a browser-to-server WebRTC data channel for typed lesson events during an active live voice session.",
+      "Route authenticated student_text events from that channel into the existing TutorService.answerMessage path.",
+      "Keep raw realtime audio/provider transcript handling outside verifier/mastery evidence unless it enters through the governed tutor engine.",
+      "Store only non-secret authenticated user metadata in in-memory WebRTC session state for server-local tutor calls.",
+      "Update React tutor workspace live-session transport so typed messages use WebRTC data channel when open and REST fallback otherwise.",
+      "Synchronize public docs, Alatyr project docs, diagrams, UI copy, and tests."
+    ],
+    "allowed_files_or_surfaces": [
+      "README.md",
+      "apps/api/Agent.md",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "apps/api/src/tutor/tutor.module.ts",
+      "apps/api/src/webrtc",
+      "apps/api/test/webrtc.controller.spec.ts",
+      "apps/api/test/webrtc-media.service.spec.ts",
+      "apps/web/e2e/app.spec.ts",
+      "apps/web/src/App.tsx",
+      "apps/web/src/i18n.ts",
+      "apps/web/src/types.ts",
+      ".ai/project/architecture.md",
+      ".ai/project/blueprint.md",
+      ".ai/project/context-map.md",
+      ".ai/project/data-model.md",
+      ".ai/project/runtime-flows.md",
+      ".ai/project/source-of-truth-registry.md",
+      ".ai/project/use-cases.md",
+      ".ai/project/validation.md",
+      ".ai/project/diagrams/README.md",
+      ".ai/project/diagrams/system-context.mmd",
+      ".ai/project/diagrams/webrtc-realtime-sequence.mmd",
+      ".ai/project/diagrams/rendered",
+      ".ai/assistant/approvals/ALATYR-20260716-webrtc-lesson-data-channel.md",
+      ".ai/assistant/approvals/ALATYR-20260716-webrtc-lesson-data-channel.json"
+    ],
+    "excluded_files_or_surfaces": [
+      "system web server configuration",
+      "production secrets and local machine credentials",
+      "database migration files",
+      "package dependency manifests"
+    ],
+    "excluded_actions": [
+      "No live OpenAI or external provider validation unless separately requested.",
+      "No production deployment, PM2, certificate, Apache, reverse proxy, or system web server changes.",
+      "No new npm dependency or provider integration.",
+      "No auth guard weakening for /webrtc endpoints.",
+      "No raw realtime audio transcript promotion to verifier evidence, mastery evidence, or durable progress.",
+      "No destructive database cleanup or migration requiring data deletion."
+    ],
+    "allowed_actions_mode": "full-with-approval",
+    "invalidation_rule": "New provider, new dependency, auth guard weakening, live spend validation, production deployment, destructive data operation, or making raw realtime audio transcript write verifier/mastery/progress state requires fresh approval."
+  },
+  "approval": {
+    "requested_by": "programmer",
+    "approved_by": "programmer",
+    "approved_at": "2026-07-16T11:17:25Z",
+    "source_or_message": "User asked for a plan for using WebRTC as one controlled channel for text/voice, then replied 'implement'.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "webrtc-lesson-data-channel-20260716",
+    "patch_changed_after_approval": "yes; E2E WebRTC mock gained createDataChannel after browser validation found the new required API surface",
+    "implementation_within_scope": "yes; changed files are within approved WebRTC, tutor module export, web UI, e2e, docs, diagram, and approval surfaces",
+    "validation": "npx tsc -p apps/api/tsconfig.json --noEmit; npx tsc -p apps/web/tsconfig.json --noEmit; npm run test -- --runTestsByPath apps/api/test/webrtc-media.service.spec.ts apps/api/test/webrtc.controller.spec.ts; npm run lint; npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run build; npm test; npm run e2e after fixing the E2E WebRTC mock; git diff --check; changed-file local path and secret scan; npm run smoke:dev",
+    "result_evidence": "API and web TypeScript no-emit checks passed; targeted WebRTC tests passed 2 suites / 13 tests; API lint passed; rendered 10 diagrams; diagram drift check passed; Alatyr consistency check passed; build passed with existing Vite chunk-size warning; full Jest passed 18 suites / 132 tests with existing worker-teardown warning; initial parallel E2E run exposed missing createDataChannel in the test mock, after mock repair isolated E2E passed 9 tests; whitespace check passed; changed-file local path and strict secret scans returned no matches; dev smoke passed for https://localhost:5137",
+    "residual_risk": "No live OpenAI Realtime call was run; WebRTC data-channel E2E is mocked, not a real browser-to-Nest-to-OpenAI negotiation; raw realtime audio remains continuity/observation-only and provider billing for realtime audio remains local best-effort observability"
+  }
+}

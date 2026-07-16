@@ -206,7 +206,7 @@ export interface TutorImageBlock {
   id: string;
   type: 'image';
   status: TutorImageStatus;
-  prompt: string;
+  prompt?: string;
   caption: string;
   altText: string;
   priority: TutorImagePriority;

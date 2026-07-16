@@ -7,6 +7,7 @@ import { ConversationModule } from '../conversation/conversation.module';
 import { LessonModule } from '../lesson/lesson.module';
 import { AiProviderModule } from '../providers/ai-provider.module';
 import { TeachingContextModule } from '../teaching-context/teaching-context.module';
+import { TutorModule } from '../tutor/tutor.module';
 import { UsageModule } from '../usage/usage.module';
 import { WebRtcController } from './webrtc.controller';
 import { WebRtcAuthService } from './webrtc-auth.service';
@@ -24,6 +25,7 @@ import { OpenAiRealtimeBridgeService } from './openai-realtime-bridge.service';
     AiProviderModule,
     UsageModule,
     LessonModule,
+    TutorModule,
     TeachingContextModule,
     BackgroundAiModule,
   ],

@@ -250,11 +250,17 @@ describe('WebRtcController', () => {
         { headers: { cookie: 'egmathteacher_session=test' } } as any,
       );
 
-      expect(sessionService.createSession).toHaveBeenCalledWith('conv-abc', {
-        userId: 'student-1',
-        lessonSessionId: 'lesson-1',
-        lessonType: 'practice',
-      });
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        'conv-abc',
+        expect.objectContaining({
+          userId: 'student-1',
+          userName: 'Маша',
+          userRole: 'student',
+          userCreatedAt: '2026-07-15T10:00:00.000Z',
+          lessonSessionId: 'lesson-1',
+          lessonType: 'practice',
+        }),
+      );
     });
 
     it('attaches server-only teaching context to signed-in realtime sessions', () => {

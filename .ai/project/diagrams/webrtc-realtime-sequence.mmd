@@ -8,6 +8,7 @@ sequenceDiagram
   participant Bridge as OpenAiRealtimeBridgeService
   participant Provider as OpenAI Realtime API
   participant Conv as ConversationService
+  participant Tutor as TutorService
   participant Lesson as LessonService
   participant Usage as UsageService
   participant Context as TeachingContextService
@@ -28,6 +29,7 @@ sequenceDiagram
   Auth->>Provider: Create realtime session
   Provider-->>Auth: client secret
   API-->>Client: ephemeral token
+  Client->>Client: Create lesson-events data channel
   Client->>API: POST /webrtc/session/:id/offer
   API->>Media: handleClientOffer
   Media->>Bridge: ensure peers with teaching-context instructions
@@ -39,6 +41,13 @@ sequenceDiagram
   Bridge-->>Provider: Realtime audio and data channel events
   Provider-->>Bridge: Synthetic audio and events
   Bridge->>Conv: Record voice turns and token usage
+  Client-->>Bridge: lesson-events student_text
+  Bridge->>Media: onClientDataMessage
+  Media->>Tutor: answerMessage with authenticated metadata
+  Tutor->>Lesson: begin turn, decision policy, verifier if applicable
+  Tutor->>DB: Persist tutor_turns, usage, evidence as normal
+  Media-->>Bridge: tutor_answer event
+  Bridge-->>Client: lesson-events tutor_answer
   Client->>API: POST /webrtc/session/:id/close
   API->>Media: closeSession
   API->>Sessions: closeSession

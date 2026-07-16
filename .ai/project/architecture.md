@@ -31,9 +31,11 @@ EGMathTeacher is a browser-based POC with:
   time-limit heuristics, backend policy decisions, effectiveness signals,
   verified learning outcomes, and user-visible cost estimates
 - OpenAI Realtime for inherited realtime voice, with compact current-lesson
-  and analytic teaching context injected into signed-in sessions and one
-  compact voice-origin tutor turn saved on authenticated close when useful
-  transcript content exists
+  and analytic teaching context injected into signed-in sessions, one compact
+  voice-origin tutor turn saved on authenticated close when useful transcript
+  content exists, and a server-owned browser `lesson-events` data channel that
+  can route typed lesson messages through the governed tutor engine while the
+  live audio session remains open
 - optional production reverse proxy references under `deploy/`
 
 No packaged desktop runtime was found.
@@ -72,7 +74,7 @@ flowchart LR
   ModelProvider --> OpenAIResponses[OpenAI Responses API]
   ModelProvider --> OpenAIImages[OpenAI Images API]
   ModelProvider --> OpenAIFiles[OpenAI Files and Vector Stores]
-  API <-->|WebRTC/Realtime| OpenAIRealtime[OpenAI Realtime API]
+  API <-->|WebRTC audio/provider data| OpenAIRealtime[OpenAI Realtime API]
   Browser --> Speech[Browser SpeechRecognition API]
 ```
 
@@ -93,7 +95,7 @@ flowchart LR
 | `TutorModule` | `apps/api/src/tutor` | RAG tutor message handling, saved lesson history, and image generation. |
 | `KnowledgeModule` | `apps/api/src/knowledge` | Admin knowledge upload, knowledge-pack structured import, strict/partial pack validation, content-hash Markdown RAG sync, strict authoritative deleted-path reconciliation, sync-job recovery for failed and attached timeout jobs, optional vector-store wait-ready with pending-index state, archive guardrails, vector store status, and local project vector-store id persistence. |
 | `TeachingContextModule` | `apps/api/src/teaching-context` | Read-only compact teaching-context builder for Realtime sessions from current lesson state, stored profile summary, recent summaries, learning signals, and scoped skill trends. |
-| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events, optional signed-in lesson attribution, compact teaching-context injection, Realtime close-session usage accounting, and post-close background review enqueue. |
+| `WebRtcModule` | `apps/api/src/webrtc` | Session bootstrap, signaling, media bridge, provider events, optional signed-in lesson attribution, compact teaching-context injection, browser `lesson-events` data-channel routing into `TutorService.answerMessage`, Realtime close-session usage accounting, and post-close background review enqueue. |
 | `ConversationModule` | `apps/api/src/conversation` | In-memory conversation turns and transcript file persistence. |
 | `HealthModule` | `apps/api/src/health` | Health response and WebRTC audio support status. |
 
@@ -122,12 +124,16 @@ Main UI areas in `apps/web/src/App.tsx`:
   stop reasons in voice-dialog mode. The workspace also has an explicit
   WebRTC/OpenAI Realtime live voice path that negotiates through `/webrtc`
   after a user click, sends active lesson attribution when present, receives
-  server-side current lesson and analytic teaching context, closes on
-  lesson-boundary/read-only state changes, refreshes usage after close, saves
-  a compact voice-origin turn into lesson history when useful transcript
-  content exists, and can trigger a cheap background review for teaching
-  observations; it still does not create verifier attempts, mastery evidence,
-  structured task/example/image blocks, or generated images.
+  server-side current lesson and analytic teaching context, opens a
+  browser-to-server `lesson-events` data channel for typed lesson messages,
+  closes on lesson-boundary/read-only state changes, refreshes usage after
+  close, saves a compact voice-origin turn into lesson history when useful
+  transcript content exists, and can trigger a cheap background review for
+  teaching observations. Typed `student_text` data-channel messages use the
+  governed tutor engine and can create normal structured tutor results; raw
+  Realtime audio transcript capture still does not create verifier attempts,
+  mastery evidence, structured task/example/image blocks, or generated images
+  by itself.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
@@ -198,8 +204,9 @@ window size, idle timeout, or quality trigger, then can run a combined
   session summary; it must not write verifier attempts, mastery evidence,
   `student_skill_progress`, or goal state. The WebRTC close path itself may
   write one compact voice-origin `tutor_turns` row for lesson continuity
-  before the background review runs. Legacy per-turn extraction remains
-  available through configuration.
+  before the background review runs. Typed WebRTC `lesson-events` messages are
+  not background observations; they enter the ordinary tutor message runtime.
+  Legacy per-turn extraction remains available through configuration.
 
 ## Endpoint Map
 
@@ -216,13 +223,13 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `GET /tutor/lessons?scope=active\|history\|all` | authenticated | Return signed-in user's active resumable lesson sessions and read-only historical/legacy lesson records with summaries and stored turns. |
 | `POST /tutor/lessons/:lessonSessionId/finish` | authenticated | Finish the signed-in user's own active lesson session, enqueue closure review only on the first actual transition, and move it to read-only history. |
 | `POST /tutor/message` | authenticated | Send text or voice-origin prompt with optional lesson type/request id and return ordered response blocks, lesson lifecycle, usage/debug data, and compatibility fields. Terminal lesson `conversationId` values are rejected instead of reopened. |
-| `POST /tutor/image` | authenticated | Generate explanatory image from an image block prompt/context and optionally persist the generated POC data URL into the matching tutor-turn image block. |
+| `POST /tutor/image` | authenticated | Generate explanatory image from an optional image block prompt or stored answer/task/example context, and optionally persist the generated POC data URL into the matching tutor-turn image block. |
 | `GET /usage/me/summary` | authenticated | Return the signed-in user's own today/current-lesson usage estimates, recent day-level details, per-operation details, decision outcomes, verifier signals, verified-outcome economics, and recent safe background job previews. |
 | `POST /usage/me/background/recover` | authenticated | Requeue one or a few recoverable failed background jobs scoped to the signed-in user, without exposing raw job payloads or running provider calls synchronously. |
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, compact voice-turn persistence on close, and post-close background review, but does not require auth. The tutor UI can start this path as low-latency live voice; verified tasks, images, mastery, and structured tutor blocks still use `/tutor/message`. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, compact voice-turn persistence on close, and post-close background review, but does not require auth. The tutor UI can start this path as low-latency live voice. Authenticated typed `student_text` events sent through the browser `lesson-events` data channel are routed into the same tutor engine used by `/tutor/message`; raw audio transcript capture remains continuity/observation-only. |
 
 Local operator command:
 

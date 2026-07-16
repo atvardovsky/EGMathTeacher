@@ -458,6 +458,35 @@ test.beforeEach(async ({ page }) => {
       value: MockSpeechRecognition,
       configurable: true,
     });
+    class MockRTCDataChannel extends EventTarget {
+      label: string;
+      readyState: RTCDataChannelState = 'connecting';
+      onopen: ((this: RTCDataChannel, ev: Event) => unknown) | null = null;
+      onclose: ((this: RTCDataChannel, ev: Event) => unknown) | null = null;
+      onerror: ((this: RTCDataChannel, ev: Event) => unknown) | null = null;
+      onmessage: ((this: RTCDataChannel, ev: MessageEvent) => unknown) | null = null;
+      sent: string[] = [];
+
+      constructor(label: string) {
+        super();
+        this.label = label;
+      }
+
+      send(data: string) {
+        this.sent.push(data);
+      }
+
+      close() {
+        this.readyState = 'closed';
+        this.onclose?.call(this as unknown as RTCDataChannel, new Event('close'));
+      }
+
+      open() {
+        this.readyState = 'open';
+        this.onopen?.call(this as unknown as RTCDataChannel, new Event('open'));
+      }
+    }
+
     class MockRTCPeerConnection extends EventTarget {
       localDescription: RTCSessionDescriptionInit | null = null;
       remoteDescription: RTCSessionDescriptionInit | null = null;
@@ -467,9 +496,18 @@ test.beforeEach(async ({ page }) => {
       onicegatheringstatechange: ((this: RTCPeerConnection, ev: Event) => unknown) | null =
         null;
       ontrack: ((this: RTCPeerConnection, ev: RTCTrackEvent) => unknown) | null = null;
+      private readonly dataChannels: MockRTCDataChannel[] = [];
 
       addTrack() {
         return {} as RTCRtpSender;
+      }
+
+      createDataChannel(label: string) {
+        const channel = new MockRTCDataChannel(label);
+        this.dataChannels.push(channel);
+        (window as Window & { __lastDataChannel?: MockRTCDataChannel }).__lastDataChannel =
+          channel;
+        return channel as unknown as RTCDataChannel;
       }
 
       async createOffer() {
@@ -484,10 +522,12 @@ test.beforeEach(async ({ page }) => {
         this.remoteDescription = description;
         this.connectionState = 'connected';
         this.onconnectionstatechange?.call(this as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+        this.dataChannels.forEach((channel) => channel.open());
       }
 
       close() {
         this.connectionState = 'closed';
+        this.dataChannels.forEach((channel) => channel.close());
       }
     }
     Object.defineProperty(window, 'RTCPeerConnection', {
@@ -510,8 +550,8 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-function fulfillJson(route: Route, json: unknown) {
-  return route.fulfill({ status: 200, json });
+function fulfillJson(route: Route, json: unknown, status = 200) {
+  return route.fulfill({ status, json });
 }
 
 async function mockStudentSession(
@@ -521,12 +561,14 @@ async function mockStudentSession(
     lessonHistory?: unknown;
     activeLessonHistory?: unknown;
     historicalLessonHistory?: unknown;
+    failTutorMessage?: boolean;
   },
 ) {
   let profileStatus = options.needsOnboarding
     ? { onboardingRequired: true, profile: null }
     : completedProfileStatus;
   const tutorRequests: Array<Record<string, unknown>> = [];
+  const imageRequests: Array<Record<string, unknown>> = [];
 
   await page.route('**/auth/me', (route) => fulfillJson(route, { user: studentUser }));
   await page.route('**/auth/logout', (route) => fulfillJson(route, {}));
@@ -604,6 +646,9 @@ async function mockStudentSession(
   await page.route('**/tutor/message', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     tutorRequests.push(body);
+    if (options.failTutorMessage) {
+      return fulfillJson(route, { message: 'temporary tutor failure' }, 502);
+    }
     const requestLessonType = typeof body.lessonType === 'string' ? body.lessonType : 'tutor';
     const requestConversationId =
       typeof body.conversationId === 'string' ? body.conversationId : undefined;
@@ -658,7 +703,6 @@ async function mockStudentSession(
           id: 'image-1',
           type: 'image',
           status: 'suggested',
-          prompt: 'Схема касательной к графику функции',
           caption: 'Касательная показывает скорость изменения в точке',
           altText: 'Схема графика функции с касательной в точке',
           priority: 'important',
@@ -682,11 +726,12 @@ async function mockStudentSession(
       citations: [{ fileId: 'file-1', filename: 'ege-derivatives.pdf' }],
     });
   });
-  await page.route('**/tutor/image', (route) =>
-    fulfillJson(route, { dataUrl: transparentPng, mimeType: 'image/png', usage: usageSummary }),
-  );
+  await page.route('**/tutor/image', (route) => {
+    imageRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+    return fulfillJson(route, { dataUrl: transparentPng, mimeType: 'image/png', usage: usageSummary });
+  });
 
-  return { tutorRequests };
+  return { tutorRequests, imageRequests };
 }
 
 test('auth screen is usable and localized', async ({ page }) => {
@@ -704,7 +749,7 @@ test('auth screen is usable and localized', async ({ page }) => {
 });
 
 test('student completes first meeting, asks tutor, and renders a diagram', async ({ page }) => {
-  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: true });
+  const { tutorRequests, imageRequests } = await mockStudentSession(page, { needsOnboarding: true });
 
   await page.goto('/');
 
@@ -835,7 +880,7 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
     )
     .toBe('ru-RU');
   await expect(
-    page.getByText('Слушаю тебя. Если будет длинная пауза, браузер может выключить микрофон.'),
+    page.getByText('Слушаю тебя. Если будет пауза, я попробую продолжить слушать автоматически.'),
   ).toBeVisible();
   const startsBeforeSilenceRetry = await page.evaluate(
     () => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0,
@@ -853,6 +898,19 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
       page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
     )
     .toBeGreaterThanOrEqual(startsBeforeSilenceRetry + 1);
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: { onerror: ((event: Event) => void) | null };
+    };
+    const event = new Event('error') as Event & { error: string };
+    Object.defineProperty(event, 'error', { value: 'no-speech' });
+    state.__lastRecognition?.onerror?.(event);
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBeGreaterThanOrEqual(startsBeforeSilenceRetry + 2);
   await page.evaluate(() => {
     const state = window as Window & {
       __lastRecognition?: { onerror: ((event: Event) => void) | null };
@@ -882,6 +940,12 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
 
   await page.getByRole('button', { name: 'Создать схему' }).click();
   await expect(page.getByAltText('Схема графика функции с касательной в точке')).toBeVisible();
+  expect(imageRequests[0]).toMatchObject({
+    conversationId: 'conv-e2e',
+    blockId: 'image-1',
+  });
+  expect(imageRequests[0]?.prompt).toBeUndefined();
+  expect(String(imageRequests[0]?.context)).toContain('Найдите производную f(x)=x^2');
 });
 
 test('terminal first meeting becomes read-only and keeps profile creation available', async ({ page }) => {
@@ -1000,6 +1064,53 @@ test('tutor submits interim-only voice answer when recognition ends', async ({ p
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
 });
 
+test('tutor keeps recognized voice text when the send fails', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, {
+    needsOnboarding: false,
+    failTutorMessage: true,
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await page.getByLabel('Голосовой диалог').uncheck();
+  await page.getByRole('button', { name: 'Голосовой ввод' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: 'мой ответ x равно 6' },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  await expect(
+    page.getByText('Распознавание похоже на обрывок. Я вставил текст в поле'),
+  ).toBeVisible();
+  await expect(page.getByPlaceholder('Например: объясни задание 12 с производной')).toHaveValue(
+    'мой ответ x равно 6',
+  );
+  await expect(page.getByRole('button', { name: 'Спросить' })).toBeEnabled();
+});
+
 test('student can start and stop realtime WebRTC voice lesson', async ({ page }) => {
   const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
   const webrtcRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
@@ -1111,9 +1222,9 @@ test('student sees saved lessons and continues the previous discussion', async (
   await expect(
     page.getByText('В прошлый раз мы остановились на линейном уравнении').first(),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'К открытому занятию' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Продолжить' }).first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'К открытому занятию' }).first().click();
+  await page.getByRole('button', { name: 'Продолжить' }).first().click();
 
   await expect(page.getByText('Сохраненное занятие открыто.')).toBeVisible();
   await expect(page.getByPlaceholder('Например: объясни задание 12 с производной')).toBeFocused();
@@ -1143,7 +1254,7 @@ test('student opens finished lesson records as read-only history', async ({ page
   await expect(page.getByText('Продолжить практику линейных уравнений.')).toBeVisible();
   await expect(page.getByText('завершено')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Открыть запись' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Продолжить последнее' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Продолжить' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Открыть запись' }).click();
 

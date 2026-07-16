@@ -14,5 +14,5 @@ flowchart LR
   ModelProvider --> OpenAIImages[OpenAI Images API]
   ModelProvider --> OpenAIFiles[OpenAI Files API]
   ModelProvider --> OpenAIVectors[OpenAI Vector Stores]
-  API <-->|WebRTC and REST| OpenAIRealtime[OpenAI Realtime API]
+  API <-->|WebRTC audio/provider data| OpenAIRealtime[OpenAI Realtime API]
   API -. optional .-> STUN[Configured STUN/TURN servers]

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260716-context-derived-image-generation",
+  "operation": {
+    "id": "context-derived-image-generation",
+    "type": "business-api-ui-change"
+  },
+  "plan": {
+    "version": "v1",
+    "sha256": "not available - direct user approval in conversation",
+    "file": "not available - direct user approval in conversation"
+  },
+  "diff": {
+    "base": "0097ada1f3fea52ba1cbc262d4d72d6d9dc87490",
+    "patch_sha256": "not available until final diff",
+    "repository_revision_at_approval": "0097ada1f3fea52ba1cbc262d4d72d6d9dc87490"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Make tutor image block prompt optional.",
+      "Generate explanatory images from stored tutor answer, task, example, and image block context when no prompt is provided.",
+      "Add task-driven visual support blocks where useful for lesson explanation.",
+      "Update web image-generation requests so learners do not need to supply an image prompt.",
+      "Update tests, diagrams, and project documentation for the new image-generation contract."
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/api/src/tutor/tutor.service.ts",
+      "apps/api/src/tutor/tutor.types.ts",
+      "apps/api/test/tutor.service.spec.ts",
+      "apps/web/src/App.tsx",
+      "apps/web/src/types.ts",
+      "apps/web/e2e/app.spec.ts",
+      "README.md",
+      "apps/api/README.md",
+      ".ai/project/architecture.md",
+      ".ai/project/blueprint.md",
+      ".ai/project/data-model.md",
+      ".ai/project/runtime-flows.md",
+      ".ai/project/use-cases.md",
+      ".ai/project/ui-guidelines.md",
+      ".ai/project/ui-tree.md",
+      ".ai/project/diagrams/tutor-rag-sequence.mmd",
+      ".ai/project/diagrams/rendered/tutor-rag-sequence.svg",
+      ".ai/assistant/approvals/ALATYR-20260716-context-derived-image-generation.md",
+      ".ai/assistant/approvals/ALATYR-20260716-context-derived-image-generation.json"
+    ],
+    "excluded_files_or_surfaces": [
+      "none"
+    ],
+    "excluded_actions": [
+      "No new external provider.",
+      "No live image-generation smoke call.",
+      "No auth, pricing, or user-data retention policy changes.",
+      "No WebRTC behavior changes."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Any additional provider, persistence, billing, auth, or unrelated WebRTC behavior change requires a separate approval."
+  },
+  "approval": {
+    "requested_by": "project owner",
+    "approved_by": "project owner",
+    "approved_at": "2026-07-16T14:10:42+02:00",
+    "source_or_message": "User request: image prompt should not be required; image generation should derive context even to describe a task.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "context-derived-image-generation",
+    "patch_changed_after_approval": "yes - implementation and tests followed the approved direct request",
+    "implementation_within_scope": "yes for the image-generation behavior change; working tree also contains earlier uncommitted WebRTC/voice/documentation changes covered by separate approvals",
+    "validation": "npm test -- --runTestsByPath apps/api/test/tutor.service.spec.ts; npm run build; npm run e2e; npm test; npm run lint; npm run diagrams:render && npm run diagrams:check; npm run alatyr:check; npm run smoke:dev",
+    "result_evidence": "focused tutor service test passed; build passed with existing Vite chunk-size warning; E2E 10 passed; API tests 18 suites / 134 tests passed; lint passed; diagram drift check passed for 10 diagrams; Alatyr consistency check passed; dev smoke passed",
+    "residual_risk": "Live OpenAI image generation was not exercised during this local change; promptless generation is covered through mocked provider tests and browser E2E request payload assertions."
+  }
+}

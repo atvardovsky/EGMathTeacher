@@ -276,7 +276,7 @@ export interface TutorImageBlock {
   id: string;
   type: 'image';
   status: TutorImageStatus;
-  prompt: string;
+  prompt?: string;
   caption: string;
   altText: string;
   priority: TutorImagePriority;
@@ -486,3 +486,49 @@ export interface WebRtcCloseResponse {
   transcriptFile?: string;
   syncedTurn?: TutorTurn;
 }
+
+export type WebRtcLessonClientEvent =
+  | {
+      type: 'client_ready';
+    }
+  | {
+      type: 'heartbeat';
+      sentAt?: number;
+    }
+  | {
+      type: 'student_text';
+      requestId?: string;
+      message?: string;
+      lessonType?: LessonType;
+      source?: 'text' | 'voice';
+    };
+
+export type WebRtcLessonServerEvent =
+  | {
+      type: 'session_ready';
+      sessionId: string;
+      conversationId: string;
+      lessonSessionId?: string;
+      lessonType?: LessonType;
+    }
+  | {
+      type: 'heartbeat_ack';
+      sessionId: string;
+      receivedAt: number;
+    }
+  | {
+      type: 'tutor_answer';
+      requestId?: string;
+      turn: TutorTurn;
+      answer: TutorAnswer;
+      conversationId: string;
+      lessonSessionId: string;
+      lessonType: LessonType;
+      terminal: boolean;
+    }
+  | {
+      type: 'error';
+      requestId?: string;
+      code?: string;
+      message: string;
+    };

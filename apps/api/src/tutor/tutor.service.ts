@@ -57,6 +57,11 @@ interface GenerateImageOptions {
   blockId?: string;
 }
 
+interface ImageGenerationContext {
+  prompt?: string;
+  context?: string;
+}
+
 interface LessonHistoryOptions {
   user: AuthSession;
   limit?: string;
@@ -409,7 +414,7 @@ export class TutorService {
     revisedPrompt?: string;
     usage?: TutorUsageSnapshot;
   }> {
-    const prompt = this.normalizeImagePrompt(options.prompt, options.context);
+    const prompt = this.resolveImageGenerationPrompt(options);
     const response = await this.aiModel.generateOperationImage('tutorImage', {
       prompt,
       size: this.configService.get<string>('ai.openai.imageSize') ?? '1024x1024',
@@ -519,12 +524,13 @@ export class TutorService {
       'Если ученик просит задачу, верни 1-3 task blocks и продублируй их в поле tasks.',
       'Если ученик просит пример или объяснение понятия, верни 1-3 example blocks и продублируй их в поле examples.',
       'Если ученик прямо просит рисунок, схему, график, изображение или визуальное объяснение, image block обязателен.',
-      'Если рисунок, график, схема или координатная плоскость сильно помогут, добавь image block со status="suggested", prompt, caption, altText и priority="optional|important|required"; также поставь needsImage=true и imagePrompt.',
+      'Если рисунок, график, схема или координатная плоскость сильно помогут, добавь image block со status="suggested", caption, altText и priority="optional|important|required"; prompt можно заполнить, но он не обязателен: backend сможет построить инструкцию изображения из контекста ответа и задания.',
+      'Если ты даешь task block, добавь image block, когда схема поможет понять условие, шаги или смысл задания; картинка не должна быть единственным объяснением.',
       hasRag
         ? 'Используй file_search для материалов ЕГЭ, если вопрос связан с программой, типами заданий или правилами.'
         : 'Если материалы ЕГЭ еще не загружены, честно опирайся на общие знания и не выдумывай ссылки.',
       'Верни только валидный JSON без Markdown и без пояснений вокруг него.',
-      'Формат JSON: {"answer":"...","lessonLifecycle":{"goalStatus":"in_progress|reached|blocked","goalProgress":"...","finishReason":""},"blocks":[{"type":"text","text":"..."},{"type":"example","title":"...","explanation":"..."},{"type":"task","title":"...","prompt":"...","difficulty":"..."},{"type":"image","status":"suggested","prompt":"...","caption":"...","altText":"...","priority":"optional"}],"tasks":[{"title":"...","prompt":"...","difficulty":"..."}],"examples":[{"title":"...","explanation":"..."}],"needsImage":false,"imagePrompt":""}',
+      'Формат JSON: {"answer":"...","lessonLifecycle":{"goalStatus":"in_progress|reached|blocked","goalProgress":"...","finishReason":""},"blocks":[{"type":"text","text":"..."},{"type":"example","title":"...","explanation":"..."},{"type":"task","title":"...","prompt":"...","difficulty":"..."},{"type":"image","status":"suggested","caption":"...","altText":"...","priority":"optional","prompt":"optional"}],"tasks":[{"title":"...","prompt":"...","difficulty":"..."}],"examples":[{"title":"...","explanation":"..."}],"needsImage":false,"imagePrompt":""}',
     ].join(' ');
   }
 
@@ -1258,9 +1264,6 @@ export class TutorService {
 
         if (type === 'image') {
           const prompt = this.pickString(record, ['prompt', 'imagePrompt', 'image_prompt']);
-          if (!prompt) {
-            return undefined;
-          }
           return this.createImageBlock(
             prompt,
             this.pickString(record, ['caption', 'title']),
@@ -1303,8 +1306,12 @@ export class TutorService {
     }
 
     const hasImageBlock = this.hasBlockType(blocks, 'image');
-    if (!hasImageBlock && (needsImage || imagePrompt) && imagePrompt) {
-      blocks.push(this.createImageBlock(imagePrompt));
+    const blockTasks = tasks.length > 0 ? tasks : this.tasksFromBlocks(blocks);
+    if (!hasImageBlock) {
+      const imageBlock = this.createContextImageBlock(blockTasks, imagePrompt, needsImage);
+      if (imageBlock) {
+        blocks.push(imageBlock);
+      }
     }
 
     return this.assignBlockIds(blocks);
@@ -1323,8 +1330,9 @@ export class TutorService {
     }
     blocks.push(...tasks.map((task) => this.taskToBlock(task)));
     blocks.push(...examples.map((example) => this.exampleToBlock(example)));
-    if ((needsImage || imagePrompt) && imagePrompt) {
-      blocks.push(this.createImageBlock(imagePrompt));
+    const imageBlock = this.createContextImageBlock(tasks, imagePrompt, needsImage);
+    if (imageBlock) {
+      blocks.push(imageBlock);
     }
     return this.assignBlockIds(blocks);
   }
@@ -1350,7 +1358,7 @@ export class TutorService {
   }
 
   private createImageBlock(
-    prompt: string,
+    prompt?: string,
     caption = 'Визуальная опора к разбору',
     altText?: string,
     priority: TutorImagePriority = 'optional',
@@ -1367,6 +1375,49 @@ export class TutorService {
       priority,
       url,
     };
+  }
+
+  private createContextImageBlock(
+    tasks: TutorTask[],
+    imagePrompt: string | undefined,
+    needsImage: boolean,
+  ): TutorImageBlock | undefined {
+    if (imagePrompt) {
+      return this.createImageBlock(imagePrompt);
+    }
+    if (tasks.length > 0) {
+      return this.createImageBlock(
+        undefined,
+        this.buildTaskVisualCaption(tasks),
+        this.buildTaskVisualAltText(tasks),
+        'required',
+      );
+    }
+    if (needsImage) {
+      return this.createImageBlock(
+        undefined,
+        'Визуальная опора к объяснению',
+        'Схема, которая помогает понять шаги объяснения',
+        'important',
+      );
+    }
+    return undefined;
+  }
+
+  private buildTaskVisualCaption(tasks: TutorTask[]): string {
+    const firstTask = tasks[0];
+    if (!firstTask) {
+      return 'Визуальная опора к задаче';
+    }
+    return `Схема к задаче: ${firstTask.title}`.slice(0, 120);
+  }
+
+  private buildTaskVisualAltText(tasks: TutorTask[]): string {
+    const firstTask = tasks[0];
+    if (!firstTask) {
+      return 'Схема для разбора задачи';
+    }
+    return `Визуальная схема для условия: ${firstTask.prompt}`.slice(0, 220);
   }
 
   private markImageBlocksRequired(blocks: TutorResponseBlock[]): TutorResponseBlock[] {
@@ -1421,10 +1472,10 @@ export class TutorService {
     userId: string;
     turnId?: string;
     conversationId?: string;
-  }): { id: string; answer_json: string } | undefined {
+  }): { id: string; prompt: string; answer_json: string } | undefined {
     if (options.turnId) {
-      const row = this.db.get<{ id: string; answer_json: string }>(
-        `SELECT id, answer_json
+      const row = this.db.get<{ id: string; prompt: string; answer_json: string }>(
+        `SELECT id, prompt, answer_json
          FROM tutor_turns
          WHERE id = ?
            AND user_id = ?
@@ -1439,8 +1490,8 @@ export class TutorService {
     if (!options.conversationId) {
       return undefined;
     }
-    return this.db.get<{ id: string; answer_json: string }>(
-      `SELECT id, answer_json
+    return this.db.get<{ id: string; prompt: string; answer_json: string }>(
+      `SELECT id, prompt, answer_json
        FROM tutor_turns
        WHERE user_id = ?
          AND conversation_id = ?
@@ -1854,17 +1905,159 @@ export class TutorService {
     };
   }
 
+  private resolveImageGenerationPrompt(options: GenerateImageOptions): string {
+    const stored = this.buildStoredImageGenerationContext(options);
+    const prompt = options.prompt?.trim() || stored.prompt;
+    const context = [options.context, stored.context]
+      .map((part) => part?.trim())
+      .filter((part): part is string => Boolean(part))
+      .join('\n');
+    return this.normalizeImagePrompt(prompt, context);
+  }
+
+  private buildStoredImageGenerationContext(options: GenerateImageOptions): ImageGenerationContext {
+    const row = this.findTutorTurnForImage({
+      userId: options.user.id,
+      turnId: options.turnId,
+      conversationId: options.conversationId,
+    });
+    if (!row) {
+      return {};
+    }
+    const parsed = this.parseJsonObject(row.answer_json);
+    if (!parsed) {
+      return {
+        context: row.prompt ? `Запрос ученика: ${row.prompt.slice(0, 800)}` : undefined,
+      };
+    }
+
+    const blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+    const imageBlock = this.findRawImageBlock(blocks, options.blockId);
+    const storedPrompt =
+      this.pickString(imageBlock, ['prompt', 'imagePrompt', 'image_prompt']) ??
+      this.pickString(parsed, ['imagePrompt', 'image_prompt']);
+    const answer = this.pickString(parsed, ['answer']);
+    const contextParts = [
+      row.prompt ? `Запрос ученика: ${row.prompt.slice(0, 800)}` : undefined,
+      answer ? `Ответ репетитора: ${answer.slice(0, 1200)}` : undefined,
+      imageBlock ? this.describeRawImageBlock(imageBlock) : undefined,
+      ...this.describeRawTaskContext(parsed, blocks),
+      ...this.describeRawExampleContext(parsed, blocks),
+    ].filter((part): part is string => Boolean(part));
+
+    return {
+      prompt: storedPrompt,
+      context: contextParts.join('\n'),
+    };
+  }
+
+  private findRawImageBlock(
+    blocks: unknown[],
+    blockId: string | undefined,
+  ): Record<string, unknown> | undefined {
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') {
+        continue;
+      }
+      const record = block as Record<string, unknown>;
+      if (record.type !== 'image') {
+        continue;
+      }
+      if (!blockId || this.pickString(record, ['id']) === blockId) {
+        return record;
+      }
+    }
+    return undefined;
+  }
+
+  private describeRawImageBlock(block: Record<string, unknown>): string | undefined {
+    const caption = this.pickString(block, ['caption', 'title']);
+    const altText = this.pickString(block, ['altText', 'alt_text', 'alt']);
+    const priority = this.pickString(block, ['priority']);
+    const parts = [
+      caption ? `Подпись изображения: ${caption.slice(0, 300)}` : undefined,
+      altText ? `Описание изображения: ${altText.slice(0, 400)}` : undefined,
+      priority ? `Приоритет изображения: ${priority}` : undefined,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join('\n') : undefined;
+  }
+
+  private describeRawTaskContext(
+    parsed: Record<string, unknown>,
+    blocks: unknown[],
+  ): string[] {
+    const taskRecords = [
+      ...(Array.isArray(parsed.tasks) ? parsed.tasks : []),
+      ...blocks.filter(
+        (block) => block && typeof block === 'object' && (block as Record<string, unknown>).type === 'task',
+      ),
+    ];
+    const seen = new Set<string>();
+    return taskRecords
+      .map((task): string | undefined => {
+        if (!task || typeof task !== 'object') {
+          return undefined;
+        }
+        const record = task as Record<string, unknown>;
+        const prompt = this.pickString(record, ['prompt', 'text', 'task']);
+        if (!prompt || seen.has(prompt)) {
+          return undefined;
+        }
+        seen.add(prompt);
+        const title = this.pickString(record, ['title']) ?? 'Задача';
+        const difficulty = this.pickString(record, ['difficulty']);
+        return [
+          `Задача: ${title.slice(0, 160)}`,
+          `Условие: ${prompt.slice(0, 800)}`,
+          difficulty ? `Сложность: ${difficulty.slice(0, 80)}` : undefined,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      })
+      .filter((part): part is string => Boolean(part))
+      .slice(0, 3);
+  }
+
+  private describeRawExampleContext(
+    parsed: Record<string, unknown>,
+    blocks: unknown[],
+  ): string[] {
+    const exampleRecords = [
+      ...(Array.isArray(parsed.examples) ? parsed.examples : []),
+      ...blocks.filter(
+        (block) => block && typeof block === 'object' && (block as Record<string, unknown>).type === 'example',
+      ),
+    ];
+    const seen = new Set<string>();
+    return exampleRecords
+      .map((example): string | undefined => {
+        if (!example || typeof example !== 'object') {
+          return undefined;
+        }
+        const record = example as Record<string, unknown>;
+        const explanation = this.pickString(record, ['explanation', 'text', 'content']);
+        if (!explanation || seen.has(explanation)) {
+          return undefined;
+        }
+        seen.add(explanation);
+        const title = this.pickString(record, ['title']) ?? 'Пример';
+        return [`Пример: ${title.slice(0, 160)}`, explanation.slice(0, 700)].join('\n');
+      })
+      .filter((part): part is string => Boolean(part))
+      .slice(0, 2);
+  }
+
   private normalizeImagePrompt(prompt: string | undefined, context: string | undefined): string {
     const normalized = prompt?.trim();
-    if (!normalized) {
-      throw new BadRequestException('Image prompt is required');
+    const normalizedContext = context?.trim();
+    if (!normalized && !normalizedContext) {
+      throw new BadRequestException('Image prompt or lesson context is required');
     }
-    const contextLine = context?.trim() ? `Контекст объяснения: ${context.trim()}` : '';
     return [
       'Создай чистую образовательную иллюстрацию для школьника, готовящегося к ЕГЭ по математике.',
       'Без лишнего текста. Если нужны обозначения, используй простые математические метки.',
-      normalized,
-      contextLine,
+      normalized ?? 'Сгенерируй визуальную опору по контексту урока, ответа и задания.',
+      normalizedContext ? `Контекст урока: ${normalizedContext.slice(0, 3000)}` : '',
     ]
       .filter(Boolean)
       .join('\n');

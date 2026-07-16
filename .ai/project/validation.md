@@ -78,11 +78,12 @@ Current covered areas:
   cost-per-verified-outcome summary behavior, GPT-Image-2 output-token
   estimation when image responses omit usage, plus user-scoped background job
   result/error projection in usage summaries
-- mocked browser E2E for saved active lesson resume, read-only finished lesson
-  records, disabled archived composer/voice actions, and starting a fresh
-  lesson from history, plus terminal tutor responses not restarting the
-  microphone and terminal first-meeting responses turning the meeting
-  transcript read-only while preserving profile creation across reload
+- mocked browser E2E for saved active lesson resume with visible Continue
+  actions, read-only finished lesson records, disabled archived
+  composer/voice actions, and starting a fresh lesson from history, plus
+  terminal tutor responses not restarting the microphone and terminal
+  first-meeting responses turning the meeting transcript read-only while
+  preserving profile creation across reload
 - knowledge-pack structured import idempotency and mocked RAG sync behavior,
   including dry-run safety, unchanged-file skips, changed-file replacement,
   superseded vector-store attachment cleanup, partial-pack reconciliation
@@ -92,7 +93,8 @@ Current covered areas:
 - WebRTC token creation payload cleanup
 - WebRTC signaling service payload and translation config
 - WebRTC controller token/event paths, signed-in teaching-context attachment,
-  and post-close background review enqueue
+  browser `lesson-events` data-channel routing into tutor messages, and
+  post-close background review enqueue
 - WebRTC provider event transcript/token accumulation behavior
 - WebRTC provider event debug logging avoids raw transcript text
 - background realtime session review job operation policy, sanitized teaching
@@ -111,8 +113,11 @@ auth/localization, first-login meeting completion, lesson launcher
 visibility/start, explicit empty saved-lesson state, saved lesson list/resume
 with previous discussion hydration, browser speech-synthesis handoff for tutor replies,
 automatic speech-recognition restart after spoken non-terminal tutor replies,
-interim-only speech-recognition submission for first-meeting and tutor turns,
-mocked WebRTC realtime voice session start/offer/close from the tutor composer,
+bounded silence retry, interim-only speech-recognition submission for
+first-meeting and tutor turns, failed voice-send transcript preservation,
+mocked WebRTC realtime voice session start/offer/close from the tutor composer
+including browser `createDataChannel` support for the server-owned
+`lesson-events` path,
 blocked speech-recognition restart after terminal tutor replies, tutor answer
 rendering, terminal first-meeting read-only input behavior, citation display,
 terminal first-meeting reload recovery before profile creation, usage refresh
@@ -178,9 +183,10 @@ and explicit image rendering.
   live OpenAI when the user explicitly requests or approves live validation
   with credentials and spend risk understood.
 - WebRTC/OpenAI Realtime changes: run unit and mocked browser validation by
-  default. Use `npm run smoke:realtime` to verify the live-check guard without
-  spend; use `REALTIME_SMOKE_LIVE=true npm run smoke:realtime` only after the
-  dev stack is running and live OpenAI spend is approved.
+  default, including the browser `lesson-events` data-channel contract when
+  that path changes. Use `npm run smoke:realtime` to verify the live-check
+  guard without spend; use `REALTIME_SMOKE_LIVE=true npm run smoke:realtime`
+  only after the dev stack is running and live OpenAI spend is approved.
 - Knowledge-pack RAG sync changes: validate with mocked unit tests by default.
   `--dry-run` may be used for local planning; do not run non-dry-run
   `--sync-rag` without explicit live OpenAI credential/spend approval.

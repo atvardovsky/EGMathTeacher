@@ -80,7 +80,8 @@ Production domain:
 - Saved lesson continuity in the tutor workspace: the client loads
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
   shows active lessons separately from read-only historical records, auto-opens
-  the latest active saved discussion when turns exist, and sends the same
+  the latest active saved discussion when turns exist, shows visible
+  `Продолжить`/`Continue` actions for unfinished lessons, and sends the same
   `conversationId` only when the student continues a non-terminal lesson.
   Students can explicitly finish an active lesson with
   `POST /tutor/lessons/:lessonSessionId/finish`; finished and legacy records
@@ -190,11 +191,12 @@ Production domain:
 - POC SQLite schema migration ledger records applied schema versions after
   transactional migration application.
 - Admin upload endpoint for PDF/Markdown/TXT/DOCX/TeX knowledge files.
-- Image endpoint for explanatory math diagrams generated from a tutor image
-  block prompt. Fresh required image blocks can trigger one automatic
-  generation after the text answer is visible; saved turns and optional blocks
-  keep an explicit create-diagram action. Generated POC data URLs are rendered
-  and persisted inside the same tutor turn.
+- Image endpoint for explanatory math diagrams generated from the tutor image
+  block prompt when present, or from the stored answer/task/example context
+  when no prompt was provided. Fresh required image blocks can trigger one
+  automatic generation after the text answer is visible; saved turns and
+  optional blocks keep an explicit create-diagram action. Generated POC data
+  URLs are rendered and persisted inside the same tutor turn.
 - Browser voice input using speech recognition, submitted to the same RAG tutor endpoint.
 - Browser voice output using local speech synthesis in the tutor workspace.
   Voice dialog is on by default when supported, can be switched off by the
@@ -206,18 +208,22 @@ Production domain:
   store generated audio, so Russian stress/emotion quality remains limited by
   the installed browser voices. Browser speech recognition
   can still stop after silence, permission/device issues, or network/browser
-  policy; the web UI shows the stop reason, retries once after an automatic
-  silence stop in voice-dialog mode, and submits the best final/interim
-  transcript directly when recognition ends.
+  policy; the web UI shows the stop reason, retries silence/no-speech stops
+  with a small bounded budget, submits the best final/interim transcript
+  directly when recognition ends, and restores the transcript to the composer
+  if delivery fails.
 - WebRTC/OpenAI Realtime live voice in the tutor workspace. The student can
   start a low-latency audio session from the composer. Signed-in sessions
   receive compact server-side teaching context from the current lesson and
-  recent analytic memory. On close, the API saves a compact voice-origin
-  `tutor_turns` row for lesson continuity, records session-level usage when
-  Realtime token usage or duration is available, and enqueues a cheap
-  background review that stores sanitized teaching observations. Structured
-  tasks, images, verifier attempts, and mastery progress still use the normal
-  `/tutor/message` lesson engine.
+  recent analytic memory. While the WebRTC session is open, typed lesson
+  messages in the tutor composer use a browser-to-server `lesson-events` data
+  channel and are routed through the same governed tutor engine as
+  `/tutor/message`, so structured blocks, verifier policy, usage, and terminal
+  lesson guards remain consistent. Raw spoken audio stays on the Realtime voice
+  path. On close, the API can also save a compact voice-origin `tutor_turns`
+  row for lesson continuity, record session-level usage when Realtime token
+  usage or duration is available, and enqueue a cheap background review that
+  stores sanitized teaching observations.
 
 ## Checks
 

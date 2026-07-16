@@ -67,22 +67,28 @@ Rules from current implementation:
   boundary instead of letting the next voice/text turn reopen it.
 - Browser speech recognition may stop after silence, permission changes,
   network errors, or browser policy. The tutor UI shows a short voice-status
-  reason, retries once after an automatic silence stop in voice-dialog mode,
-  and leaves the mic button as the manual fallback.
+  reason, retries bounded silence/no-speech stops in voice-dialog mode and
+  manual mic mode, and leaves the mic button as the manual fallback when the
+  retry budget is exhausted.
 - When browser speech recognition ends, the web client sends the best
   available final or interim transcript directly as a voice-origin tutor
-  request.
+  request. If the send fails through REST or the WebRTC lesson data channel,
+  the recognized transcript is restored to the composer so the student can
+  review and resend instead of repeating the answer aloud.
 - Browser speech synthesis quality, Russian stress, and emotional prosody are
   browser-voice limitations in the POC. Better voice quality requires a future
   OpenAI audio integration.
 - The tutor composer also exposes an explicit WebRTC/OpenAI Realtime live
   voice path for low-latency audio. It is user-started, can be stopped from
   the composer, and is closed when the UI moves to a different lesson boundary
-  or read-only history. On authenticated close, useful transcripts are saved
-  as one compact voice-origin `tutor_turns` row, usage is recorded when
-  available, and a cheap background review can store sanitized teaching
-  observations. It does not write verifier progress, images, structured task
-  blocks, or mastery evidence.
+  or read-only history. While the session is open, typed composer messages can
+  travel over the browser-to-server `lesson-events` WebRTC data channel and
+  enter the same governed tutor engine as `POST /tutor/message`. On
+  authenticated close, useful raw audio transcripts are saved as one compact
+  voice-origin `tutor_turns` row, usage is recorded when available, and a cheap
+  background review can store sanitized teaching observations. Raw audio
+  transcript capture does not write verifier progress, images, structured task
+  blocks, or mastery evidence by itself.
 - The request may include `lessonType`; older clients can omit it and the API
   infers a conservative type from the prompt.
 - Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
@@ -97,7 +103,8 @@ Rules from current implementation:
 - The tutor workspace also shows saved lesson continuity. It calls
   `GET /tutor/lessons?scope=active` and `GET /tutor/lessons?scope=history`,
   displays active lesson records, read-only historical records, last questions,
-  summaries or last answers, and clear continue/open-record actions. If no
+  summaries or last answers, clear `Продолжить`/`Continue` actions for
+  unfinished lessons, and open-record actions for finished records. If no
   lesson has been saved, it shows an explicit empty-history message rather
   than a blank area.
 - When active stored turns exist, the latest active saved discussion is loaded
@@ -173,10 +180,12 @@ Rules from current implementation:
   `needsImage`, and `imagePrompt` fields for compatibility.
 - Tutor responses include `lessonLifecycle` state and a compact usage snapshot
   for the current lesson/day.
-- Image blocks start as visual plans. They include prompt, caption, alt text,
-  status, and priority so the UI can keep image support inside the same tutor
-  turn. When image generation succeeds with tutor-turn/block identity, the POC
-  persists the generated data URL into the same stored image block.
+- Image blocks start as visual plans. They include caption, alt text, status,
+  priority, and an optional prompt so the UI can keep image support inside the
+  same tutor turn. If prompt is absent, image generation uses the answer,
+  task, example, and image-block context saved with the tutor turn. When image
+  generation succeeds with tutor-turn/block identity, the POC persists the
+  generated data URL into the same stored image block.
 - If the student explicitly asks for a drawing, diagram, graph, image, or
   visual explanation, the API must return an image block even if the model
   omitted it. Fresh required image blocks can auto-start one image-generation
@@ -358,9 +367,11 @@ Rules from current implementation:
 
 - Image requests use `POST /tutor/image`.
 - The tutor message response does not wait for image generation. It returns an
-  image block with prompt/caption/alt text. Fresh required image blocks
-  auto-start one generation after the text answer is visible; saved turns,
-  optional blocks, and retry cases use the prominent create-diagram action.
+  image block with caption/alt text and optional prompt. Fresh required image
+  blocks auto-start one generation after the text answer is visible; saved
+  turns, optional blocks, and retry cases use the prominent create-diagram
+  action. The API can generate from stored lesson/task context when no prompt
+  was supplied.
 - The API calls the model-provider image operation. The current implementation
   delegates to OpenAI image generation and returns a PNG data URL.
 - When the request includes tutor-turn and image-block identity, the API
@@ -448,6 +459,9 @@ Rules from current implementation:
 - The tutor workspace can start this flow as realtime live voice. On
   authenticated close, the API can create or reuse a lesson session and save
   one compact voice-origin `tutor_turns` row for continuity.
+- Typed `student_text` events sent through the browser `lesson-events` data
+  channel during an active session call the normal tutor engine and return
+  structured tutor answers over WebRTC.
 - Signed-in realtime sessions can be attributed to the active lesson for
   usage accounting and write one `ai_usage_ledger` row on close. This saved
   voice turn is continuity evidence, not verifier-backed learning progress by

@@ -5,8 +5,10 @@
 - Ask one short question at a time and keep explanations clear for teenagers.
 - Use the realtime path as a preview for live voice. It may receive compact
   lesson/profile/strategy context and may create post-close sanitized teaching
-  observations, but it must not claim verified progress or durable lesson
-  turns were saved.
+  observations, but raw audio transcript handling must not claim verified
+  progress or durable lesson turns were saved. Typed app messages can travel
+  through the server-owned `lesson-events` WebRTC data channel; those are
+  handled by the normal tutor engine, not by the realtime voice agent.
 - Maintain safety and compliance; do not provide medical/legal/financial advice
   beyond general information.
 
@@ -43,6 +45,9 @@
 - After close, a background review may summarize the transcript into
   teaching-useful observations. The realtime agent itself must not write
   profile, progress, mastery, or lesson-goal state.
+- Do not interpret browser `lesson-events` channel messages as OpenAI
+  Realtime provider events. They are server-local app events routed through
+  `TutorService.answerMessage` and governed by backend lesson policy.
 
 ## Error Recovery
 - If OpenAI session errors (`response.error`, `error` events), apologize once, attempt a new response, and if failures persist offer to reconnect.

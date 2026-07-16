@@ -1,8 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as wrtc from 'wrtc';
+import type { LessonType } from '../tutor/tutor.types';
 import { FileSearchConfig, PersonalityConfig } from './webrtc-signaling.service';
 import { ProviderEventPayload, WebRtcProviderEventService } from './webrtc-provider-event.service';
+import {
+  WebRtcLessonClientEvent,
+  WebRtcLessonServerEvent,
+} from './webrtc-lesson-events';
 
 const ICE_GATHERING_TIMEOUT_MS = 2000;
 const SPEECH_DEBOUNCE_MS = 300;
@@ -11,6 +16,7 @@ const SPEECH_MIN_AMPLITUDE = 500;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_OPENAI_REQUEST_RETRIES = 2;
 const DEFAULT_OPENAI_EXPIRY_GRACE_MS = 5_000;
+const CLIENT_LESSON_CHANNEL_LABEL = 'lesson-events';
 
 async function fetchWithTimeout(
   url: string,
@@ -73,11 +79,17 @@ interface OpenAiSessionInfo {
 export interface BridgeSessionOptions {
   sessionId: string;
   conversationId: string;
+  lessonSessionId?: string;
+  lessonType?: LessonType;
   persona: PersonalityConfig;
   voice: string;
   fileSearch: FileSearchConfig;
   realtimeModel?: string;
   onServerIceCandidate?: (candidate: string) => void;
+  onClientDataMessage?: (
+    context: { sessionId: string; conversationId: string },
+    event: WebRtcLessonClientEvent,
+  ) => Promise<WebRtcLessonServerEvent | undefined> | WebRtcLessonServerEvent | undefined;
   translatorMode?: boolean;
   teachingContextPrompt?: string;
 }
@@ -95,6 +107,7 @@ interface BridgeSessionState extends BridgeSessionOptions {
   clientAudioSink?: RTCAudioSinkType;
   openAiAudioSink?: RTCAudioSinkType;
   controlChannel?: RTCDataChannelType;
+  clientDataChannel?: RTCDataChannelType;
   responsePending: boolean;
   pendingInputItemId?: string;
   activeResponseId?: string;
@@ -227,6 +240,7 @@ export class OpenAiRealtimeBridgeService {
     state.openAiOutboundTrack = undefined;
     state.pendingClientIceCandidates = [];
     state.onServerIceCandidate = undefined;
+    state.onClientDataMessage = undefined;
     this.pendingClientCandidates.delete(sessionId);
 
     await this.disposePeer(state.clientPeer);
@@ -239,6 +253,13 @@ export class OpenAiRealtimeBridgeService {
     if (state.controlChannel) {
       try {
         state.controlChannel.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+    if (state.clientDataChannel) {
+      try {
+        state.clientDataChannel.close();
       } catch {
         // ignore close errors
       }
@@ -295,12 +316,16 @@ export class OpenAiRealtimeBridgeService {
       state.voice = options.voice;
       state.fileSearch = options.fileSearch;
       state.realtimeModel = options.realtimeModel ?? state.realtimeModel;
+      state.lessonSessionId = options.lessonSessionId ?? state.lessonSessionId;
+      state.lessonType = options.lessonType ?? state.lessonType;
       state.onServerIceCandidate = options.onServerIceCandidate ?? state.onServerIceCandidate;
+      state.onClientDataMessage = options.onClientDataMessage ?? state.onClientDataMessage;
       state.translatorMode = options.translatorMode ?? state.translatorMode;
       state.teachingContextPrompt =
         options.teachingContextPrompt ?? state.teachingContextPrompt;
     }
     state.onServerIceCandidate = options.onServerIceCandidate ?? state.onServerIceCandidate;
+    state.onClientDataMessage = options.onClientDataMessage ?? state.onClientDataMessage;
     if (!state.pendingClientIceCandidates) {
       state.pendingClientIceCandidates = [];
     }
@@ -352,6 +377,10 @@ export class OpenAiRealtimeBridgeService {
           );
         }
       }
+    };
+
+    peer.ondatachannel = (event: RTCDataChannelEvent) => {
+      this.registerClientDataChannel(state, event.channel);
     };
 
     const outboundStream = new (this.MediaStreamCtor as { new (): MediaStreamType })();
@@ -653,7 +682,133 @@ export class OpenAiRealtimeBridgeService {
     };
   }
 
+  private registerClientDataChannel(
+    state: BridgeSessionState,
+    channel?: RTCDataChannelType,
+  ): void {
+    if (!channel) {
+      return;
+    }
+    if (channel.label && channel.label !== CLIENT_LESSON_CHANNEL_LABEL) {
+      this.logger.debug(
+        `Ignoring client data channel ${channel.label} (${state.sessionId}).`,
+      );
+      return;
+    }
+
+    channel.onopen = () => {
+      this.logger.debug(`Client lesson data channel ready (${state.sessionId}).`);
+      state.clientDataChannel = channel;
+      this.sendClientDataEvent(state, this.buildSessionReadyEvent(state));
+    };
+
+    channel.onclose = () => {
+      if (state.clientDataChannel === channel) {
+        state.clientDataChannel = undefined;
+      }
+    };
+
+    channel.onerror = (event: Event) => {
+      this.logger.warn(
+        `Client lesson data channel error (${state.sessionId}): ${JSON.stringify(event)}`,
+      );
+    };
+
+    channel.onmessage = (event: MessageEvent) => {
+      const payload = this.parseClientPayload(event.data);
+      if (!payload) {
+        this.sendClientDataEvent(state, {
+          type: 'error',
+          code: 'invalid_payload',
+          message: 'Invalid lesson data channel payload.',
+        });
+        return;
+      }
+      void this.handleClientDataPayload(state, payload);
+    };
+  }
+
+  private async handleClientDataPayload(
+    state: BridgeSessionState,
+    payload: WebRtcLessonClientEvent,
+  ): Promise<void> {
+    if (payload.type === 'client_ready') {
+      this.sendClientDataEvent(state, this.buildSessionReadyEvent(state));
+      return;
+    }
+
+    try {
+      const result = await state.onClientDataMessage?.(
+        { sessionId: state.sessionId, conversationId: state.conversationId },
+        payload,
+      );
+      if (result) {
+        this.sendClientDataEvent(state, result);
+      }
+    } catch (error) {
+      this.sendClientDataEvent(state, {
+        type: 'error',
+        requestId: 'requestId' in payload ? payload.requestId : undefined,
+        code: 'handler_failed',
+        message: error instanceof Error ? error.message : 'Lesson data channel handler failed.',
+      });
+    }
+  }
+
+  private buildSessionReadyEvent(state: BridgeSessionState): WebRtcLessonServerEvent {
+    return {
+      type: 'session_ready',
+      sessionId: state.sessionId,
+      conversationId: state.conversationId,
+      lessonSessionId: state.lessonSessionId,
+      lessonType: state.lessonType,
+    };
+  }
+
+  private sendClientDataEvent(
+    state: BridgeSessionState,
+    event: WebRtcLessonServerEvent,
+  ): boolean {
+    const channel = state.clientDataChannel;
+    if (!channel || channel.readyState !== 'open') {
+      return false;
+    }
+    try {
+      channel.send(JSON.stringify(event));
+      return true;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to send lesson data channel event (${state.sessionId}): ${reason}`,
+      );
+      return false;
+    }
+  }
+
+  private parseClientPayload(message: unknown): WebRtcLessonClientEvent | undefined {
+    const parsed = this.parseJsonPayload(message, 'client lesson data channel');
+    if (!parsed) {
+      return undefined;
+    }
+    return typeof parsed.type === 'string'
+      ? (parsed as WebRtcLessonClientEvent)
+      : undefined;
+  }
+
   private parseProviderPayload(message: unknown): ProviderEventPayload | undefined {
+    const parsed = this.parseJsonPayload(message, 'provider');
+    if (!parsed) {
+      return undefined;
+    }
+    return typeof parsed.type === 'string'
+      ? (parsed as ProviderEventPayload)
+      : undefined;
+  }
+
+  private parseJsonPayload(
+    message: unknown,
+    label: string,
+  ): Record<string, unknown> | undefined {
     if (message == null) {
       return undefined;
     }
@@ -673,7 +828,7 @@ export class OpenAiRealtimeBridgeService {
       return JSON.parse(String(message));
     } catch (error) {
       this.logger.warn(
-        `Failed to parse provider payload: ${
+        `Failed to parse ${label} payload: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
