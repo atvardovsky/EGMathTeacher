@@ -204,6 +204,9 @@ export class WebRtcMediaService {
       session.conversationId = answer.conversationId;
       session.lessonSessionId = answer.lessonLifecycle.lessonSessionId;
       session.lessonType = answer.lessonType;
+      if (event.origin === 'realtime_transcript') {
+        session.structuredRealtimeTurnCount = (session.structuredRealtimeTurnCount ?? 0) + 1;
+      }
       this.sessionService.touchSession(session.id);
 
       const turn: TutorLessonHistoryTurn = {

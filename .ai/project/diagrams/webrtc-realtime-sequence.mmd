@@ -41,21 +41,34 @@ sequenceDiagram
   Bridge-->>Provider: Realtime audio and data channel events
   Provider-->>Bridge: Synthetic audio and events
   Bridge->>Conv: Record voice turns and token usage
+  Provider-->>Bridge: Completed input transcript
+  Bridge->>Media: onClientDataMessage student_text origin=realtime_transcript
+  Media->>Tutor: answerMessage with authenticated metadata
+  Tutor->>Lesson: begin turn, decision policy, verifier if applicable
+  Tutor->>DB: Persist tutor_turns, usage, evidence as normal
+  Media-->>Bridge: tutor_answer event
+  Bridge->>Provider: response.create to speak governed tutor answer
+  Bridge-->>Client: lesson-events tutor_answer
+  Provider-->>Bridge: Spoken governed tutor answer
+  Bridge-->>Client: Realtime audio
   Client-->>Bridge: lesson-events student_text
   Bridge->>Media: onClientDataMessage
   Media->>Tutor: answerMessage with authenticated metadata
   Tutor->>Lesson: begin turn, decision policy, verifier if applicable
   Tutor->>DB: Persist tutor_turns, usage, evidence as normal
   Media-->>Bridge: tutor_answer event
+  Bridge->>Provider: response.create to speak governed tutor answer
   Bridge-->>Client: lesson-events tutor_answer
   Client->>API: POST /webrtc/session/:id/close
   API->>Media: closeSession
   API->>Sessions: closeSession
   Sessions->>Conv: finalizeConversation
   Conv->>Logs: Write transcript when available
-  API->>Lesson: ensure/reuse lesson and count realtime duration
-  Lesson->>DB: Update lesson_sessions
-  API->>DB: Insert compact voice-origin tutor_turns row
+  alt no structured realtime transcript tutor turn exists
+    API->>Lesson: ensure/reuse lesson and count realtime duration
+    Lesson->>DB: Update lesson_sessions
+    API->>DB: Insert compact voice-origin tutor_turns row
+  end
   API->>Usage: recordRealtimeSession when signed in
   Usage->>DB: Insert ai_usage_ledger session row
   API->>Background: enqueueRealtimeSessionReview when signed in and useful

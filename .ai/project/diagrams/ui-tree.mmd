@@ -81,16 +81,20 @@ flowchart TB
   UsageBar --> BackgroundJobDetails[Safe background job result and error details]
   UsageBar --> UsageApi[GET /usage/me/summary]
   Tutor --> Composer[Text and voice composer]
-  Composer --> RealtimeVoice[WebRTC Realtime live voice]
+  Composer --> RealtimeVoice[Realtime-first voice dialog]
   RealtimeVoice --> WebRtcApi[POST /webrtc/session and /offer]
+  RealtimeVoice --> RealtimeTranscript[Completed transcript to tutor engine]
+  RealtimeTranscript --> TurnCard
+  RealtimeVoice --> OpenAISpeech[OpenAI speaks governed tutor answer]
   RealtimeVoice --> RealtimeClose[POST /webrtc/session/:id/close]
   RealtimeVoice --> RealtimeContext[Signed-in teaching context injected server-side]
-  RealtimeVoice --> RealtimeSync[Compact voice turn synced into lesson history on close]
+  RealtimeVoice --> RealtimeSync[Compact close turn only without structured transcript turn]
   RealtimeVoice --> RealtimeReview[Cheap background teaching observation after close]
-  RealtimeVoice --> RealtimeLimit[No verifier attempts, images, or mastery progress]
+  RealtimeVoice --> RealtimeLimit[Ungoverned provider events are continuity only]
   Composer --> VoiceOutput[Voice dialog switch]
   Composer --> VoiceStatus[Voice status and stop reason]
-  VoiceOutput --> SpeechSynthesis[Browser speech synthesis]
+  VoiceOutput --> RealtimeVoice
+  VoiceOutput --> SpeechSynthesis[Browser speech fallback]
   SpeechSynthesis --> AutoMic[Auto-start mic after non-terminal tutor speech]
   AutoMic --> VoiceStatus
   AutoMic --> Composer
@@ -106,8 +110,8 @@ flowchart TB
   Blocks --> Examples[Example blocks]
   Blocks --> ImageBlock[Image block]
   TurnCard --> Citations[Citation badges]
-  ImageBlock --> AutoImage[Auto-generate required fresh image]
-  ImageBlock --> ImageAction[Optional image action]
+  ImageBlock --> AutoImage[Auto-generate fresh image]
+  ImageBlock --> ImageAction[History or retry image action]
   ReadOnlyState --> ImageDisabled[Image actions disabled]
   AutoImage --> ImageApi
   ImageAction --> ImageApi[POST /tutor/image]

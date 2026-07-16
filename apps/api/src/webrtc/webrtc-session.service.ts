@@ -22,6 +22,7 @@ export interface WebRtcSession {
   finalizedAt?: number;
   preferredVoice?: string;
   translation?: TranslationConfig;
+  structuredRealtimeTurnCount?: number;
   signaling: {
     clientOffer?: string;
     serverAnswer?: string;

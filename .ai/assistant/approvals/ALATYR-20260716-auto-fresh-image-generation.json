@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260716-auto-fresh-image-generation",
+  "operation": {
+    "id": "auto-fresh-image-generation",
+    "type": "business-ui-spend-behavior-change"
+  },
+  "plan": {
+    "version": "v1",
+    "sha256": "not available - direct user approval in conversation",
+    "file": "not available - direct user approval in conversation"
+  },
+  "diff": {
+    "base": "e6ec0278e9396e1a9e30b89f995bd6e2597e4db3",
+    "patch_sha256": "not available until final diff",
+    "repository_revision_at_approval": "e6ec0278e9396e1a9e30b89f995bd6e2597e4db3"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Make fresh active tutor image blocks automatically call POST /tutor/image once after the text answer renders.",
+      "Keep saved/history turns and failed automatic generation on explicit manual image action to avoid repeated page-load spend.",
+      "Make the UI show an automatic image-generation loading state.",
+      "Update browser E2E expectations so image generation is proven automatic.",
+      "Update source-of-truth docs and diagrams for the new image behavior."
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/web/src/App.tsx",
+      "apps/web/src/i18n.ts",
+      "apps/web/e2e/app.spec.ts",
+      "README.md",
+      ".ai/project/architecture.md",
+      ".ai/project/blueprint.md",
+      ".ai/project/runtime-flows.md",
+      ".ai/project/use-cases.md",
+      ".ai/project/ui-guidelines.md",
+      ".ai/project/ui-tree.md",
+      ".ai/project/validation.md",
+      ".ai/project/diagrams/README.md",
+      ".ai/project/diagrams/tutor-rag-sequence.mmd",
+      ".ai/project/diagrams/ui-tree.mmd",
+      ".ai/project/diagrams/rendered/tutor-rag-sequence.svg",
+      ".ai/project/diagrams/rendered/ui-tree.svg",
+      ".ai/project/diagrams/rendered/source-hashes.sha256",
+      ".ai/assistant/approvals/ALATYR-20260716-auto-fresh-image-generation.md",
+      ".ai/assistant/approvals/ALATYR-20260716-auto-fresh-image-generation.json"
+    ],
+    "excluded_files_or_surfaces": [
+      "none"
+    ],
+    "excluded_actions": [
+      "No new external provider.",
+      "No live image-generation smoke call without a separate explicit request.",
+      "No WebRTC raw-audio transcript architecture change.",
+      "No auth, retention, or pricing-policy change."
+    ],
+    "allowed_actions_mode": "code-and-tests",
+    "invalidation_rule": "Any new image provider, auth change, billing-policy change, persistent raw prompt expansion, realtime-audio-to-image architecture change, or live spend smoke requires separate approval."
+  },
+  "approval": {
+    "requested_by": "project owner",
+    "approved_by": "project owner",
+    "approved_at": "2026-07-16T22:05:33+02:00",
+    "source_or_message": "User request after image-flow review: \"fix it\". Context: tutor responses should show generated images when visual support is part of the AI answer, not only expose a manual prompt/button path.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "auto-fresh-image-generation",
+    "patch_changed_after_approval": "yes - implementation follows direct user fix request",
+    "implementation_within_scope": "yes - changed web image auto-generation behavior, related E2E, source-of-truth docs, diagrams, and this approval record",
+    "validation": "npm run e2e -- apps/web/e2e/app.spec.ts; npm run build; npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run lint; git diff --check",
+    "result_evidence": "E2E 10 passed; build passed with existing Vite chunk-size warning; diagram drift check passed for 10 diagrams; Alatyr consistency check passed; lint passed; whitespace diff check passed",
+    "residual_risk": "Live OpenAI image generation is not exercised by this approval; mocked browser E2E proves automatic request/render behavior."
+  }
+}

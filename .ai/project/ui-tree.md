@@ -64,14 +64,16 @@ App
       │  │  ├─ Retry-one action for visible failed background jobs
       │  │  └─ Expandable safe operation/model/token/image/duration/decision/background-job details
       │  ├─ Textarea composer
-      │  ├─ WebRTC/OpenAI Realtime live voice
+      │  ├─ Realtime-first voice dialog
+      │  │  ├─ Voice dialog switch that prefers WebRTC/OpenAI Realtime
       │  │  ├─ Start/stop live voice action
       │  │  ├─ Connection state and model badge
-      │  │  ├─ Synced compact voice turn after close when transcript exists
+      │  │  ├─ Transcript-origin tutor turns rendered after backend processing
+      │  │  ├─ Server-side OpenAI speech for governed tutor answers
+      │  │  ├─ Compact close-time voice turn only when no structured turn exists
       │  │  ├─ Usage refresh after close
       │  │  └─ Disabled state for read-only history records
-      │  ├─ Voice dialog switch
-      │  ├─ Voice action
+      │  ├─ Browser fallback voice action
       │  ├─ Send action
       │  ├─ Finish lesson action when an active lesson is open
       │  ├─ Read-only history alert when a finished/legacy record is open
@@ -153,27 +155,26 @@ App
   lesson launcher rather than a blank state.
 - The language switch changes static UI copy immediately and persists locally.
 - Browser speech recognition language follows the selected UI locale.
-- Browser speech synthesis can speak tutor answers aloud in the tutor
-  workspace. Voice dialog is enabled by default when supported, can be turned
-  off from the composer, and every tutor answer has a speak/stop action. In
-  voice-dialog mode, the mic starts again after the spoken tutor answer only
-  when the returned lesson lifecycle is non-terminal. Terminal responses clear
-  the active conversation boundary and open read-only history state. If browser
-  recognition stops from silence, permission, device, language, network, or
-  automatic-start limits, a voice-status message explains the reason near the
-  mic control, silence/no-speech stops get a bounded retry, and failed sends
-  restore the recognized transcript to the composer.
-- The tutor composer exposes a separate WebRTC/OpenAI Realtime live voice
-  path for faster audio. It starts only from a user click, shows idle,
-  connecting, live, closing, and error states, is disabled for read-only
-  history, and closes on lesson-boundary changes. On authenticated close with
-  useful transcript content, the UI receives a compact synced voice turn,
-  prepends it to the current lesson, refreshes usage/history, and keeps the
-  lesson resumable when non-terminal. The normal message composer remains
-  visible because verified tasks, images, mastery, and structured response
-  blocks still use the normal tutor message pipeline.
-- Voice output reads only the visible tutor answer blocks locally in the
-  browser; it does not call backend audio generation or store generated audio.
+- The tutor workspace voice dialog is Realtime-first. After a user action,
+  enabled voice dialog tries to open `/webrtc` and the `lesson-events` data
+  channel before falling back to browser speech. Typed messages sent while the
+  channel is open use that channel; completed Realtime transcripts are routed
+  through the backend tutor engine as voice-origin turns.
+- WebRTC/OpenAI Realtime starts only from a user click or user-triggered tutor
+  message, shows idle, connecting, live, closing, and error states, is
+  disabled for read-only history, and closes on lesson-boundary changes. The
+  UI renders structured `tutor_answer` events from the data channel like
+  normal tutor turns and does not run browser speech synthesis while Realtime
+  is active.
+- Browser speech recognition and speech synthesis are fallback/history replay
+  paths. In fallback voice-dialog mode, the mic starts again after the spoken
+  tutor answer only when the returned lesson lifecycle is non-terminal.
+  Terminal responses clear the active conversation boundary and open read-only
+  history state. If browser recognition stops from silence, permission,
+  device, language, network, or automatic-start limits, a voice-status message
+  explains the reason near the mic control, silence/no-speech stops get a
+  bounded retry, and failed sends restore the recognized transcript to the
+  composer.
 - Settings is read-only for account/profile data in the current POC.
 - Settings can display compact recent session summaries and skill
   progress/regression rows that were already returned by
@@ -185,7 +186,7 @@ App
   action and may poll the safe usage endpoint while expanded or while
   background jobs are active. When visible failed background jobs exist, it
   offers a retry-one action scoped to the signed-in user's recoverable jobs.
-- Required image blocks from a freshly returned tutor answer can start one
+- Fresh active image blocks from a newly returned tutor answer start one
   automatic image generation after the text response is visible. Saved
   historical turns with missing generated images keep the manual image action.
 

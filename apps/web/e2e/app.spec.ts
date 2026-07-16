@@ -430,6 +430,7 @@ test.beforeEach(async ({ page }) => {
     class MockSpeechRecognition extends EventTarget {
       continuous = false;
       interimResults = false;
+      maxAlternatives = 1;
       lang = '';
       onend: (() => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
@@ -478,12 +479,16 @@ test.beforeEach(async ({ page }) => {
 
       close() {
         this.readyState = 'closed';
-        this.onclose?.call(this as unknown as RTCDataChannel, new Event('close'));
+        const event = new Event('close');
+        this.onclose?.call(this as unknown as RTCDataChannel, event);
+        this.dispatchEvent(event);
       }
 
       open() {
         this.readyState = 'open';
-        this.onopen?.call(this as unknown as RTCDataChannel, new Event('open'));
+        const event = new Event('open');
+        this.onopen?.call(this as unknown as RTCDataChannel, event);
+        this.dispatchEvent(event);
       }
     }
 
@@ -734,6 +739,156 @@ async function mockStudentSession(
   return { tutorRequests, imageRequests };
 }
 
+async function mockRealtimeSession(page: Page) {
+  const webrtcRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+
+  await page.route('**/webrtc/session', async (route) => {
+    webrtcRequests.push({
+      path: new URL(route.request().url()).pathname,
+      body: route.request().postDataJSON() as Record<string, unknown>,
+    });
+    return fulfillJson(route, {
+      sessionId: 'rtc-session-1',
+      conversationId: 'rtc-conversation-1',
+      iceServers: [{ urls: 'stun:example.test:19302' }],
+      openaiRealtimeModel: 'gpt-realtime-test',
+      voices: { default: 'alloy', available: ['alloy'] },
+      maxTurnMillis: 120000,
+    });
+  });
+  await page.route('**/webrtc/session/rtc-session-1/offer', async (route) => {
+    webrtcRequests.push({
+      path: new URL(route.request().url()).pathname,
+      body: route.request().postDataJSON() as Record<string, unknown>,
+    });
+    return fulfillJson(route, { sdp: 'mock-sdp-answer' });
+  });
+  await page.route('**/webrtc/session/rtc-session-1/close', async (route) => {
+    webrtcRequests.push({ path: new URL(route.request().url()).pathname });
+    return fulfillJson(route, {
+      status: 'closed',
+      conversationId: 'rtc-conversation-1',
+      lessonSessionId: 'lesson-rtc-1',
+      lessonType: 'tutor',
+      transcript: 'student: привет\nassistant: привет',
+    });
+  });
+
+  return { webrtcRequests };
+}
+
+async function getLastRealtimeStudentText(page: Page) {
+  return page.evaluate(() => {
+    const channel = (window as Window & {
+      __lastDataChannel?: { sent: string[] };
+    }).__lastDataChannel;
+    const events = (channel?.sent ?? [])
+      .map((item) => {
+        try {
+          return JSON.parse(item) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter(Boolean) as Record<string, unknown>[];
+    return [...events].reverse().find((event) => event.type === 'student_text') ?? null;
+  });
+}
+
+async function emitRealtimeTutorAnswer(page: Page, input?: { lessonType?: string }) {
+  const studentText = await getLastRealtimeStudentText(page);
+  const requestId = typeof studentText?.requestId === 'string' ? studentText.requestId : undefined;
+  const lessonType = typeof input?.lessonType === 'string' ? input.lessonType : 'tutor';
+  const answer = {
+    conversationId: 'rtc-conversation-1',
+    lessonType,
+    lessonLifecycle: {
+      ...lessonLifecycle,
+      conversationId: 'rtc-conversation-1',
+      lessonSessionId: 'lesson-rtc-1',
+      lessonType,
+    },
+    usage: {
+      currency: 'USD',
+      lesson: usageSummary.currentLesson.total,
+      today: usageSummary.today,
+    },
+    answer: 'Производная показывает скорость изменения. Начнем с простого примера.',
+    blocks: [
+      {
+        id: 'text-1',
+        type: 'text',
+        text: 'Производная показывает скорость изменения. Начнем с простого примера.',
+      },
+      {
+        id: 'example-1',
+        type: 'example',
+        title: 'Пример',
+        explanation: 'Если f(x)=x^2, то f’(x)=2x.',
+      },
+      {
+        id: 'task-1',
+        type: 'task',
+        title: 'Мини-задача',
+        prompt: 'Найдите производную f(x)=x^2 в точке x=3.',
+        difficulty: 'easy',
+      },
+      {
+        id: 'image-1',
+        type: 'image',
+        status: 'suggested',
+        caption: 'Касательная показывает скорость изменения в точке',
+        altText: 'Схема графика функции с касательной в точке',
+        priority: 'important',
+      },
+    ],
+    tasks: [
+      {
+        title: 'Мини-задача',
+        prompt: 'Найдите производную f(x)=x^2 в точке x=3.',
+        difficulty: 'easy',
+      },
+    ],
+    examples: [
+      {
+        title: 'Пример',
+        explanation: 'Если f(x)=x^2, то f’(x)=2x.',
+      },
+    ],
+    needsImage: true,
+    imagePrompt: 'Схема касательной к графику функции',
+    citations: [{ fileId: 'file-1', filename: 'ege-derivatives.pdf' }],
+  };
+  await page.evaluate(
+    (payload) => {
+      const channel = (window as Window & {
+        __lastDataChannel?: { onmessage: ((event: MessageEvent) => void) | null };
+      }).__lastDataChannel;
+      channel?.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent);
+    },
+    {
+      type: 'tutor_answer',
+      requestId,
+      turn: {
+        id: 'turn-rtc-answer-1',
+        prompt:
+          typeof studentText?.message === 'string'
+            ? studentText.message
+            : 'Объясни производную',
+        lessonType,
+        source: 'text',
+        answer,
+        createdAt: '2026-07-12T10:20:00.000Z',
+      },
+      answer,
+      conversationId: 'rtc-conversation-1',
+      lessonSessionId: 'lesson-rtc-1',
+      lessonType,
+      terminal: false,
+    },
+  );
+}
+
 test('auth screen is usable and localized', async ({ page }) => {
   await page.route('**/auth/me', (route) => fulfillJson(route, { user: null }));
 
@@ -750,6 +905,7 @@ test('auth screen is usable and localized', async ({ page }) => {
 
 test('student completes first meeting, asks tutor, and renders a diagram', async ({ page }) => {
   const { tutorRequests, imageRequests } = await mockStudentSession(page, { needsOnboarding: true });
+  const { webrtcRequests } = await mockRealtimeSession(page);
 
   await page.goto('/');
 
@@ -864,65 +1020,18 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   tutorRequests.length = 0;
 
   await page.getByRole('button', { name: 'Начать первое занятие' }).click();
+  await expect(page.getByText('в эфире')).toBeVisible();
+  await expect.poll(() => webrtcRequests.length).toBe(2);
+  const realtimeStudentText = await getLastRealtimeStudentText(page);
+  expect(realtimeStudentText).toMatchObject({
+    type: 'student_text',
+    lessonType: 'meeting',
+    source: 'text',
+  });
+  await emitRealtimeTutorAnswer(page, { lessonType: 'meeting' });
 
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => (window as Window & { __spokenText?: string }).__spokenText))
-    .toContain('Производная показывает скорость изменения');
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
-    )
-    .toBeGreaterThanOrEqual(3);
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as Window & { __recognitionLanguage?: string }).__recognitionLanguage),
-    )
-    .toBe('ru-RU');
-  await expect(
-    page.getByText('Слушаю тебя. Если будет пауза, я попробую продолжить слушать автоматически.'),
-  ).toBeVisible();
-  const startsBeforeSilenceRetry = await page.evaluate(
-    () => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0,
-  );
-  await page.evaluate(() => {
-    const state = window as Window & {
-      __lastRecognition?: { onerror: ((event: Event) => void) | null };
-    };
-    const event = new Event('error') as Event & { error: string };
-    Object.defineProperty(event, 'error', { value: 'no-speech' });
-    state.__lastRecognition?.onerror?.(event);
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
-    )
-    .toBeGreaterThanOrEqual(startsBeforeSilenceRetry + 1);
-  await page.evaluate(() => {
-    const state = window as Window & {
-      __lastRecognition?: { onerror: ((event: Event) => void) | null };
-    };
-    const event = new Event('error') as Event & { error: string };
-    Object.defineProperty(event, 'error', { value: 'no-speech' });
-    state.__lastRecognition?.onerror?.(event);
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
-    )
-    .toBeGreaterThanOrEqual(startsBeforeSilenceRetry + 2);
-  await page.evaluate(() => {
-    const state = window as Window & {
-      __lastRecognition?: { onerror: ((event: Event) => void) | null };
-    };
-    const event = new Event('error') as Event & { error: string };
-    Object.defineProperty(event, 'error', { value: 'no-speech' });
-    state.__lastRecognition?.onerror?.(event);
-  });
-  await expect(page.getByText('Микрофон остановился из-за паузы или тишины.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Озвучить' })).toBeVisible();
-  await expect.poll(() => tutorRequests.length).toBe(1);
-  expect(tutorRequests[0]).toMatchObject({ lessonType: 'meeting' });
+  expect(tutorRequests).toHaveLength(0);
   await expect(page.getByText('$0.0030').first()).toBeVisible();
   await expect(
     page.locator('.usage-bar').getByRole('button', { name: 'Обновить' }),
@@ -938,10 +1047,10 @@ test('student completes first meeting, asks tutor, and renders a diagram', async
   await expect(page.getByText('Касательная показывает скорость изменения в точке')).toBeVisible();
   await expect(page.getByText('ege-derivatives.pdf')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Создать схему' }).click();
   await expect(page.getByAltText('Схема графика функции с касательной в точке')).toBeVisible();
+  await expect.poll(() => imageRequests.length).toBe(1);
   expect(imageRequests[0]).toMatchObject({
-    conversationId: 'conv-e2e',
+    conversationId: 'rtc-conversation-1',
     blockId: 'image-1',
   });
   expect(imageRequests[0]?.prompt).toBeUndefined();
@@ -1062,6 +1171,58 @@ test('tutor submits interim-only voice answer when recognition ends', async ({ p
     message: 'средний уровень',
   });
   await expect(page.getByText('Производная показывает скорость изменения.')).toBeVisible();
+});
+
+test('tutor preserves longer voice transcript when final recognition compresses a number', async ({ page }) => {
+  const { tutorRequests } = await mockStudentSession(page, { needsOnboarding: false });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await page.getByLabel('Голосовой диалог').uncheck();
+  await page.getByRole('button', { name: 'Голосовой ввод' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __recognitionStarts?: number }).__recognitionStarts ?? 0),
+    )
+    .toBe(1);
+
+  await page.evaluate(() => {
+    const state = window as Window & {
+      __lastRecognition?: {
+        onresult: ((event: Event) => void) | null;
+        onend: (() => void) | null;
+      };
+    };
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: 'четыреста' },
+          isFinal: false,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onresult?.({
+      resultIndex: 0,
+      results: [
+        {
+          0: { transcript: '4' },
+          isFinal: true,
+          length: 1,
+        },
+      ],
+    } as unknown as Event);
+    state.__lastRecognition?.onend?.();
+  });
+
+  await expect.poll(() => tutorRequests.length).toBe(1);
+  expect(tutorRequests[0]).toMatchObject({
+    lessonType: 'tutor',
+    source: 'voice',
+    message: 'четыреста',
+  });
 });
 
 test('tutor keeps recognized voice text when the send fails', async ({ page }) => {
@@ -1288,6 +1449,7 @@ test('terminal tutor responses do not restart the microphone', async ({ page }) 
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'ЕГЭ математика' })).toBeVisible();
+  await page.getByLabel('Голосовой диалог').uncheck();
   await page
     .getByPlaceholder('Например: объясни задание 12 с производной')
     .fill('Заверши занятие, если цель достигнута');

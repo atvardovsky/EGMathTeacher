@@ -53,9 +53,9 @@ Current covered areas:
   stale queued/running state recovery, lesson-closure review fanout, closed
   lesson-type preservation in summaries, and signed-in-user-scoped failed-job
   requeue behavior
-- tutor structured output, required image-block normalization for explicit
-  visual requests, and generated image data URL persistence into the stored
-  tutor turn
+- tutor structured output, explicit visual request normalization, automatic
+  generation for fresh active image blocks, and generated image data URL
+  persistence into the stored tutor turn
 - tutor lesson-history retrieval for active vs historical canonical lesson
   sessions, explicit lesson finishing with closure-review enqueueing only on
   first transition, terminal conversation reopen rejection without false
@@ -111,13 +111,14 @@ They start a local HTTP Vite server on `E2E_PORT` or default `5138` so the
 normal `https://localhost:5137` dev server can keep running. They cover
 auth/localization, first-login meeting completion, lesson launcher
 visibility/start, explicit empty saved-lesson state, saved lesson list/resume
-with previous discussion hydration, browser speech-synthesis handoff for tutor replies,
-automatic speech-recognition restart after spoken non-terminal tutor replies,
-bounded silence retry, interim-only speech-recognition submission for
-first-meeting and tutor turns, failed voice-send transcript preservation,
-mocked WebRTC realtime voice session start/offer/close from the tutor composer
-including browser `createDataChannel` support for the server-owned
-`lesson-events` path,
+with previous discussion hydration, browser speech-synthesis fallback handoff
+for tutor replies, automatic speech-recognition restart after spoken
+non-terminal fallback tutor replies, bounded silence retry, interim-only
+speech-recognition submission for first-meeting and fallback tutor turns,
+failed voice-send transcript preservation, mocked WebRTC realtime voice session
+start/offer/close from the tutor composer including browser
+`createDataChannel` support for the server-owned `lesson-events` path and a
+mocked structured `tutor_answer` event from that path,
 blocked speech-recognition restart after terminal tutor replies, tutor answer
 rendering, terminal first-meeting read-only input behavior, citation display,
 terminal first-meeting reload recovery before profile creation, usage refresh

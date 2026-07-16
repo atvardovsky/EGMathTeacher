@@ -43,28 +43,33 @@ Rules from current implementation:
 
 ### Ask The Tutor
 
-Authenticated user sends a math question by text or browser speech
-recognition. When the student keeps voice dialog enabled, the tutor speaks the
-visible answer aloud through browser speech synthesis and then opens the mic
-again for the next student turn.
+Authenticated user sends a math question by text, WebRTC/OpenAI Realtime voice,
+or browser speech-recognition fallback. When the student keeps voice dialog
+enabled, the tutor workspace first tries the persistent Realtime path; OpenAI
+speaks the governed tutor answer and the same session keeps listening for the
+next turn.
 
 Rules from current implementation:
 
-- Tutor requests are sent to `POST /tutor/message`.
+- Tutor requests are sent to `POST /tutor/message` when no authenticated
+  Realtime lesson channel is open. While that channel is open, typed messages
+  and completed OpenAI Realtime input transcripts enter the same governed
+  tutor engine through server-local `lesson-events`.
 - The API records source as `text` or `voice`.
-- Browser speech recognition is used only to turn student speech into the
-  message sent to `POST /tutor/message`.
-- Browser speech synthesis is used only to read the returned visible tutor
-  answer aloud. It does not call backend audio generation, upload audio, or
-  write generated audio to SQLite.
-- Voice dialog is enabled by default when speech synthesis is available, has a
-  visible on/off switch in the tutor composer, and each tutor answer has a
-  speak/stop control for replay or interruption. After a spoken tutor answer,
-  the web client automatically starts speech recognition only when browser
-  support and permissions allow it and the returned lesson lifecycle is still
-  non-terminal (`shouldStop=false`, not `finished`, `goal_reached`, or
-  `hard_limit_reached`). Terminal responses clear the active conversation
-  boundary instead of letting the next voice/text turn reopen it.
+- Voice dialog is enabled by default when Realtime or browser fallback voice is
+  available, has a visible on/off switch in the tutor composer, and each tutor
+  answer has a speak/stop control for browser fallback/history replay.
+- In the primary path, the browser opens `/webrtc`, creates an ordered
+  `lesson-events` data channel, sends typed composer messages through that
+  channel, and lets OpenAI Realtime transcribe spoken input. Completed
+  transcripts are sent by the bridge as `student_text` with `source=voice` and
+  `origin=realtime_transcript`.
+- The backend returns normal structured tutor answers over the data channel.
+  The bridge then asks OpenAI Realtime to speak the visible governed answer,
+  rather than allowing an independent Realtime answer to bypass lesson policy.
+- Terminal responses clear the active conversation boundary, stop the Realtime
+  session, and prevent the next voice/text turn from reopening a finished
+  lesson.
 - Browser speech recognition may stop after silence, permission changes,
   network errors, or browser policy. The tutor UI shows a short voice-status
   reason, retries bounded silence/no-speech stops in voice-dialog mode and
@@ -75,20 +80,13 @@ Rules from current implementation:
   request. If the send fails through REST or the WebRTC lesson data channel,
   the recognized transcript is restored to the composer so the student can
   review and resend instead of repeating the answer aloud.
-- Browser speech synthesis quality, Russian stress, and emotional prosody are
-  browser-voice limitations in the POC. Better voice quality requires a future
-  OpenAI audio integration.
-- The tutor composer also exposes an explicit WebRTC/OpenAI Realtime live
-  voice path for low-latency audio. It is user-started, can be stopped from
-  the composer, and is closed when the UI moves to a different lesson boundary
-  or read-only history. While the session is open, typed composer messages can
-  travel over the browser-to-server `lesson-events` WebRTC data channel and
-  enter the same governed tutor engine as `POST /tutor/message`. On
-  authenticated close, useful raw audio transcripts are saved as one compact
-  voice-origin `tutor_turns` row, usage is recorded when available, and a cheap
-  background review can store sanitized teaching observations. Raw audio
-  transcript capture does not write verifier progress, images, structured task
-  blocks, or mastery evidence by itself.
+- Browser speech synthesis is a fallback and history replay layer. Browser
+  speech quality, Russian stress, and emotional prosody are no longer the
+  primary tutor-workspace voice path when Realtime is available.
+- On authenticated Realtime close, usage is recorded when available and a cheap
+  background review can store sanitized teaching observations. One compact
+  voice-origin `tutor_turns` continuity row is saved only when no completed
+  Realtime transcript already entered the tutor engine during the session.
 - The request may include `lessonType`; older clients can omit it and the API
   infers a conservative type from the prompt.
 - Supported lesson types are `meeting`, `tutor`, `concept`, `practice`,
@@ -188,10 +186,10 @@ Rules from current implementation:
   generated data URL into the same stored image block.
 - If the student explicitly asks for a drawing, diagram, graph, image, or
   visual explanation, the API must return an image block even if the model
-  omitted it. Fresh required image blocks can auto-start one image-generation
-  request after the text answer is visible; active older saved turns and
-  optional blocks keep the explicit image-generation action visible. Read-only
-  historical records must not trigger new image-generation spend.
+  omitted it. Fresh active image blocks auto-start one image-generation request
+  after the text answer is visible; active older saved turns and retry cases
+  keep the explicit image-generation action visible. Read-only historical
+  records must not trigger new image-generation spend.
 - The tutor prompt instructs the model to answer in Russian, explain step by
   step, check understanding, and avoid returning only the final answer.
 - If RAG vector stores exist, the OpenAI-backed model provider uses file
@@ -367,11 +365,10 @@ Rules from current implementation:
 
 - Image requests use `POST /tutor/image`.
 - The tutor message response does not wait for image generation. It returns an
-  image block with caption/alt text and optional prompt. Fresh required image
+  image block with caption/alt text and optional prompt. Fresh active image
   blocks auto-start one generation after the text answer is visible; saved
-  turns, optional blocks, and retry cases use the prominent create-diagram
-  action. The API can generate from stored lesson/task context when no prompt
-  was supplied.
+  turns and retry cases use the prominent create-diagram action. The API can
+  generate from stored lesson/task context when no prompt was supplied.
 - The API calls the model-provider image operation. The current implementation
   delegates to OpenAI image generation and returns a PNG data URL.
 - When the request includes tutor-turn and image-block identity, the API

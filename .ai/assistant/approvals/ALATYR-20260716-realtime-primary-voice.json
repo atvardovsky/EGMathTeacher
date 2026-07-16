@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "record_kind": "alatyr-approval-record",
+  "evidence_classification": "historical-record",
+  "approval_id": "ALATYR-20260716-realtime-primary-voice",
+  "operation": {
+    "id": "realtime-primary-voice-20260716",
+    "type": "architecture-change"
+  },
+  "plan": {
+    "version": "1",
+    "sha256": "not available - approval was given in conversation for the described implementation",
+    "file": "not available - conversational implementation request"
+  },
+  "diff": {
+    "base": "e6ec0278e9396e1a9e30b89f995bd6e2597e4db3",
+    "patch_sha256": "not available before implementation",
+    "repository_revision_at_approval": "e6ec0278e9396e1a9e30b89f995bd6e2597e4db3"
+  },
+  "scope": {
+    "allowed_protected_changes": [
+      "Make tutor-workspace voice dialog Realtime/WebRTC-first",
+      "Route completed Realtime input transcripts through the backend tutor engine",
+      "Ask OpenAI Realtime to speak the governed tutor answer",
+      "Keep browser speech recognition and synthesis as fallback only",
+      "Avoid duplicate compact close-time Realtime turns when structured Realtime tutor turns already exist"
+    ],
+    "allowed_files_or_surfaces": [
+      "apps/api/src/webrtc/**",
+      "apps/api/test/webrtc*.spec.ts",
+      "apps/web/src/App.tsx",
+      "apps/web/src/i18n.ts",
+      "apps/web/e2e/app.spec.ts",
+      "apps/api/README.md",
+      "apps/api/docs/webrtc-module.md",
+      "apps/api/Agent.md",
+      ".ai/project/**",
+      ".ai/assistant/approvals/ALATYR-20260716-realtime-primary-voice.*"
+    ],
+    "excluded_files_or_surfaces": [
+      "deploy/**",
+      ".env",
+      ".cert/**",
+      "system Apache/Nginx configuration"
+    ],
+    "excluded_actions": [
+      "No live OpenAI calls for validation",
+      "No system web server or deployment configuration changes",
+      "No new production dependencies",
+      "No secret, key, TLS, or credential changes"
+    ],
+    "allowed_actions_mode": "full-with-approval",
+    "invalidation_rule": "Changing provider, auth, production deployment, secrets, or adding new external services requires a new approval."
+  },
+  "approval": {
+    "requested_by": "atvardovsky",
+    "approved_by": "atvardovsky",
+    "approved_at": "2026-07-16T23:50:18+02:00",
+    "source_or_message": "User requested: \"implement it. After check an concistancy\" after agreeing that tutor voice should become WebRTC/OpenAI Realtime primary with browser voice as fallback.",
+    "expires_at_or_reuse_policy": "single operation only"
+  },
+  "use_result": {
+    "used_by": "current implementation turn",
+    "patch_changed_after_approval": "yes - implementation created after conversational approval",
+    "implementation_within_scope": "yes - changed runtime files are within approved WebRTC, tutor UI, E2E, and documentation surfaces; no deployment, TLS, secret, or new dependency changes",
+    "validation": "npm test; npm test -- --runInBand apps/api/test/webrtc-media.service.spec.ts apps/api/test/webrtc.controller.spec.ts; npm run build; npm run lint; npm run e2e; npm run diagrams:render; npm run diagrams:check; npm run alatyr:check; npm run smoke:dev after starting local dev stack; git diff --check",
+    "result_evidence": "API tests passed: 18 suites / 136 tests. Focused WebRTC tests passed: 2 suites / 15 tests. Browser E2E passed: 11 tests. Build, lint, diagram drift, Alatyr check, dev smoke, and diff whitespace checks passed. Secret/local-path scan found no committed key or local /home path leakage in the checked docs/source set.",
+    "residual_risk": "real OpenAI Realtime WebRTC media quality, live provider latency, and provider billing are not validated by mocked local tests or dev smoke"
+  }
+}

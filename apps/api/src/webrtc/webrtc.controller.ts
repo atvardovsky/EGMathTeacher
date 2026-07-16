@@ -546,6 +546,9 @@ export class WebRtcController {
     record: ConversationRecord | undefined,
     transcript: string | undefined,
   ): TutorLessonHistoryTurn | undefined {
+    if ((session.structuredRealtimeTurnCount ?? 0) > 0) {
+      return undefined;
+    }
     if (!session.userId || !this.hasTeachingTranscript(record, transcript)) {
       return undefined;
     }

@@ -30,12 +30,12 @@ EGMathTeacher is a browser-based POC with:
   imported mastery-criteria policy, and usage ledger for lesson goals,
   time-limit heuristics, backend policy decisions, effectiveness signals,
   verified learning outcomes, and user-visible cost estimates
-- OpenAI Realtime for inherited realtime voice, with compact current-lesson
-  and analytic teaching context injected into signed-in sessions, one compact
-  voice-origin tutor turn saved on authenticated close when useful transcript
-  content exists, and a server-owned browser `lesson-events` data channel that
-  can route typed lesson messages through the governed tutor engine while the
-  live audio session remains open
+- OpenAI Realtime for primary tutor-workspace voice, with compact
+  current-lesson and analytic teaching context injected into signed-in
+  sessions, completed speech transcripts routed into the governed tutor engine
+  as voice-origin lesson turns, server-side Realtime speech of the governed
+  tutor answer, and one compact close-time continuity turn only when no
+  structured Realtime transcript turn was produced
 - optional production reverse proxy references under `deploy/`
 
 No packaged desktop runtime was found.
@@ -118,29 +118,22 @@ Main UI areas in `apps/web/src/App.tsx`:
 - auth screen with login/register mode
 - first-login student meeting for profile creation
 - tutor workspace with lesson launcher, lesson mode selector, text input,
-  saved lesson continuity panel, speech recognition input, and browser
-  speech-synthesis output for visible tutor answers with automatic mic
-  restart only for non-terminal lesson lifecycles plus visible recognition
-  stop reasons in voice-dialog mode. The workspace also has an explicit
-  WebRTC/OpenAI Realtime live voice path that negotiates through `/webrtc`
-  after a user click, sends active lesson attribution when present, receives
-  server-side current lesson and analytic teaching context, opens a
-  browser-to-server `lesson-events` data channel for typed lesson messages,
-  closes on lesson-boundary/read-only state changes, refreshes usage after
-  close, saves a compact voice-origin turn into lesson history when useful
-  transcript content exists, and can trigger a cheap background review for
-  teaching observations. Typed `student_text` data-channel messages use the
-  governed tutor engine and can create normal structured tutor results; raw
-  Realtime audio transcript capture still does not create verifier attempts,
-  mastery evidence, structured task/example/image blocks, or generated images
-  by itself.
+  saved lesson continuity panel, and Realtime-first voice dialog. When voice
+  dialog is enabled, user-triggered tutor messages try to open `/webrtc` and
+  use the `lesson-events` data channel before falling back to REST/browser
+  speech. Completed OpenAI Realtime transcripts are routed through
+  `TutorService.answerMessage`, so they can create normal structured tutor
+  results, verifier attempts, usage rows, image blocks, and background jobs.
+  The bridge asks OpenAI Realtime to speak the governed visible tutor answer.
+  Browser speech recognition and speech synthesis remain fallback-only in the
+  tutor workspace and are not used while a Realtime runtime is active.
 - user-visible lesson usage/debug bar with today's estimate, current lesson
   estimate, evidence level, verified outcome count, cost per verified outcome,
   expanded operation/model/token/image/decision details, background job status,
   and retry-one recovery for visible failed background jobs
 - tutor turn cards for ordered text, task, example, and image response blocks,
-  lesson-type badge, citations, optional image generation, and automatic
-  generation for fresh required image blocks after the text answer is visible
+  lesson-type badge, citations, automatic generation for fresh active image
+  blocks, and manual retry/history image actions
 - admin knowledge screen for file upload and status table
 - settings screen for language, voice input language, account info, read-only
   student profile memory, recent session summaries, and skill
@@ -203,9 +196,10 @@ window size, idle timeout, or quality trigger, then can run a combined
   model policy to store sanitized teaching observations and an optional
   session summary; it must not write verifier attempts, mastery evidence,
   `student_skill_progress`, or goal state. The WebRTC close path itself may
-  write one compact voice-origin `tutor_turns` row for lesson continuity
-  before the background review runs. Typed WebRTC `lesson-events` messages are
-  not background observations; they enter the ordinary tutor message runtime.
+  write one compact voice-origin `tutor_turns` row for lesson continuity only
+  when no structured Realtime transcript turn was already produced. Typed and
+  transcript-origin WebRTC `lesson-events` messages are not background
+  observations; they enter the ordinary tutor message runtime.
   Legacy per-turn extraction remains available through configuration.
 
 ## Endpoint Map
@@ -229,7 +223,7 @@ window size, idle timeout, or quality trigger, then can run a combined
 | `POST /admin/knowledge/files` | admin | Upload knowledge file to OpenAI and attach to vector store. |
 | `GET /admin/knowledge/status` | admin | Return active vector stores and knowledge file metadata. |
 | `GET /health` | none | Return service status and WebRTC audio support. |
-| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, compact voice-turn persistence on close, and post-close background review, but does not require auth. The tutor UI can start this path as low-latency live voice. Authenticated typed `student_text` events sent through the browser `lesson-events` data channel are routed into the same tutor engine used by `/tutor/message`; raw audio transcript capture remains continuity/observation-only. |
+| `/webrtc/*` | none in current controller | WebRTC session bootstrap, token, SDP, ICE, close, and event endpoints. The controller opportunistically reads the signed-in cookie for usage attribution, compact teaching-context injection, usage accounting, compact voice-turn persistence on close, and post-close background review, but does not require auth. The tutor UI uses this path as the primary low-latency voice layer. Authenticated typed `student_text` events and completed OpenAI Realtime input transcripts sent through the browser `lesson-events` path are routed into the same tutor engine used by `/tutor/message`; close-time compact voice-turn persistence is only a fallback when no structured transcript turn was written during the live session. |
 
 Local operator command:
 

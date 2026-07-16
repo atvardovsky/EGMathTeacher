@@ -17,7 +17,7 @@ are generated into `rendered/`.
   RAG/shared-knowledge lookup, DB memory persistence, and transition to tutor.
 - `tutor-rag-sequence.mmd`: tutor text/voice request, RAG, persistence,
   optional batched background observation windows, legacy background enqueue,
-  profile/strategy refresh, and optional image flow.
+  profile/strategy refresh, and automatic fresh active image flow.
 - `knowledge-upload-sequence.mmd`: admin document upload and vector store flow.
 - `knowledge-pack-runtime-repair.mmd`: implemented repair path for DB-backed
   curriculum routing, task-bank task selection, strict import, RAG
@@ -31,7 +31,8 @@ are generated into `rendered/`.
 - `assistant-governance.mmd`: Alatyr framework/project/assistant contours,
   gates, operations, and evidence flow.
 - `ui-tree.mmd`: web UI state tree from auth through the voice-first meeting,
-  tutor, optional image generation, and admin materials.
+  tutor, automatic fresh active image generation with history/manual retry
+  states, and admin materials.
 
 ## Maintenance
 

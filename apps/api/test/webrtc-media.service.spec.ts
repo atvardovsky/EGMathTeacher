@@ -182,6 +182,26 @@ describe('WebRtcMediaService lesson data channel', () => {
     });
   });
 
+  it('marks realtime transcript events as structured lesson turns', async () => {
+    await service.handleLessonDataMessage('rtc-1', {
+      type: 'student_text',
+      requestId: 'req-voice-transcript',
+      message: 'четыреста',
+      lessonType: 'practice',
+      source: 'voice',
+      origin: 'realtime_transcript',
+    });
+
+    expect(tutorService.answerMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'четыреста',
+        source: 'voice',
+        lessonType: 'practice',
+      }),
+    );
+    expect(session.structuredRealtimeTurnCount).toBe(1);
+  });
+
   it('rejects lesson messages when the WebRTC session has no signed-in user', async () => {
     session.userId = undefined;
 

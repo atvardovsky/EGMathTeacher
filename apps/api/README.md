@@ -5,7 +5,7 @@ This repository houses a NestJS orchestration service that now handles both sign
 ## Architecture Overview
 
 - **NestJS service (`src/`)** – Exposes REST endpoints for session bootstrap, conversation tracking, persona/voice configuration, and ephemeral token issuance. Stores conversation transcripts to disk when a session closes.
-- **Realtime bridge (Node, `OpenAiRealtimeBridgeService`)** – Accepts SDP offers from browsers, spins up peer connections via `wrtc`, and dials OpenAI Realtime over WebRTC (bidirectional Opus audio + provider data channel). A separate browser-to-server `lesson-events` data channel can carry typed lesson messages into the governed tutor engine while the live audio session remains open. Provider events stream directly into Nest for transcript enrichment.
+- **Realtime bridge (Node, `OpenAiRealtimeBridgeService`)** – Accepts SDP offers from browsers, spins up peer connections via `wrtc`, and dials OpenAI Realtime over WebRTC (bidirectional Opus audio + provider data channel). A browser-to-server `lesson-events` data channel carries typed lesson messages and completed Realtime transcripts into the governed tutor engine while the live audio session remains open. The bridge can ask OpenAI Realtime to speak the governed tutor answer, and provider events stream directly into Nest for transcript enrichment.
 - **Clients** – Obtain bootstrap metadata from `/webrtc/session`, post their SDP offer back to the NestJS proxy, and then speak/listen over the direct browser ↔ Node bridge connection.
 
 ## Getting Started
@@ -171,17 +171,17 @@ POC, or can be disabled with `TASK_BANK_REQUIRED=true`.
 1. Client hits `POST /webrtc/session` to reserve a session; response includes conversation id, ICE servers, persona + voice options. The tutor UI sends optional lesson session id/type when a signed-in lesson is active. For signed-in sessions, the API builds compact server-only teaching context from the current lesson, profile summary, recent summaries, learning signals, and skill trends.
 2. Client records mic audio, creates SDP offer, and posts it to `POST /webrtc/session/{id}/offer`.
 3. NestJS forwards the offer to the in-process realtime bridge, which appends the compact teaching context to provider instructions, negotiates with OpenAI Realtime, and returns an SDP answer.
-4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service. The browser also opens a `lesson-events` data channel to the NestJS bridge. Authenticated `student_text` events on that channel call the existing `TutorService.answerMessage` path and receive the normal structured tutor answer over the same WebRTC connection.
-5. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, creates or reuses an authenticated lesson session when needed, saves one compact voice-origin `tutor_turns` row for continuity, records a session-level usage ledger row for authenticated sessions, and queues a cheap `realtime_session_review` background job when teaching-useful transcript data exists.
+4. Audio flows directly between the browser and the NestJS bridge; the bridge relays it to/from OpenAI and streams provider events into the conversation service. The browser also opens a `lesson-events` data channel to the NestJS bridge. Authenticated `student_text` events and completed Realtime input transcripts call the existing `TutorService.answerMessage` path and receive the normal structured tutor answer over the same WebRTC connection.
+5. The bridge asks OpenAI Realtime to speak the governed visible tutor answer instead of letting an independent Realtime reply bypass lesson policy.
+6. When the call ends, the client calls `POST /webrtc/session/{id}/close`; NestJS finalizes the transcript, tears the session down, records a session-level usage ledger row for authenticated sessions, and queues a cheap `realtime_session_review` background job when teaching-useful transcript data exists. A compact voice-origin `tutor_turns` row is saved only when no structured Realtime transcript turn was already written.
 
-Realtime audio is a durable voice-continuity path in the current POC. Typed
-lesson messages sent through the `lesson-events` data channel are full tutor
-engine turns and can create the same structured task/example/image-plan blocks,
-verifier attempts, usage rows, terminal lesson transitions, and background
-jobs as `POST /tutor/message`. Raw audio transcript capture and post-close
-Realtime review remain continuity/observation features only; they do not create
-verifier attempts, mastery progress, structured blocks, or generated images by
-themselves.
+Realtime audio is now a primary tutor-workspace voice path in the current POC.
+Typed lesson messages and completed speech transcripts sent through
+`lesson-events` are full tutor engine turns and can create the same structured
+task/example/image-plan blocks, verifier attempts, usage rows, terminal lesson
+transitions, and background jobs as `POST /tutor/message`. Provider events
+that do not complete into transcript text and post-close Realtime review remain
+continuity/observation features only.
 
 ## Translation Module
 
@@ -279,7 +279,8 @@ Tutor/product API surfaces also include:
   not create closure jobs. Realtime session close can enqueue
   `realtime_session_review`, which stores sanitized teaching observations and
   a compact summary. Realtime close can also save one compact voice-origin
-  `tutor_turns` row for lesson continuity, but it does not write
+  `tutor_turns` row for lesson continuity only when no structured Realtime
+  transcript turn was already written, and that compact row does not write
   `student_skill_progress`, verifier attempts, or mastery evidence. Legacy
   per-turn extraction remains available through configuration.
 - Audio is forwarded as Opus RTP frames end-to-end. Data channel events are processed in-process and persisted into conversation transcripts/token usage through `WebRtcProviderEventService`.
@@ -289,7 +290,7 @@ Tutor/product API surfaces also include:
 
 1. Add end-to-end tests that validate full browser ↔ bridge ↔ OpenAI SDP/ICE negotiation.
 2. Flesh out additional AI providers (Gemini Live, Hume EVI, Retell) behind the common provider interface.
-3. Decide whether realtime should stream structured tutor blocks while the
-   call is still open; the current POC saves one compact turn only after
-   close.
+3. Expand streamed structured tutor-block UX for Realtime turns; the current
+   POC renders the completed `tutor_answer` event when the backend turn
+   finishes.
 4. Harden translation QA with explicit post-generation language/format validation hooks.

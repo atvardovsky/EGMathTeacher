@@ -81,38 +81,35 @@ visible next actions.
 - Student profile memory is filtered to teaching-useful signals; sensitive
   family, health, clinical, political, religious, and other non-teaching
   personal details must not be stored or used for tutoring strategy.
-- Tutor messages submitted from text or browser voice recognition. The tutor
-  workspace also supports browser speech-synthesis output for visible tutor
-  answers: voice dialog is enabled by default when supported, can be switched
-  off by the student, speaks the tutor response, then automatically reopens the
-  mic for the next student turn only when `lessonLifecycle.shouldStop=false`
-  and the lesson status is non-terminal. Terminal responses such as goal
-  completion or hard-limit stops clear the active conversation boundary and do
-  not restart speech recognition. Each tutor turn has a speak/stop control.
-  This is local browser text-to-speech, not a backend audio-generation call, so
-  Russian stress and emotional prosody are limited by the installed browser
-  voices. Browser speech-recognition timeouts, no-speech stops, permission
-  blocks, device errors, and network errors are surfaced near the mic control;
-  silence/no-speech stops retry with a small bounded budget before falling
-  back to manual mic start. When speech recognition ends, the web client sends
-  the best final or interim transcript directly as a voice-origin tutor
-  request and restores it to the composer if delivery fails.
-- Tutor workspace has an explicit WebRTC/OpenAI Realtime live voice path for
-  low-latency audio. It starts only after a user click, uses the inherited
-  `/webrtc` bridge, closes on lesson-boundary changes or read-only history,
-  and receives compact server-only teaching context from the current lesson
-  and recent analytic memory. While open, the browser creates a server-owned
-  `lesson-events` data channel for typed lesson messages; authenticated
-  `student_text` events use the normal tutor message engine, so structured
-  blocks, verifier attempts, mastery policy, usage, and terminal lesson guards
-  stay governed by backend policy. Raw spoken audio remains the low-latency
-  Realtime voice path. On authenticated close, useful transcripts are saved
-  back into the lesson as one compact voice-origin `tutor_turns` row so the
-  next tutor turn can continue from the voice discussion. Authenticated
-  realtime sessions record a session-level usage ledger row on close when
-  provider usage events or duration are available and can enqueue a cheap
-  `realtime_session_review` background job that stores sanitized teaching
-  observations and optional summaries for future context.
+- Tutor workspace voice dialog is Realtime-first. Tutor messages can still be
+  submitted by text or browser speech-recognition fallback, but when voice
+  dialog is enabled the web client first tries the inherited `/webrtc` bridge
+  and server-owned `lesson-events` data channel. The Realtime session starts
+  only after a user click or user-triggered tutor message, closes on
+  lesson-boundary changes or read-only history, and receives compact
+  server-only teaching context from the current lesson and recent analytic
+  memory.
+- While the Realtime channel is open, typed composer messages and completed
+  OpenAI Realtime input transcripts are routed as authenticated `student_text`
+  events into the normal tutor message engine. Structured blocks, verifier
+  attempts, mastery policy, image generation, usage, and terminal lesson guards
+  stay governed by backend policy. The bridge asks OpenAI Realtime to speak the
+  governed visible tutor answer, so the primary tutor-workspace voice quality
+  comes from OpenAI rather than browser speech synthesis.
+- Browser speech recognition and browser speech synthesis remain fallback and
+  history-replay paths. Browser speech-recognition timeouts, no-speech stops,
+  permission blocks, device errors, and network errors are surfaced near the
+  mic control; silence/no-speech stops retry with a small bounded budget before
+  falling back to manual mic start. When fallback recognition ends, the web
+  client sends the best final or interim transcript as a voice-origin tutor
+  request and restores it to the composer if delivery fails. Browser speech
+  synthesis does not run while a Realtime runtime is active.
+- Authenticated realtime sessions record a session-level usage ledger row on
+  close when provider usage events or duration are available and can enqueue a
+  cheap `realtime_session_review` background job that stores sanitized teaching
+  observations and optional summaries for future context. On close, one compact
+  voice-origin `tutor_turns` continuity row is saved only when no completed
+  Realtime transcript was already routed into the tutor engine.
 - Tutor messages can be associated with a lesson type. The API supports
   `meeting`, `tutor`, `concept`, `practice`, `diagnostic`, `exam_strategy`,
   `mistake_review`, `visual_explanation`, and `reflection`; the POC tutor UI
@@ -164,10 +161,10 @@ visible next actions.
   priority. When an image block has no prompt, the API derives the image
   instruction from the stored tutor answer, task, example, and block context.
 - Explicit student visual requests are guaranteed to surface a required image
-  block. For a freshly returned tutor answer, the web client starts the diagram
-  generation once automatically for that required block; saved historical turns
-  with missing images still expose a visible create-diagram action instead of
-  spending again on page load.
+  block. For a freshly returned active tutor answer, every image block starts
+  one automatic diagram generation after the text answer is visible; saved
+  historical turns with missing images and failed retry cases still expose a
+  visible create-diagram action instead of spending again on page load.
 - Structured tutor answers include lesson lifecycle state and a compact usage
   snapshot for the current lesson/day.
 - Static web UI text supports Russian and English locale switching across
@@ -265,7 +262,7 @@ visible next actions.
 - OpenAI vector store/file search integration for RAG.
 - OpenAI image generation for explanatory math diagrams.
 - Image generation remains asynchronous and never blocks the text response.
-  Required images requested in the current turn can be generated automatically
+  Fresh active image blocks from the current turn are generated automatically
   after the tutor answer appears. Image prompts are optional because the API can
   build the generation instruction from the current task/answer context;
   generated data URLs are persisted back into the stored tutor-turn image block
@@ -390,9 +387,11 @@ local source of truth.
 - OpenAI Images API for explanatory diagrams.
 - OpenAI Files and Vector Stores API for RAG knowledge.
 - OpenAI Realtime API for WebRTC voice sessions.
-- Browser speech recognition API for local voice input in the web client.
-- Browser speech synthesis API for local tutor answer output in the web
+- Browser speech recognition API for fallback local voice input in the web
   client.
+- Browser speech synthesis API for first-meeting/fallback/history replay in the
+  web client; it is not the primary tutor-workspace voice layer while Realtime
+  is active.
 - Optional STUN/TURN endpoints configured through `WEBRTC_ICE_SERVERS`.
 
 No assistant should call live external services unless the task requires it and

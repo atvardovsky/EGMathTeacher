@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import * as wrtc from 'wrtc';
 import type { LessonType } from '../tutor/tutor.types';
 import { FileSearchConfig, PersonalityConfig } from './webrtc-signaling.service';
@@ -119,6 +120,13 @@ interface BridgeSessionState extends BridgeSessionOptions {
   closing: boolean;
   initialResponseRequested: boolean;
   pendingClientIceCandidates: string[];
+  processedInputTranscriptKeys: Set<string>;
+  lessonTranscriptPending: boolean;
+  pendingLessonTranscript?: {
+    transcriptKey: string;
+    message: string;
+    inputItemId?: string;
+  };
 }
 
 @Injectable()
@@ -304,6 +312,9 @@ export class OpenAiRealtimeBridgeService {
         closing: false,
         initialResponseRequested: false,
         pendingClientIceCandidates: [],
+        processedInputTranscriptKeys: new Set<string>(),
+        lessonTranscriptPending: false,
+        pendingLessonTranscript: undefined,
       };
       const queued = this.pendingClientCandidates.get(options.sessionId);
       if (queued?.length) {
@@ -656,7 +667,12 @@ export class OpenAiRealtimeBridgeService {
       if (state.translatorMode) {
         this.sendSystemInstructions(state);
       }
-      if (state.speechObserved && !state.responsePending && !state.translatorMode) {
+      if (
+        state.speechObserved &&
+        !state.responsePending &&
+        !state.translatorMode &&
+        !state.onClientDataMessage
+      ) {
         this.requestAssistantResponse(state, 'channel-open');
       }
     };
@@ -744,6 +760,10 @@ export class OpenAiRealtimeBridgeService {
       );
       if (result) {
         this.sendClientDataEvent(state, result);
+        if (result.type === 'tutor_answer') {
+          this.applyTutorAnswerEventToBridgeState(state, result);
+          this.requestTutorAnswerSpeech(state, result, 'client-data-channel');
+        }
       }
     } catch (error) {
       this.sendClientDataEvent(state, {
@@ -856,7 +876,7 @@ export class OpenAiRealtimeBridgeService {
         this.markSpeechObserved(state);
         if (this.enableBargeIn && (state.responsePending || state.activeResponseId)) {
           this.cancelActiveResponse(state, 'speech-start');
-          if (!state.translatorMode) {
+          if (!state.translatorMode && !state.onClientDataMessage) {
             this.requestAssistantResponse(
               state,
               'barge-in',
@@ -870,7 +890,7 @@ export class OpenAiRealtimeBridgeService {
         break;
       case 'input_audio_buffer.committed':
         this.markSpeechObserved(state);
-        if (!state.translatorMode) {
+        if (!state.translatorMode && !state.onClientDataMessage) {
           this.requestAssistantResponse(
             state,
             'buffer-committed',
@@ -883,7 +903,7 @@ export class OpenAiRealtimeBridgeService {
         break;
       case 'input_audio_buffer.speech_stopped':
         this.markSpeechObserved(state);
-        if (!state.translatorMode) {
+        if (!state.translatorMode && !state.onClientDataMessage) {
           this.requestAssistantResponse(
             state,
             'speech-stopped',
@@ -899,6 +919,19 @@ export class OpenAiRealtimeBridgeService {
       case 'input_audio_transcription.completed':
       case 'input_audio_transcription.done':
         this.markSpeechObserved(state);
+        {
+          const payloadRecord = payload as Record<string, unknown>;
+          const transcript = this.extractInputTranscript(payloadRecord);
+          const inputItemId = this.pickString(payloadRecord, [
+            'item_id',
+            'itemId',
+            'input_audio_buffer_id',
+          ]);
+          if (!state.translatorMode && transcript && state.onClientDataMessage) {
+            void this.routeRealtimeTranscriptToLesson(state, transcript, inputItemId);
+            break;
+          }
+        }
         if (state.translatorMode) {
           const payloadRecord = payload as Record<string, unknown>;
           const transcript = this.extractInputTranscript(payloadRecord);
@@ -977,6 +1010,213 @@ export class OpenAiRealtimeBridgeService {
       state.activeResponseId = undefined;
       state.cancelInFlight = false;
     }
+  }
+
+  private async routeRealtimeTranscriptToLesson(
+    state: BridgeSessionState,
+    transcript: string,
+    inputItemId?: string,
+  ): Promise<void> {
+    const message = transcript.trim();
+    if (!message) {
+      return;
+    }
+    const transcriptKey =
+      inputItemId?.trim() || `${message.slice(0, 240)}:${message.length}`;
+    if (state.processedInputTranscriptKeys.has(transcriptKey)) {
+      return;
+    }
+
+    if (state.lessonTranscriptPending) {
+      if (state.pendingLessonTranscript?.transcriptKey !== transcriptKey) {
+        state.pendingLessonTranscript = { transcriptKey, message, inputItemId };
+        this.logger.warn(
+          `Queued overlapping realtime transcript for lesson engine (${state.sessionId}).`,
+        );
+      }
+      return;
+    }
+
+    state.processedInputTranscriptKeys.add(transcriptKey);
+    state.lessonTranscriptPending = true;
+    const requestId = `realtime:${state.sessionId}:${randomUUID()}`;
+    try {
+      const result = await state.onClientDataMessage?.(
+        { sessionId: state.sessionId, conversationId: state.conversationId },
+        {
+          type: 'student_text',
+          requestId,
+          message,
+          lessonType: state.lessonType,
+          source: 'voice',
+          origin: 'realtime_transcript',
+        },
+      );
+
+      if (!result) {
+        this.requestAssistantResponse(state, 'lesson-transcript-empty-result', inputItemId);
+        return;
+      }
+
+      this.sendClientDataEvent(state, result);
+      if (result.type === 'tutor_answer') {
+        this.applyTutorAnswerEventToBridgeState(state, result);
+        this.requestTutorAnswerSpeech(state, result, 'realtime-transcript');
+        return;
+      }
+
+      if (result.type === 'error') {
+        this.requestFallbackSpeech(
+          state,
+          'Сейчас не получилось провести ответ через урок. Повтори, пожалуйста, коротко ещё раз.',
+          'lesson-transcript-error',
+        );
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Realtime transcript lesson routing failed (${state.sessionId}): ${reason}`,
+      );
+      this.requestFallbackSpeech(
+        state,
+        'Сейчас не получилось провести ответ через урок. Повтори, пожалуйста, коротко ещё раз.',
+        'lesson-transcript-exception',
+      );
+    } finally {
+      state.lessonTranscriptPending = false;
+      const queued = state.pendingLessonTranscript;
+      state.pendingLessonTranscript = undefined;
+      if (
+        queued &&
+        state.status !== 'closed' &&
+        !state.processedInputTranscriptKeys.has(queued.transcriptKey)
+      ) {
+        void this.routeRealtimeTranscriptToLesson(state, queued.message, queued.inputItemId);
+      }
+    }
+  }
+
+  private applyTutorAnswerEventToBridgeState(
+    state: BridgeSessionState,
+    event: Extract<WebRtcLessonServerEvent, { type: 'tutor_answer' }>,
+  ): void {
+    state.conversationId = event.conversationId;
+    state.lessonSessionId = event.lessonSessionId;
+    state.lessonType = event.lessonType;
+  }
+
+  private requestTutorAnswerSpeech(
+    state: BridgeSessionState,
+    event: Extract<WebRtcLessonServerEvent, { type: 'tutor_answer' }>,
+    reason: string,
+  ): boolean {
+    const speechText = this.buildTutorAnswerSpeechText(event.answer);
+    if (!speechText) {
+      return false;
+    }
+    return this.requestConstrainedSpeech(state, speechText, reason);
+  }
+
+  private requestFallbackSpeech(
+    state: BridgeSessionState,
+    text: string,
+    reason: string,
+  ): boolean {
+    return this.requestConstrainedSpeech(state, text, reason);
+  }
+
+  private requestConstrainedSpeech(
+    state: BridgeSessionState,
+    speechText: string,
+    reason: string,
+  ): boolean {
+    const channel = state.controlChannel;
+    if (!channel || channel.readyState !== 'open') {
+      return false;
+    }
+    if (state.responsePending || state.cancelInFlight) {
+      return false;
+    }
+
+    const text = this.truncateForSpeech(speechText, 1_400);
+    if (!text) {
+      return false;
+    }
+
+    const instructions = [
+      this.composeInstructions(state.persona, state.teachingContextPrompt),
+      'Произнеси ученику следующий ответ как естественный голосовой репетитор.',
+      'Не добавляй новые факты, задачи или вопросы, которых нет в ответе.',
+      'Можно слегка упростить фразы для устной русской речи, но сохрани смысл и порядок.',
+      `Ответ для озвучивания: """${text}"""`,
+    ]
+      .filter((value) => Boolean(value && value.trim()))
+      .join(' ');
+
+    const payload = JSON.stringify({
+      type: 'response.create',
+      response: {
+        modalities: ['audio', 'text'],
+        instructions,
+      },
+    });
+
+    try {
+      channel.send(payload);
+      state.responsePending = true;
+      state.lastResponseRequest = Date.now();
+      state.speechObserved = false;
+      state.initialResponseRequested = true;
+      this.logger.log(`Sent lesson response.create (${state.sessionId}, reason=${reason}).`);
+      return true;
+    } catch (error) {
+      const reasonText = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to send lesson response.create (${state.sessionId}): ${reasonText}`,
+      );
+      state.responsePending = false;
+      return false;
+    }
+  }
+
+  private buildTutorAnswerSpeechText(answer: unknown): string {
+    const answerRecord =
+      answer && typeof answer === 'object' && !Array.isArray(answer)
+        ? (answer as Record<string, unknown>)
+        : {};
+    const blocks = Array.isArray(answerRecord.blocks)
+      ? (answerRecord.blocks as Array<Record<string, unknown>>)
+      : [];
+    const pieces: string[] = [];
+    for (const block of blocks) {
+      const type = this.pickString(block, ['type']);
+      if (type === 'text') {
+        const text = this.pickString(block, ['text']);
+        if (text) {
+          pieces.push(text);
+        }
+      } else if (type === 'example') {
+        const title = this.pickString(block, ['title']);
+        const explanation = this.pickString(block, ['explanation']);
+        pieces.push([title, explanation].filter(Boolean).join('. '));
+      } else if (type === 'task') {
+        const title = this.pickString(block, ['title']);
+        const prompt = this.pickString(block, ['prompt']);
+        pieces.push([title, prompt].filter(Boolean).join('. '));
+      }
+    }
+    if (pieces.length > 0) {
+      return pieces.join('\n');
+    }
+    return this.pickString(answerRecord, ['answer']) ?? '';
+  }
+
+  private truncateForSpeech(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
   }
 
   private requestAssistantResponse(

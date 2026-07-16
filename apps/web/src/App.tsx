@@ -96,6 +96,7 @@ const VOICE_AUTO_RESTART_DELAY_MS = 450;
 const VOICE_MAX_AUTO_RESTARTS = 2;
 const USAGE_POLL_INTERVAL_MS = 5000;
 const REALTIME_ICE_GATHERING_TIMEOUT_MS = 1800;
+const REALTIME_DATA_CHANNEL_OPEN_TIMEOUT_MS = 2200;
 const REALTIME_LESSON_EVENT_TIMEOUT_MS = 90_000;
 
 type VoiceStatus = {
@@ -792,6 +793,7 @@ function FirstMeetingScreen({
     recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
     recognition.continuous = false;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
     let finalText = '';
     let latestTranscript = '';
     let latestError: string | undefined;
@@ -839,14 +841,17 @@ function FirstMeetingScreen({
       let interim = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
-        const transcript = result[0]?.transcript ?? '';
+        const transcript = getBestSpeechRecognitionResultTranscript(result);
         if (result.isFinal) {
           finalText += ` ${transcript}`;
         } else {
           interim += transcript;
         }
       }
-      latestTranscript = normalizeRecognizedSpeech(`${finalText} ${interim}`);
+      latestTranscript = chooseBetterRecognizedSpeechTranscript(
+        latestTranscript,
+        `${finalText} ${interim}`,
+      );
       setVoiceInterim(normalizeRecognizedSpeech(interim));
       setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
     };
@@ -1033,7 +1038,7 @@ function FirstMeetingScreen({
                 <Tooltip
                   label={
                     speechOutputSupported
-                      ? t.tutor.voiceOutputHelp
+                      ? t.tutor.browserVoiceOutputHelp
                       : t.tutor.voiceOutputUnavailable
                   }
                 >
@@ -1285,6 +1290,8 @@ function TutorWorkspace({
     () => Boolean(window.RTCPeerConnection && navigator.mediaDevices?.getUserMedia),
     [],
   );
+  const browserVoiceDialogSupported = speechSupported && speechOutputSupported;
+  const voiceDialogSupported = realtimeVoiceSupported || browserVoiceDialogSupported;
 
   const activeLifecycle = useMemo(
     () =>
@@ -1559,6 +1566,20 @@ function TutorWorkspace({
     return channel?.readyState === 'open' ? channel : undefined;
   }
 
+  function realtimeRuntimeActive(): boolean {
+    return Boolean(realtimeVoiceRef.current.sessionId);
+  }
+
+  function shouldUseBrowserSpeechOutput(): boolean {
+    return (
+      voiceOutputEnabledRef.current &&
+      speechOutputSupported &&
+      !realtimeRuntimeActive() &&
+      realtimeVoice.status !== 'starting' &&
+      realtimeVoice.status !== 'connected'
+    );
+  }
+
   function sendRealtimeLessonEvent(event: WebRtcLessonClientEvent): boolean {
     const channel = getOpenRealtimeLessonDataChannel();
     if (!channel) {
@@ -1700,7 +1721,7 @@ function TutorWorkspace({
           );
         });
         setSending(false);
-        if (voiceOutputEnabledRef.current) {
+        if (shouldUseBrowserSpeechOutput()) {
           speakTutorAnswer(turnId, answer, canContinueVoiceDialog(answer));
         }
         void refreshUsage(event.lessonSessionId);
@@ -1748,7 +1769,18 @@ function TutorWorkspace({
       return;
     }
     const currentLessonType = overrideLessonType ?? lessonType;
-    if (!forceNewConversation && getOpenRealtimeLessonDataChannel()) {
+    if (
+      voiceOutputEnabledRef.current &&
+      realtimeVoiceSupported &&
+      !viewingHistoryRecord &&
+      (!getOpenRealtimeLessonDataChannel() || forceNewConversation)
+    ) {
+      await startRealtimeVoice({
+        forceNewConversation,
+        lessonType: currentLessonType,
+      });
+    }
+    if (getOpenRealtimeLessonDataChannel() && voiceOutputEnabledRef.current) {
       sendMessageViaRealtimeDataChannel(prompt, source, currentLessonType);
       return;
     }
@@ -1789,7 +1821,7 @@ function TutorWorkspace({
       setTurns((current) =>
         current.map((turn) => (turn.id === id ? { ...turn, answer } : turn)),
       );
-      if (voiceOutputEnabled) {
+      if (shouldUseBrowserSpeechOutput()) {
         speakTutorAnswer(id, answer, canContinueVoiceDialog(answer));
       }
       void refreshUsage(answer.lessonLifecycle?.lessonSessionId);
@@ -1844,6 +1876,23 @@ function TutorWorkspace({
   }
 
   function startVoice(auto = false) {
+    if (
+      !auto &&
+      voiceOutputEnabledRef.current &&
+      realtimeVoiceSupported &&
+      !viewingHistoryRecord
+    ) {
+      if (getOpenRealtimeLessonDataChannel() || realtimeVoice.status === 'connected') {
+        setVoiceStatus({ tone: 'info', text: t.tutor.realtimeVoice.connected });
+        return;
+      }
+      void startRealtimeVoice({ fallbackToBrowserVoiceInput: true });
+      return;
+    }
+    startBrowserVoiceRecognition(auto);
+  }
+
+  function startBrowserVoiceRecognition(auto = false) {
     if (listening || recognitionRef.current) {
       return;
     }
@@ -1863,6 +1912,7 @@ function TutorWorkspace({
     recognition.lang = locale === 'ru' ? 'ru-RU' : 'en-US';
     recognition.continuous = false;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
     let finalText = '';
     let latestTranscript = '';
     let latestError: string | undefined;
@@ -1900,7 +1950,7 @@ function TutorWorkspace({
           tone: 'warning',
           text: auto ? t.tutor.voiceStatus.retrying : t.tutor.voiceStatus.stillListening,
         });
-        window.setTimeout(() => startVoice(auto), VOICE_AUTO_RESTART_DELAY_MS);
+        window.setTimeout(() => startBrowserVoiceRecognition(auto), VOICE_AUTO_RESTART_DELAY_MS);
         return;
       }
       autoVoiceRestartCountRef.current = 0;
@@ -1913,14 +1963,17 @@ function TutorWorkspace({
       let interim = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
-        const transcript = result[0]?.transcript ?? '';
+        const transcript = getBestSpeechRecognitionResultTranscript(result);
         if (result.isFinal) {
           finalText += ` ${transcript}`;
         } else {
           interim += transcript;
         }
       }
-      latestTranscript = normalizeRecognizedSpeech(`${finalText} ${interim}`);
+      latestTranscript = chooseBetterRecognizedSpeechTranscript(
+        latestTranscript,
+        `${finalText} ${interim}`,
+      );
       setVoiceInterim(normalizeRecognizedSpeech(interim));
       setVoiceStatus({ tone: 'listening', text: t.tutor.voiceStatus.heard });
     };
@@ -2005,20 +2058,35 @@ function TutorWorkspace({
     };
   }
 
-  async function startRealtimeVoice() {
-    if (realtimeVoice.status === 'starting' || realtimeVoice.status === 'connected') {
-      return;
+  async function startRealtimeVoice(
+    options: {
+      forceNewConversation?: boolean;
+      lessonType?: LessonType;
+      fallbackToBrowserVoiceInput?: boolean;
+    } = {},
+  ): Promise<boolean> {
+    if (
+      !options.forceNewConversation &&
+      (realtimeVoice.status === 'starting' || realtimeVoice.status === 'connected')
+    ) {
+      return realtimeVoice.status === 'connected';
+    }
+    if (options.forceNewConversation && realtimeRuntimeActive()) {
+      await stopRealtimeVoice(false);
     }
     if (viewingHistoryRecord) {
       setContinuityNotice(t.tutor.continuity.historyReadOnlyNotice);
-      return;
+      return false;
     }
     if (!realtimeVoiceSupported) {
       setRealtimeVoice({
         status: 'error',
         text: t.tutor.realtimeVoice.unsupported,
       });
-      return;
+      if (options.fallbackToBrowserVoiceInput && speechSupported) {
+        startBrowserVoiceRecognition(false);
+      }
+      return false;
     }
 
     stopTutorSpeech();
@@ -2044,9 +2112,9 @@ function TutorWorkspace({
       bootstrap = await api<WebRtcBootstrapPayload>('/webrtc/session', {
         method: 'POST',
         body: JSON.stringify({
-          conversationSeed: conversationIdRef.current,
-          lessonSessionId: activeLessonSessionId,
-          lessonType,
+          conversationSeed: options.forceNewConversation ? undefined : conversationIdRef.current,
+          lessonSessionId: options.forceNewConversation ? undefined : activeLessonSessionId,
+          lessonType: options.lessonType ?? lessonType,
         }),
       });
       if (bootstrap.lessonSessionId) {
@@ -2126,12 +2194,16 @@ function TutorWorkspace({
         },
       );
       await peerConnection.setRemoteDescription({ type: 'answer', sdp: answer.sdp });
+      await waitForDataChannelOpen(dataChannel, REALTIME_DATA_CHANNEL_OPEN_TIMEOUT_MS).catch(
+        () => undefined,
+      );
       setRealtimeVoice({
         status: 'connected',
         sessionId: bootstrap.sessionId,
         model: bootstrap.openaiRealtimeModel,
         text: t.tutor.realtimeVoice.connected,
       });
+      return true;
     } catch (err) {
       clearAllRealtimePendingRequests();
       setSending(false);
@@ -2152,6 +2224,11 @@ function TutorWorkspace({
         status: 'error',
         text: err instanceof Error ? err.message : t.tutor.realtimeVoice.failed,
       });
+      if (options.fallbackToBrowserVoiceInput && speechSupported) {
+        setVoiceStatus({ tone: 'warning', text: t.tutor.realtimeVoice.fallbackToBrowser });
+        window.setTimeout(() => startBrowserVoiceRecognition(false), 0);
+      }
+      return false;
     }
   }
 
@@ -2233,10 +2310,19 @@ function TutorWorkspace({
     window.localStorage.setItem(VOICE_OUTPUT_STORAGE_KEY, checked ? 'true' : 'false');
     if (!checked) {
       stopTutorSpeech();
+      stopVoice();
+      void stopRealtimeVoice(false);
+      return;
+    }
+    if (realtimeVoiceSupported && !viewingHistoryRecord) {
+      void startRealtimeVoice();
     }
   }
 
   function speakTutorAnswer(turnId: string, answer: TutorAnswer, continueDialog = false) {
+    if (realtimeRuntimeActive()) {
+      return;
+    }
     if (!speechOutputSupported) {
       setError(t.errors.speechOutputUnsupported);
       return;
@@ -2512,16 +2598,18 @@ function TutorWorkspace({
               <Group justify="space-between" gap="sm" align="center" className="voice-dialog-row">
                 <Tooltip
                   label={
-                    speechOutputSupported
+                    realtimeVoiceSupported
                       ? t.tutor.voiceOutputHelp
+                      : browserVoiceDialogSupported
+                        ? t.tutor.voiceOutputFallbackHelp
                       : t.tutor.voiceOutputUnavailable
                   }
                 >
                   <Switch
                     label={t.tutor.voiceOutput}
-                    checked={voiceOutputEnabled && speechOutputSupported}
+                    checked={voiceOutputEnabled && voiceDialogSupported}
                     onChange={(event) => toggleVoiceOutput(event.currentTarget.checked)}
-                    disabled={!speechOutputSupported}
+                    disabled={!voiceDialogSupported || viewingHistoryRecord}
                     size="md"
                   />
                 </Tooltip>
@@ -2595,7 +2683,7 @@ function TutorWorkspace({
               key={turn.id}
               t={t}
               turn={turn}
-              speechOutputSupported={speechOutputSupported}
+              speechOutputSupported={speechOutputSupported && !realtimeRuntimeActive()}
               speaking={speakingTurnId === turn.id}
               onSpeak={() => {
                 if (turn.answer) {
@@ -3565,9 +3653,9 @@ function TutorBlock({
         </ThemeIcon>
         <Box className="image-block-copy">
           <Text fw={900}>{block.caption}</Text>
-          {!imageUrl && (
+          {!imageUrl && (loading || block.prompt) && (
             <Text size="sm" c="dimmed" className="break-anywhere">
-              {block.prompt}
+              {loading ? t.tutor.imageGenerating : block.prompt}
             </Text>
           )}
         </Box>
@@ -3588,7 +3676,7 @@ function TutorBlock({
           onClick={() => void onGenerateImage(turn, block)}
           disabled={loading || readOnly}
         >
-          {t.tutor.showImage}
+          {loading ? t.tutor.imageGenerating : t.tutor.showImage}
         </Button>
       )}
     </Paper>
@@ -3657,7 +3745,7 @@ function shouldAutoGenerateImage(
   if (!autoTurnIds.has(turnKey)) {
     return false;
   }
-  if (block.priority !== 'required' || block.url || turn.imageUrls?.[block.id]) {
+  if (block.status === 'ready' || block.status === 'failed' || block.url || turn.imageUrls?.[block.id]) {
     return false;
   }
   return !turn.loadingImages?.[block.id];
@@ -3813,6 +3901,45 @@ function normalizeRecognizedSpeech(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function getBestSpeechRecognitionResultTranscript(result: SpeechRecognitionResult): string {
+  const alternatives = Array.from({ length: result.length }, (_, index) =>
+    normalizeRecognizedSpeech(result[index]?.transcript ?? ''),
+  ).filter(Boolean);
+  if (alternatives.length === 0) {
+    return '';
+  }
+  const [first, ...rest] = alternatives;
+  if (!isShortNumericRecognizedSpeech(first)) {
+    return first;
+  }
+  return (
+    rest.find(
+      (alternative) =>
+        !isShortNumericRecognizedSpeech(alternative) &&
+        alternative.length > first.length,
+    ) ?? first
+  );
+}
+
+function chooseBetterRecognizedSpeechTranscript(previous: string, current: string): string {
+  const previousSpeech = normalizeRecognizedSpeech(previous);
+  const currentSpeech = normalizeRecognizedSpeech(current);
+  if (!previousSpeech) {
+    return currentSpeech;
+  }
+  if (!currentSpeech) {
+    return previousSpeech;
+  }
+  if (
+    isShortNumericRecognizedSpeech(currentSpeech) &&
+    !isShortNumericRecognizedSpeech(previousSpeech) &&
+    previousSpeech.length > currentSpeech.length
+  ) {
+    return previousSpeech;
+  }
+  return currentSpeech;
+}
+
 function getBestRecognizedSpeechText(finalText: string, latestTranscript: string): string {
   const finalSpeech = normalizeRecognizedSpeech(finalText);
   const latestSpeech = normalizeRecognizedSpeech(latestTranscript);
@@ -3823,6 +3950,11 @@ function getBestRecognizedSpeechText(finalText: string, latestTranscript: string
     return finalSpeech;
   }
   return latestSpeech.length > finalSpeech.length ? latestSpeech : finalSpeech;
+}
+
+function isShortNumericRecognizedSpeech(text: string): boolean {
+  const compact = normalizeRecognizedSpeech(text);
+  return compact.length <= 4 && /^[\d\s.,+\-/*=()]+$/.test(compact);
 }
 
 function waitForIceGatheringComplete(peerConnection: RTCPeerConnection): Promise<void> {
@@ -3843,6 +3975,24 @@ function waitForIceGatheringComplete(peerConnection: RTCPeerConnection): Promise
       resolve();
     };
     peerConnection.addEventListener('icegatheringstatechange', onStateChange);
+  });
+}
+
+function waitForDataChannelOpen(channel: RTCDataChannel, timeoutMs: number): Promise<void> {
+  if (channel.readyState === 'open') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      channel.removeEventListener('open', onOpen);
+      reject(new Error('Timed out waiting for realtime data channel'));
+    }, timeoutMs);
+    const onOpen = () => {
+      window.clearTimeout(timeout);
+      channel.removeEventListener('open', onOpen);
+      resolve();
+    };
+    channel.addEventListener('open', onOpen);
   });
 }
 

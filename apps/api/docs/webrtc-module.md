@@ -145,9 +145,10 @@ Server events:
 in-memory WebRTC session so the data-channel message can enter the same
 governed tutor path as `POST /tutor/message`. The data channel does not bypass
 lesson lifecycle, terminal-conversation rejection, RAG, verifier policy, usage
-ledger writes, or background observation logic. Raw audio/provider events stay
-on the Realtime transcript path and do not become verifier evidence by
-themselves.
+ledger writes, or background observation logic. Completed OpenAI Realtime
+input transcripts are also routed into the same path as `student_text` with
+`source=voice` and `origin=realtime_transcript`; provider audio events that do
+not complete into transcript text remain transcript/continuity data only.
 
 ## OpenAI Realtime Token API
 
@@ -189,7 +190,11 @@ When the provider module is set to `openai-realtime`, the bridge talks to OpenAI
    {"type":"conversation.item.create","item":{"type":"message","role":"system","content":[{"type":"input_text","text":"...translator instructions..."}]}}
    ```
 4. **Request responses**:
-   - Standard assistant mode: `response.create` is triggered from speech/transcription lifecycle events.
+   - Signed-in tutoring mode: completed input transcription events are routed
+     through the backend tutor engine first. The bridge then calls
+     `response.create` with instructions to speak the governed tutor answer.
+   - Ungoverned assistant fallback mode: `response.create` can still be
+     triggered from speech/transcription lifecycle events.
    - Translator mode: `response.create` is triggered only after completed input transcription events and includes the transcribed text to translate.
 5. **Stream audio** – OpenAI pushes PCM over the provider peer connection while responses are generated. Audio frames and provider data-channel events are bridged back to the caller-side services. Browser `lesson-events` messages stay inside NestJS and are not forwarded to OpenAI Realtime.
 
@@ -215,12 +220,13 @@ The ledger row intentionally stores safe session metadata only, not raw
 transcripts or provider payloads.
 When the transcript contains teaching-useful content for a signed-in app
 session, close can create or reuse a lesson session and write one compact
-voice-origin `tutor_turns` row so the next tutor message can continue from the
-live discussion. That saved row is continuity context only: it is not verifier
-evidence and does not create task blocks, images, mastery evidence, or
-goal-completion state. By contrast, typed `student_text` events sent through
-the `lesson-events` data channel are normal tutor turns and can create whatever
-the tutor engine would create for the same `POST /tutor/message` payload.
+voice-origin `tutor_turns` row only when no completed Realtime transcript was
+already routed into structured tutor turns. That saved row is continuity
+context only: it is not verifier evidence and does not create task blocks,
+images, mastery evidence, or goal-completion state. Typed `student_text`
+events and completed transcript-origin `student_text` events are normal tutor
+turns and can create whatever the tutor engine would create for the same
+`POST /tutor/message` payload.
 
 Close can also enqueue a `realtime_session_review` background job. That job
 uses the cheaper background model policy to store sanitized teaching
@@ -232,8 +238,8 @@ goal-completion state.
 
 1. **Create** – `WebRtcSessionService.createSession()` reserves a session id and associates it with the conversation plus optional signed-in user, lesson session id, and lesson type metadata for usage attribution.
 2. **Activate** – When the media bridge is ready (future implementation), call `activateSession()` so status becomes `active`.
-3. **Lesson data events** – While active, authenticated `student_text` messages on the `lesson-events` channel call the tutor engine and return `tutor_answer` events over WebRTC. The WebRTC session `updatedAt` timestamp is touched by every valid channel event so idle cleanup does not close an active text exchange.
-4. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, saves a compact authenticated lesson turn when useful transcript content exists, records authenticated Realtime usage, and can enqueue the safe background Realtime teaching review.
+3. **Lesson data events** – While active, authenticated `student_text` messages and completed Realtime input transcripts on the `lesson-events` path call the tutor engine and return `tutor_answer` events over WebRTC. The bridge can ask OpenAI Realtime to speak that governed answer. The WebRTC session `updatedAt` timestamp is touched by every valid channel event so idle cleanup does not close an active text exchange.
+4. **Close** – On hangup, call `closeSession()`. This finalizes the conversation, stitches together transcripts, writes them to `TRANSCRIPT_LOG_DIR` as `<conversationId>_<timestamp>.txt`, saves a compact authenticated lesson turn only when useful transcript content exists and no structured Realtime transcript turn was already written, records authenticated Realtime usage, and can enqueue the safe background Realtime teaching review.
 5. **Retrieve Transcript & Token Stats** – Use `getTranscriptForSession()` or the conversation service helpers to access the saved text or file path. Finalization logs include total “incoming” (caller) and “outgoing” (assistant) token counts once the media bridge begins recording usage.
 6. **Teardown Bridge** – Clients (or future automation) should hit `POST /webrtc/session/{sessionId}/close` to invoke `WebRtcMediaService.closeSession`, which finalizes transcripts and clears in-memory bridge state.
 

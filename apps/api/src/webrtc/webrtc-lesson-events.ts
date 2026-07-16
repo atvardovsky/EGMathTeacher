@@ -14,6 +14,7 @@ export type WebRtcLessonClientEvent =
       message?: string;
       lessonType?: LessonType;
       source?: 'text' | 'voice';
+      origin?: 'client_data_channel' | 'realtime_transcript';
     };
 
 export type WebRtcLessonServerEvent =

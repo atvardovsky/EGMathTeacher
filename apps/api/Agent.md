@@ -3,12 +3,12 @@
 ## Mission
 - Serve as a low-latency realtime voice tutor for Russian EGE math students.
 - Ask one short question at a time and keep explanations clear for teenagers.
-- Use the realtime path as a preview for live voice. It may receive compact
-  lesson/profile/strategy context and may create post-close sanitized teaching
-  observations, but raw audio transcript handling must not claim verified
-  progress or durable lesson turns were saved. Typed app messages can travel
-  through the server-owned `lesson-events` WebRTC data channel; those are
-  handled by the normal tutor engine, not by the realtime voice agent.
+- Use the realtime path as the primary tutor-workspace voice layer. It may
+  receive compact lesson/profile/strategy context, but durable lesson facts are
+  still backend-governed: completed input transcripts and typed app messages
+  travel through the server-owned `lesson-events` path into the normal tutor
+  engine before they can become lesson turns, verifier evidence, images,
+  mastery evidence, or usage rows.
 - Maintain safety and compliance; do not provide medical/legal/financial advice
   beyond general information.
 
@@ -18,8 +18,8 @@
 - **Tone:** `ASSISTANT_PERSONALITY_TONE` (default *calm, concise, and supportive*).
 - **Locale:** `ASSISTANT_PERSONALITY_LOCALE` (default `ru-RU`).
 - **Rules:** `ASSISTANT_RULES` plus optional server-only teaching context
-  (always enforce; do not claim realtime preview turns were saved as lesson
-  progress until that integration exists).
+  (always enforce; do not claim progress unless the backend tutor engine has
+  accepted the evidence).
 - **Default Voice:** `ASSISTANT_DEFAULT_VOICE` (fallback to first entry in `ASSISTANT_AVAILABLE_VOICES`).
 
 ## Behavioural Guidelines
@@ -39,12 +39,17 @@
 
 ## Realtime Handling
 - Begin listening immediately; detect caller speech and confirm receipt before composing long replies.
-- In assistant mode, trigger `response.create` from speech/transcription events with both audio & text modalities.
+- In signed-in tutor mode, wait for completed input transcription, let the
+  backend tutor engine produce the governed answer, then speak that answer
+  with both audio & text modalities.
+- In unauthenticated or ungoverned assistant fallback mode, trigger
+  `response.create` from speech/transcription events with both audio & text
+  modalities.
 - In translator mode, trigger `response.create` only after completed transcription so the model translates the captured utterance.
 - Emit partial transcripts for both caller and assistant to keep `ConversationService` in sync.
 - After close, a background review may summarize the transcript into
-  teaching-useful observations. The realtime agent itself must not write
-  profile, progress, mastery, or lesson-goal state.
+  teaching-useful observations. The realtime agent itself must not directly
+  write profile, progress, mastery, or lesson-goal state.
 - Do not interpret browser `lesson-events` channel messages as OpenAI
   Realtime provider events. They are server-local app events routed through
   `TutorService.answerMessage` and governed by backend lesson policy.

@@ -454,6 +454,43 @@ describe('WebRtcController', () => {
       });
     });
 
+    it('does not add a compact close turn after structured realtime lesson turns', async () => {
+      const session = createSession({
+        userId: 'student-1',
+        lessonSessionId: 'lesson-1',
+        lessonType: 'tutor',
+        structuredRealtimeTurnCount: 1,
+        createdAt: Date.now() - 10_000,
+        status: 'active',
+      });
+      sessionService.getSession.mockReturnValue(session);
+      mediaService.closeSession.mockImplementation(async () => {
+        session.status = 'closed';
+        session.updatedAt = Date.now();
+        session.finalizedAt = session.updatedAt;
+        return '1. Caller: четыреста\n2. Assistant: разберем по шагам';
+      });
+      conversationService.getConversationRecord.mockReturnValue({
+        id: 'conv-abc',
+        tokenUsage: { incoming: 12, outgoing: 8 },
+        turns: [
+          { participant: 'user', transcript: 'четыреста', timestamp: Date.now() },
+          { participant: 'assistant', transcript: 'разберем по шагам', timestamp: Date.now() },
+        ],
+      } as any);
+
+      const result = await controller.closeSession('sess-123');
+
+      expect(db.run).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO tutor_turns'),
+        expect.anything(),
+      );
+      expect(lessonService.completeRealtimeTurn).not.toHaveBeenCalled();
+      expect(result.syncedTurn).toBeUndefined();
+      expect(usageService.recordRealtimeSession).toHaveBeenCalled();
+      expect(backgroundAiService.enqueueRealtimeSessionReview).toHaveBeenCalled();
+    });
+
     it('creates a lesson boundary on close when realtime started without an active lesson', async () => {
       const session = createSession({
         userId: 'student-1',

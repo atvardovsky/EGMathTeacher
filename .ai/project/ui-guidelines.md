@@ -140,17 +140,21 @@ landing page.
   focused controls.
 - Voice controls must show disabled state when browser speech recognition or
   speech synthesis is unavailable.
-- Voice dialog must have an obvious on/off switch and per-answer speak/stop
-  control. It may speak a tutor answer after a user-triggered lesson action or
-  message, but it must not start speaking on page load.
-- The tutor composer may expose WebRTC/OpenAI Realtime as a separate live
-  voice action. It must be user-started, clearly show connection state, be
-  disabled for read-only history records, and stop when the student changes
-  lesson boundary or leaves the tutor workspace. Closing a signed-in realtime
-  session should refresh the usage panel when accounting or background review
-  is enabled. Until realtime transcript events are connected to the lesson
-  pipeline as structured saved turns, the UI must keep the normal
-  saved-message composer visible.
+- Voice dialog must have an obvious on/off switch. In the tutor workspace the
+  switch is Realtime-first: after a user action, the app should try
+  WebRTC/OpenAI Realtime before browser speech recognition or browser speech
+  synthesis. The separate live-voice panel remains visible as connection
+  state and manual start/stop control.
+- The tutor composer must keep the normal saved-message composer visible even
+  when Realtime is active. Typed messages sent while a Realtime lesson channel
+  is open should travel over `lesson-events`; completed Realtime transcripts
+  should be rendered as normal tutor turns after backend processing. Browser
+  speech synthesis must not run over an active Realtime session.
+- Realtime must be user-started, clearly show connection state, be disabled
+  for read-only history records, and stop when the student changes lesson
+  boundary or leaves the tutor workspace. Closing a signed-in realtime session
+  should refresh the usage panel when accounting or background review is
+  enabled.
 - In voice-dialog mode, the browser should hand the turn back to the student:
   after assistant speech ends, speech recognition starts automatically when the
   browser supports it, permissions allow it, and the returned lesson lifecycle
@@ -161,20 +165,25 @@ landing page.
   show a short status reason near the mic control, retry silence/no-speech
   stops with a small bounded budget, preserve recognized text in the composer
   when sending fails, and keep the manual mic action visible.
-- Browser speech synthesis reads only visible tutor answer blocks locally; do
-  not add hidden prompt text, raw debug data, citations, secrets, or
-  non-visible profile facts to spoken output.
-- Browser speech quality is not a production voice layer. The POC may choose a
-  locale-matched voice and normalize obvious math phrases, but high-quality
-  Russian stress and emotional prosody require a future audio provider.
+- During one voice turn, keep the fullest recognized transcript when a browser
+  interim phrase is later finalized as a short numeric-only fragment, so words
+  like "четыреста" are not sent as "4".
+- Browser speech synthesis is a fallback and history replay layer. It reads
+  only visible tutor answer blocks locally; do not add hidden prompt text, raw
+  debug data, citations, secrets, or non-visible profile facts to spoken
+  output.
+- Browser speech quality is not the primary tutor-workspace voice layer.
+  Russian stress and emotional prosody should come from OpenAI Realtime when
+  available; locale-matched browser voices and math phrase normalization are
+  fallback-only mitigations.
 - Tutor answers render ordered text, task, example, and image blocks inside
   one turn card.
 - Tutor turn headers show the source and lesson type so the learner can see
   whether the system is answering, practicing, checking level, or reviewing a
   mistake.
-- Image generation remains explicit user action for optional/saved blocks, but
-  fresh required image blocks may auto-generate once after the text answer is
-  visible. The UI must not require the learner to write an image prompt; image
+- Fresh active image blocks auto-generate once after the text answer is visible;
+  saved/history blocks and failed retry cases keep a visible create-diagram
+  action. The UI must not require the learner to write an image prompt; image
   generation can use the visible answer/task context and the image block's
   caption/alt text. Generated images need alt text and a short caption
   connected to the current explanation.

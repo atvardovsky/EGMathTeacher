@@ -173,8 +173,8 @@ sequenceDiagram
     AIModel-->>Background: Parsed model response
     Background->>DB: Update student_profiles
   end
-  opt Image block present
-    Student->>Web: Request diagram from image block
+  opt Fresh image block present
+    Web->>Web: Start automatic diagram generation after text renders
     Web->>API: POST /tutor/image
     API->>Tutor: generateImage(optional prompt, turn/block context, lessonSessionId)
     Tutor->>AIModel: Generate tutorImage operation PNG
